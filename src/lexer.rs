@@ -1,7 +1,3 @@
-//! The Token module defines the different lexical tokens in the Arvo
-//! programming language, and defines some basic operations on these tokens.
-
-// External crate dependencies
 use regex;
 
 use std::fmt;

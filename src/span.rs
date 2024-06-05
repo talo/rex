@@ -2,11 +2,11 @@
 //! in which nodes can be defined. It is used to link nodes back to their
 //! origins in the source.
 
-use std::fmt;
+use std::fmt::{self, Display};
 
 /// A Position represents an arbitrary source position. It includes the
 /// filename, line number, and column number.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Position {
     filename: String,
     line: usize,
@@ -65,7 +65,7 @@ impl fmt::Display for Position {
 
 /// A Span represents an arbitrary source range. It includes the beginning and
 /// ending Positions.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Span {
     pub begin: Position,
     pub end: Position,
@@ -123,6 +123,19 @@ impl Span {
             begin: begin.into(),
             end: end.into(),
         }
+    }
+
+    pub fn empty() -> Span {
+        Span {
+            begin: Position::new("", 0, 0),
+            end: Position::new("", 0, 0),
+        }
+    }
+}
+
+impl Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}-{}", self.begin, self.end)
     }
 }
 
