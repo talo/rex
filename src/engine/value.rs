@@ -2,7 +2,10 @@ use std::fmt::Display;
 
 use ouroboros::Type;
 
-use crate::resolver::{Id, Lambda};
+use crate::{
+    resolver::{Id, Lambda, Variable, IR},
+    span::Span,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -77,4 +80,27 @@ pub struct Function {
     pub name: String,
     pub params: Vec<Type>,
     pub ret: Type,
+}
+
+pub fn value_to_ir(val: Value, span: Span) -> IR {
+    match val {
+        Value::Null => IR::Null(span),
+        Value::Bool(x) => IR::Bool(x, span),
+        Value::U64(x) => IR::Uint(x, span),
+        Value::I64(x) => IR::Int(x, span),
+        Value::F64(x) => IR::Float(x, span),
+        Value::String(x) => IR::String(x, span),
+        Value::List(xs) => IR::List(
+            xs.into_iter()
+                .map(|x| value_to_ir(x, span.clone()))
+                .collect(),
+            span,
+        ),
+        Value::Function(f) => IR::Variable(Variable {
+            id: f.id,
+            name: f.name,
+            span: span,
+        }),
+        Value::Lambda(lam) => IR::Lambda(lam),
+    }
 }
