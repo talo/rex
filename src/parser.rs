@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 use crate::{
     lexer::{Token, Tokens},
@@ -50,6 +50,7 @@ pub enum Expr {
     Float(f64, Span),
     String(String, Span),
     List(Vec<Expr>, Span),
+    Record(BTreeMap<String, Expr>, Span),
     Variable(String, Span),
     Call(Box<Expr>, Vec<Expr>, Span),
     Lambda(Vec<String>, Box<Expr>, Span),
@@ -64,6 +65,7 @@ impl Spanned for Expr {
             Expr::Float(_, span, ..) => span,
             Expr::String(_, span, ..) => span,
             Expr::List(_, span, ..) => span,
+            Expr::Record(_, span, ..) => span,
             Expr::Variable(_, span, ..) => span,
             Expr::Call(_, _, span, ..) => span,
             Expr::Lambda(_, _, span, ..) => span,
@@ -78,6 +80,7 @@ impl Spanned for Expr {
             Expr::Float(_, span, ..) => span,
             Expr::String(_, span, ..) => span,
             Expr::List(_, span, ..) => span,
+            Expr::Record(_, span, ..) => span,
             Expr::Variable(_, span, ..) => span,
             Expr::Call(_, _, span, ..) => span,
             Expr::Lambda(_, _, span, ..) => span,

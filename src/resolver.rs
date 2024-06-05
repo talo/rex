@@ -46,9 +46,9 @@ pub enum IR {
     Float(f64, Span),
     String(String, Span),
     List(Vec<IR>, Span),
+    Record(BTreeMap<String, IR>, Span),
     Call(Call),
     Lambda(Lambda),
-    Dict(BTreeMap<String, IR>),
     Variable(Variable),
 }
 
@@ -62,9 +62,9 @@ impl Spanned for IR {
             IR::Float(_, span) => span,
             IR::String(_, span) => span,
             IR::List(_, span) => span,
+            IR::Record(_, span) => span,
             IR::Call(call) => &call.span,
             IR::Lambda(lam) => &lam.span,
-            IR::Dict(_) => todo!(),
             IR::Variable(var) => &var.span,
         }
     }
@@ -78,9 +78,9 @@ impl Spanned for IR {
             IR::Float(_, span) => span,
             IR::String(_, span) => span,
             IR::List(_, span) => span,
+            IR::Record(_, span) => span,
             IR::Call(call) => &mut call.span,
             IR::Lambda(lam) => &mut lam.span,
-            IR::Dict(_) => todo!(),
             IR::Variable(var) => &mut var.span,
         }
     }
@@ -136,6 +136,7 @@ impl Resolver {
             Expr::Float(x, span, ..) => Ok(IR::Float(x, span)),
             Expr::String(x, span, ..) => Ok(IR::String(x, span)),
             Expr::List(xs, span, ..) => self.resolve_list(xs, span),
+            Expr::Record(xs, span, ..) => self.resolve_record(xs, span),
             Expr::Variable(name, span, ..) => self.resolve_variable(name, span),
             Expr::Call(base, args, span, ..) => self.resolve_call(*base, args, span),
             Expr::Lambda(param_names, body, span, ..) => {
@@ -150,6 +151,14 @@ impl Resolver {
             ys.push(self.resolve(x)?);
         }
         Ok(IR::List(ys, span))
+    }
+
+    fn resolve_record(&mut self, xs: BTreeMap<String, Expr>, span: Span) -> Result<IR> {
+        let mut ys = BTreeMap::new();
+        for (field_name, x) in xs {
+            ys.insert(field_name, self.resolve(x)?);
+        }
+        Ok(IR::Record(ys, span))
     }
 
     fn resolve_variable(&mut self, name: String, span: Span) -> Result<IR> {
