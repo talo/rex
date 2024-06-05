@@ -20,46 +20,49 @@ pub trait Runner {
     async fn lookup(&mut self, var: &Variable) -> Result<Option<Value>, Error>;
     async fn run(
         &mut self,
-        curr_id: &mut Id,
+        engine: &mut Engine,
+        trace: &mut Trace,
         f: Function,
         args: VecDeque<Value>,
-    ) -> Result<IR, Error>;
+    ) -> Result<Value, Error>;
 }
 
-pub struct Engine<R>
-where
-    R: Runner,
-{
-    runner: R,
+pub struct Engine {
     pub curr_id: Id,
 }
 
-impl<R> Engine<R>
-where
-    R: Runner + Send,
-{
-    pub fn new(runner: R, curr_id: Id) -> Self {
-        Self { runner, curr_id }
+impl Engine {
+    pub fn new(curr_id: Id) -> Self {
+        Self { curr_id }
     }
 
-    pub async fn run(&mut self, ir: IR) -> (Result<Value, Error>, Trace) {
+    pub async fn run<R: Runner + Send>(
+        &mut self,
+        runner: &mut R,
+        ir: IR,
+    ) -> (Result<Value, Error>, Trace) {
         let mut trace = Trace::from_span(ir.span().clone());
-        let result = self.eval(&mut trace, ir).await;
+        let result = self.eval(runner, &mut trace, ir).await;
         (result, trace)
     }
 
     #[async_recursion::async_recursion]
-    async fn eval(&mut self, trace: &mut Trace, ir: IR) -> Result<Value, Error> {
+    pub async fn eval<R: Runner + Send>(
+        &mut self,
+        runner: &mut R,
+        trace: &mut Trace,
+        ir: IR,
+    ) -> Result<Value, Error> {
         match ir {
             IR::Null(span, ..) => self.eval_null(trace, &span).await,
             IR::Bool(x, span, ..) => self.eval_bool(trace, &span, x).await,
             IR::Uint(x, span, ..) => self.eval_int(trace, &span, x).await,
             IR::Float(x, span, ..) => self.eval_float(trace, &span, x).await,
             IR::String(x, span, ..) => self.eval_string(trace, &span, x).await,
-            IR::List(xs, span, ..) => self.eval_list(trace, &span, xs).await,
-            IR::Call(call) => self.eval_call(trace, call).await,
+            IR::List(xs, span, ..) => self.eval_list(runner, trace, &span, xs).await,
+            IR::Call(call) => self.eval_call(runner, trace, call).await,
             IR::Lambda(lam) => self.eval_lambda(trace, lam).await,
-            IR::Variable(var) => self.eval_variable(trace, var).await,
+            IR::Variable(var) => self.eval_variable(runner, trace, var).await,
             _ => unimplemented!(),
         }
     }
@@ -99,23 +102,29 @@ where
         Ok(Value::String(x))
     }
 
-    async fn eval_list(
+    async fn eval_list<R: Runner + Send>(
         &mut self,
+        runner: &mut R,
         trace: &mut Trace,
         span: &Span,
         xs: Vec<IR>,
     ) -> Result<Value, Error> {
         let mut ys = Vec::new();
         for x in xs {
-            ys.push(self.eval(trace, x).await?);
+            ys.push(self.eval(runner, trace, x).await?);
         }
         trace.step(TraceNode::ListCtor, span.clone());
         Ok(Value::List(ys))
     }
 
-    async fn eval_call(&mut self, trace: &mut Trace, mut call: Call) -> Result<Value, Error> {
+    async fn eval_call<R: Runner + Send>(
+        &mut self,
+        runner: &mut R,
+        trace: &mut Trace,
+        mut call: Call,
+    ) -> Result<Value, Error> {
         let span = call.span.clone();
-        let mut base = self.eval(trace, *call.base).await?;
+        let mut base = self.eval(runner, trace, *call.base).await?;
 
         while call.args.len() > 0 {
             match base {
@@ -125,7 +134,7 @@ where
                     while lam.params.len() > 0 && call.args.len() > 0 {
                         let var = lam.params.pop_front().unwrap();
                         let arg = call.args.pop_front().unwrap();
-                        let arg = self.eval(trace, arg).await?;
+                        let arg = self.eval(runner, trace, arg).await?;
                         trace_params.push(var.name.clone());
                         trace_args.push(arg.clone());
                         self.replace_var_in_lambda(&mut lam, var.id, value_to_ir(arg));
@@ -135,7 +144,7 @@ where
                     if lam.params.len() > 0 {
                         return Ok(Value::Lambda(lam));
                     }
-                    base = self.eval(trace, *lam.body).await?;
+                    base = self.eval(runner, trace, *lam.body).await?;
                 }
 
                 Value::Function(f) => {
@@ -170,15 +179,16 @@ where
                     } else {
                         let mut args = Vec::with_capacity(f.params.len());
                         for _ in 0..f.params.len() {
-                            args.push(self.eval(trace, call.args.pop_front().unwrap()).await?);
+                            args.push(
+                                self.eval(runner, trace, call.args.pop_front().unwrap())
+                                    .await?,
+                            );
                         }
-
                         let trace = trace.step(
                             TraceNode::Function(f.name.clone(), args.clone()),
                             span.clone(),
                         );
-                        let ir = self.runner.run(&mut self.curr_id, f, args.into()).await?;
-                        base = self.eval(trace, ir).await?;
+                        base = runner.run(self, trace, f, args.into()).await?;
                     }
                 }
                 _ => {
@@ -197,8 +207,13 @@ where
         Ok(Value::Lambda(lam))
     }
 
-    async fn eval_variable(&mut self, _trace: &mut Trace, var: Variable) -> Result<Value, Error> {
-        self.runner
+    async fn eval_variable<R: Runner + Send>(
+        &mut self,
+        runner: &mut R,
+        _trace: &mut Trace,
+        var: Variable,
+    ) -> Result<Value, Error> {
+        runner
             .lookup(&var)
             .await
             .and_then(|x| x.ok_or(Error::VarNotFound { name: var.name }))
@@ -302,20 +317,19 @@ impl Runner for OpRunner {
 
     async fn run(
         &mut self,
-        curr_id: &mut Id,
+        engine: &mut Engine,
+        trace: &mut Trace,
         f: Function,
         mut args: VecDeque<Value>,
-    ) -> Result<IR, Error> {
+    ) -> Result<Value, Error> {
         match f.name.as_str() {
             "+" => {
                 let a = args.pop_front().unwrap();
                 let b = args.pop_front().unwrap();
                 match (a, b) {
-                    (Value::U64(a), Value::U64(b)) => {
-                        Ok(IR::Uint(a.wrapping_add(b), Span::empty()))
-                    }
-                    (Value::I64(a), Value::I64(b)) => Ok(IR::Int(a.wrapping_add(b), Span::empty())),
-                    (Value::F64(a), Value::F64(b)) => Ok(IR::Float(a + b, Span::empty())),
+                    (Value::U64(a), Value::U64(b)) => Ok(Value::U64(a.wrapping_add(b))),
+                    (Value::I64(a), Value::I64(b)) => Ok(Value::I64(a.wrapping_add(b))),
+                    (Value::F64(a), Value::F64(b)) => Ok(Value::F64(a + b)),
                     _ => unreachable!(),
                 }
             }
@@ -323,11 +337,9 @@ impl Runner for OpRunner {
                 let a = args.pop_front().unwrap();
                 let b = args.pop_front().unwrap();
                 match (a, b) {
-                    (Value::U64(a), Value::U64(b)) => {
-                        Ok(IR::Uint(a.wrapping_sub(b), Span::empty()))
-                    }
-                    (Value::I64(a), Value::I64(b)) => Ok(IR::Int(a.wrapping_sub(b), Span::empty())),
-                    (Value::F64(a), Value::F64(b)) => Ok(IR::Float(a - b, Span::empty())),
+                    (Value::U64(a), Value::U64(b)) => Ok(Value::U64(a.wrapping_sub(b))),
+                    (Value::I64(a), Value::I64(b)) => Ok(Value::I64(a.wrapping_sub(b))),
+                    (Value::F64(a), Value::F64(b)) => Ok(Value::F64(a - b)),
                     _ => unreachable!(),
                 }
             }
@@ -335,11 +347,9 @@ impl Runner for OpRunner {
                 let a = args.pop_front().unwrap();
                 let b = args.pop_front().unwrap();
                 match (a, b) {
-                    (Value::U64(a), Value::U64(b)) => {
-                        Ok(IR::Uint(a.wrapping_mul(b), Span::empty()))
-                    }
-                    (Value::I64(a), Value::I64(b)) => Ok(IR::Int(a.wrapping_mul(b), Span::empty())),
-                    (Value::F64(a), Value::F64(b)) => Ok(IR::Float(a * b, Span::empty())),
+                    (Value::U64(a), Value::U64(b)) => Ok(Value::U64(a.wrapping_mul(b))),
+                    (Value::I64(a), Value::I64(b)) => Ok(Value::I64(a.wrapping_mul(b))),
+                    (Value::F64(a), Value::F64(b)) => Ok(Value::F64(a * b)),
                     _ => unreachable!(),
                 }
             }
@@ -351,21 +361,21 @@ impl Runner for OpRunner {
                         if b == 0 {
                             Err(Error::DivByZero)
                         } else {
-                            Ok(IR::Uint(a.wrapping_div(b), Span::empty()))
+                            Ok(Value::U64(a.wrapping_div(b)))
                         }
                     }
                     (Value::I64(a), Value::I64(b)) => {
                         if b == 0 {
                             Err(Error::DivByZero)
                         } else {
-                            Ok(IR::Int(a.wrapping_div(b), Span::empty()))
+                            Ok(Value::I64(a.wrapping_div(b)))
                         }
                     }
                     (Value::F64(a), Value::F64(b)) => {
                         if b == 0.0 {
                             Err(Error::DivByZero)
                         } else {
-                            Ok(IR::Float(a * b, Span::empty()))
+                            Ok(Value::F64(a / b))
                         }
                     }
                     _ => unreachable!(),
@@ -375,18 +385,18 @@ impl Runner for OpRunner {
                 let a = args.pop_front().unwrap();
                 let b = args.pop_front().unwrap();
                 let x = Variable {
-                    id: curr_id.next(),
+                    id: engine.curr_id.next(),
                     name: "x0".to_string(),
                     span: Span::empty(),
                 };
-                Ok(IR::Lambda(Lambda {
-                    id: curr_id.next(),
+                Ok(Value::Lambda(Lambda {
+                    id: engine.curr_id.next(),
                     params: vec![x.clone()].into(),
                     body: Box::new(IR::Call(Call {
-                        id: curr_id.next(),
+                        id: engine.curr_id.next(),
                         base: Box::new(value_to_ir(a)),
                         args: vec![IR::Call(Call {
-                            id: curr_id.next(),
+                            id: engine.curr_id.next(),
                             base: Box::new(value_to_ir(b)),
                             args: vec![IR::Variable(x)].into(),
                             span: Span::empty(),
@@ -404,14 +414,24 @@ impl Runner for OpRunner {
                     Value::List(xs) => {
                         let mut apps = Vec::with_capacity(xs.len());
                         for x in xs {
-                            apps.push(IR::Call(Call {
-                                id: curr_id.next(),
-                                base: Box::new(value_to_ir(f.clone())),
-                                args: vec![value_to_ir(x)].into(),
-                                span: Span::empty(),
-                            }));
+                            let id = engine.curr_id.next();
+                            apps.push(
+                                engine
+                                    .eval(
+                                        &mut OpRunner,
+                                        trace,
+                                        IR::Call(Call {
+                                            id,
+                                            base: Box::new(value_to_ir(f.clone())),
+                                            args: vec![value_to_ir(x)].into(),
+                                            span: Span::empty(),
+                                        }),
+                                    )
+                                    .await?,
+                            );
                         }
-                        Ok(IR::List(apps, Span::empty()))
+                        trace.step(TraceNode::ListCtor, Span::empty());
+                        Ok(Value::List(apps))
                     }
                     _ => unreachable!(),
                 }
@@ -438,24 +458,24 @@ mod test {
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 2 + 3 + 4"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
-        let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, _trace) = engine.run(ir).await;
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, _trace) = engine.run(&mut OpRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(10));
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 * 2 * 3 * 4"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
-        let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, _trace) = engine.run(ir).await;
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, _trace) = engine.run(&mut OpRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(24));
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "(/) 6 3"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
-        let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, _trace) = engine.run(ir).await;
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, _trace) = engine.run(&mut OpRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(2));
     }
@@ -465,8 +485,8 @@ mod test {
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\x -> x + 1) 2"#));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
-        let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, trace) = engine.run(ir).await;
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut OpRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -474,8 +494,17 @@ mod test {
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\x -> x 1) ((+) 2)"#));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
-        let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, trace) = engine.run(ir).await;
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut OpRunner, ir).await;
+        let value = result.unwrap();
+        assert_eq!(value, Value::U64(3));
+        println!("{}", trace);
+
+        let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\x -> x 1 2) (+)"#));
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut OpRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -486,8 +515,8 @@ mod test {
         let mut parser = Parser::new(Token::tokenize("test.rex", "(+) 1"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
-        let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, trace) = engine.run(ir).await;
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut OpRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(
             value,
@@ -528,8 +557,8 @@ mod test {
         let mut parser = Parser::new(Token::tokenize("test.rex", "((+) 1 . (+) 2 . (*) 3) 4"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
-        let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, trace) = engine.run(ir).await;
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut OpRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(15));
         println!("{}", trace);
@@ -543,8 +572,8 @@ mod test {
         ));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
-        let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, trace) = engine.run(ir).await;
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut OpRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(
             value,
@@ -563,8 +592,8 @@ mod test {
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 * (2 + 3) * 4"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
-        let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, trace) = engine.run(ir).await;
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut OpRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(20));
         assert_eq!(
