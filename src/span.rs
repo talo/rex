@@ -135,7 +135,7 @@ impl Span {
 
 impl Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}-{}", self.begin, self.end)
+        write!(f, "{} - {}", self.begin, self.end)
     }
 }
 

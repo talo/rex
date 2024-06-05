@@ -1,0 +1,2079 @@
+Trace {
+    step: 0,
+    children: [
+        Trace {
+            step: 1,
+            children: [],
+            node: Function(
+                ".",
+                [
+                    Lambda(
+                        Lambda {
+                            id: Id(
+                                16,
+                            ),
+                            params: [
+                                Variable {
+                                    id: Id(
+                                        15,
+                                    ),
+                                    name: "x0",
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 14,
+                                        },
+                                        end: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 18,
+                                        },
+                                    },
+                                },
+                            ],
+                            body: Call(
+                                Call {
+                                    id: Id(
+                                        17,
+                                    ),
+                                    base: Variable(
+                                        Variable {
+                                            id: Id(
+                                                5,
+                                            ),
+                                            name: "+",
+                                            span: Span {
+                                                begin: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 14,
+                                                },
+                                                end: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 18,
+                                                },
+                                            },
+                                        },
+                                    ),
+                                    args: [
+                                        Uint(
+                                            2,
+                                            Span {
+                                                begin: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 18,
+                                                },
+                                                end: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 18,
+                                                },
+                                            },
+                                        ),
+                                        Variable(
+                                            Variable {
+                                                id: Id(
+                                                    15,
+                                                ),
+                                                name: "x0",
+                                                span: Span {
+                                                    begin: Position {
+                                                        filename: "test.rex",
+                                                        line: 1,
+                                                        column: 14,
+                                                    },
+                                                    end: Position {
+                                                        filename: "test.rex",
+                                                        line: 1,
+                                                        column: 18,
+                                                    },
+                                                },
+                                            },
+                                        ),
+                                    ],
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 14,
+                                        },
+                                        end: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 18,
+                                        },
+                                    },
+                                },
+                            ),
+                            span: Span {
+                                begin: Position {
+                                    filename: "test.rex",
+                                    line: 1,
+                                    column: 14,
+                                },
+                                end: Position {
+                                    filename: "test.rex",
+                                    line: 1,
+                                    column: 18,
+                                },
+                            },
+                        },
+                    ),
+                    Lambda(
+                        Lambda {
+                            id: Id(
+                                19,
+                            ),
+                            params: [
+                                Variable {
+                                    id: Id(
+                                        18,
+                                    ),
+                                    name: "x0",
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 22,
+                                        },
+                                        end: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 26,
+                                        },
+                                    },
+                                },
+                            ],
+                            body: Call(
+                                Call {
+                                    id: Id(
+                                        20,
+                                    ),
+                                    base: Variable(
+                                        Variable {
+                                            id: Id(
+                                                7,
+                                            ),
+                                            name: "*",
+                                            span: Span {
+                                                begin: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 22,
+                                                },
+                                                end: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 26,
+                                                },
+                                            },
+                                        },
+                                    ),
+                                    args: [
+                                        Uint(
+                                            3,
+                                            Span {
+                                                begin: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 26,
+                                                },
+                                                end: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 26,
+                                                },
+                                            },
+                                        ),
+                                        Variable(
+                                            Variable {
+                                                id: Id(
+                                                    18,
+                                                ),
+                                                name: "x0",
+                                                span: Span {
+                                                    begin: Position {
+                                                        filename: "test.rex",
+                                                        line: 1,
+                                                        column: 22,
+                                                    },
+                                                    end: Position {
+                                                        filename: "test.rex",
+                                                        line: 1,
+                                                        column: 26,
+                                                    },
+                                                },
+                                            },
+                                        ),
+                                    ],
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 22,
+                                        },
+                                        end: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 26,
+                                        },
+                                    },
+                                },
+                            ),
+                            span: Span {
+                                begin: Position {
+                                    filename: "test.rex",
+                                    line: 1,
+                                    column: 22,
+                                },
+                                end: Position {
+                                    filename: "test.rex",
+                                    line: 1,
+                                    column: 26,
+                                },
+                            },
+                        },
+                    ),
+                ],
+            ),
+            span: Span {
+                begin: Position {
+                    filename: "test.rex",
+                    line: 1,
+                    column: 14,
+                },
+                end: Position {
+                    filename: "test.rex",
+                    line: 1,
+                    column: 26,
+                },
+            },
+        },
+        Trace {
+            step: 2,
+            children: [],
+            node: Function(
+                ".",
+                [
+                    Lambda(
+                        Lambda {
+                            id: Id(
+                                13,
+                            ),
+                            params: [
+                                Variable {
+                                    id: Id(
+                                        12,
+                                    ),
+                                    name: "x0",
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 6,
+                                        },
+                                        end: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 10,
+                                        },
+                                    },
+                                },
+                            ],
+                            body: Call(
+                                Call {
+                                    id: Id(
+                                        14,
+                                    ),
+                                    base: Variable(
+                                        Variable {
+                                            id: Id(
+                                                2,
+                                            ),
+                                            name: "+",
+                                            span: Span {
+                                                begin: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 6,
+                                                },
+                                                end: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 10,
+                                                },
+                                            },
+                                        },
+                                    ),
+                                    args: [
+                                        Uint(
+                                            1,
+                                            Span {
+                                                begin: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 10,
+                                                },
+                                                end: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 10,
+                                                },
+                                            },
+                                        ),
+                                        Variable(
+                                            Variable {
+                                                id: Id(
+                                                    12,
+                                                ),
+                                                name: "x0",
+                                                span: Span {
+                                                    begin: Position {
+                                                        filename: "test.rex",
+                                                        line: 1,
+                                                        column: 6,
+                                                    },
+                                                    end: Position {
+                                                        filename: "test.rex",
+                                                        line: 1,
+                                                        column: 10,
+                                                    },
+                                                },
+                                            },
+                                        ),
+                                    ],
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 6,
+                                        },
+                                        end: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 10,
+                                        },
+                                    },
+                                },
+                            ),
+                            span: Span {
+                                begin: Position {
+                                    filename: "test.rex",
+                                    line: 1,
+                                    column: 6,
+                                },
+                                end: Position {
+                                    filename: "test.rex",
+                                    line: 1,
+                                    column: 10,
+                                },
+                            },
+                        },
+                    ),
+                    Lambda(
+                        Lambda {
+                            id: Id(
+                                22,
+                            ),
+                            params: [
+                                Variable {
+                                    id: Id(
+                                        21,
+                                    ),
+                                    name: "x0",
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                        end: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                    },
+                                },
+                            ],
+                            body: Call(
+                                Call {
+                                    id: Id(
+                                        23,
+                                    ),
+                                    base: Lambda(
+                                        Lambda {
+                                            id: Id(
+                                                16,
+                                            ),
+                                            params: [
+                                                Variable {
+                                                    id: Id(
+                                                        15,
+                                                    ),
+                                                    name: "x0",
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 14,
+                                                        },
+                                                        end: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 18,
+                                                        },
+                                                    },
+                                                },
+                                            ],
+                                            body: Call(
+                                                Call {
+                                                    id: Id(
+                                                        17,
+                                                    ),
+                                                    base: Variable(
+                                                        Variable {
+                                                            id: Id(
+                                                                5,
+                                                            ),
+                                                            name: "+",
+                                                            span: Span {
+                                                                begin: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 14,
+                                                                },
+                                                                end: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 18,
+                                                                },
+                                                            },
+                                                        },
+                                                    ),
+                                                    args: [
+                                                        Uint(
+                                                            2,
+                                                            Span {
+                                                                begin: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 18,
+                                                                },
+                                                                end: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 18,
+                                                                },
+                                                            },
+                                                        ),
+                                                        Variable(
+                                                            Variable {
+                                                                id: Id(
+                                                                    15,
+                                                                ),
+                                                                name: "x0",
+                                                                span: Span {
+                                                                    begin: Position {
+                                                                        filename: "test.rex",
+                                                                        line: 1,
+                                                                        column: 14,
+                                                                    },
+                                                                    end: Position {
+                                                                        filename: "test.rex",
+                                                                        line: 1,
+                                                                        column: 18,
+                                                                    },
+                                                                },
+                                                            },
+                                                        ),
+                                                    ],
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 14,
+                                                        },
+                                                        end: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 18,
+                                                        },
+                                                    },
+                                                },
+                                            ),
+                                            span: Span {
+                                                begin: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 14,
+                                                },
+                                                end: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 18,
+                                                },
+                                            },
+                                        },
+                                    ),
+                                    args: [
+                                        Call(
+                                            Call {
+                                                id: Id(
+                                                    24,
+                                                ),
+                                                base: Lambda(
+                                                    Lambda {
+                                                        id: Id(
+                                                            19,
+                                                        ),
+                                                        params: [
+                                                            Variable {
+                                                                id: Id(
+                                                                    18,
+                                                                ),
+                                                                name: "x0",
+                                                                span: Span {
+                                                                    begin: Position {
+                                                                        filename: "test.rex",
+                                                                        line: 1,
+                                                                        column: 22,
+                                                                    },
+                                                                    end: Position {
+                                                                        filename: "test.rex",
+                                                                        line: 1,
+                                                                        column: 26,
+                                                                    },
+                                                                },
+                                                            },
+                                                        ],
+                                                        body: Call(
+                                                            Call {
+                                                                id: Id(
+                                                                    20,
+                                                                ),
+                                                                base: Variable(
+                                                                    Variable {
+                                                                        id: Id(
+                                                                            7,
+                                                                        ),
+                                                                        name: "*",
+                                                                        span: Span {
+                                                                            begin: Position {
+                                                                                filename: "test.rex",
+                                                                                line: 1,
+                                                                                column: 22,
+                                                                            },
+                                                                            end: Position {
+                                                                                filename: "test.rex",
+                                                                                line: 1,
+                                                                                column: 26,
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                ),
+                                                                args: [
+                                                                    Uint(
+                                                                        3,
+                                                                        Span {
+                                                                            begin: Position {
+                                                                                filename: "test.rex",
+                                                                                line: 1,
+                                                                                column: 26,
+                                                                            },
+                                                                            end: Position {
+                                                                                filename: "test.rex",
+                                                                                line: 1,
+                                                                                column: 26,
+                                                                            },
+                                                                        },
+                                                                    ),
+                                                                    Variable(
+                                                                        Variable {
+                                                                            id: Id(
+                                                                                18,
+                                                                            ),
+                                                                            name: "x0",
+                                                                            span: Span {
+                                                                                begin: Position {
+                                                                                    filename: "test.rex",
+                                                                                    line: 1,
+                                                                                    column: 22,
+                                                                                },
+                                                                                end: Position {
+                                                                                    filename: "test.rex",
+                                                                                    line: 1,
+                                                                                    column: 26,
+                                                                                },
+                                                                            },
+                                                                        },
+                                                                    ),
+                                                                ],
+                                                                span: Span {
+                                                                    begin: Position {
+                                                                        filename: "test.rex",
+                                                                        line: 1,
+                                                                        column: 22,
+                                                                    },
+                                                                    end: Position {
+                                                                        filename: "test.rex",
+                                                                        line: 1,
+                                                                        column: 26,
+                                                                    },
+                                                                },
+                                                            },
+                                                        ),
+                                                        span: Span {
+                                                            begin: Position {
+                                                                filename: "test.rex",
+                                                                line: 1,
+                                                                column: 22,
+                                                            },
+                                                            end: Position {
+                                                                filename: "test.rex",
+                                                                line: 1,
+                                                                column: 26,
+                                                            },
+                                                        },
+                                                    },
+                                                ),
+                                                args: [
+                                                    Variable(
+                                                        Variable {
+                                                            id: Id(
+                                                                21,
+                                                            ),
+                                                            name: "x0",
+                                                            span: Span {
+                                                                begin: Position {
+                                                                    filename: "",
+                                                                    line: 0,
+                                                                    column: 0,
+                                                                },
+                                                                end: Position {
+                                                                    filename: "",
+                                                                    line: 0,
+                                                                    column: 0,
+                                                                },
+                                                            },
+                                                        },
+                                                    ),
+                                                ],
+                                                span: Span {
+                                                    begin: Position {
+                                                        filename: "",
+                                                        line: 0,
+                                                        column: 0,
+                                                    },
+                                                    end: Position {
+                                                        filename: "",
+                                                        line: 0,
+                                                        column: 0,
+                                                    },
+                                                },
+                                            },
+                                        ),
+                                    ],
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                        end: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                    },
+                                },
+                            ),
+                            span: Span {
+                                begin: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                                end: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                            },
+                        },
+                    ),
+                ],
+            ),
+            span: Span {
+                begin: Position {
+                    filename: "test.rex",
+                    line: 1,
+                    column: 5,
+                },
+                end: Position {
+                    filename: "test.rex",
+                    line: 1,
+                    column: 27,
+                },
+            },
+        },
+        Trace {
+            step: 3,
+            children: [],
+            node: ListCtor,
+            span: Span {
+                begin: Position {
+                    filename: "test.rex",
+                    line: 1,
+                    column: 29,
+                },
+                end: Position {
+                    filename: "test.rex",
+                    line: 1,
+                    column: 40,
+                },
+            },
+        },
+        Trace {
+            step: 4,
+            children: [
+                Trace {
+                    step: 5,
+                    children: [
+                        Trace {
+                            step: 6,
+                            children: [
+                                Trace {
+                                    step: 7,
+                                    children: [
+                                        Trace {
+                                            step: 8,
+                                            children: [
+                                                Trace {
+                                                    step: 9,
+                                                    children: [
+                                                        Trace {
+                                                            step: 10,
+                                                            children: [],
+                                                            node: Function(
+                                                                "*",
+                                                                [
+                                                                    U64(
+                                                                        3,
+                                                                    ),
+                                                                    U64(
+                                                                        1,
+                                                                    ),
+                                                                ],
+                                                            ),
+                                                            span: Span {
+                                                                begin: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 22,
+                                                                },
+                                                                end: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 26,
+                                                                },
+                                                            },
+                                                        },
+                                                    ],
+                                                    node: Lambda(
+                                                        [],
+                                                    ),
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "",
+                                                            line: 0,
+                                                            column: 0,
+                                                        },
+                                                        end: Position {
+                                                            filename: "",
+                                                            line: 0,
+                                                            column: 0,
+                                                        },
+                                                    },
+                                                },
+                                                Trace {
+                                                    step: 10,
+                                                    children: [],
+                                                    node: Function(
+                                                        "+",
+                                                        [
+                                                            U64(
+                                                                2,
+                                                            ),
+                                                            U64(
+                                                                3,
+                                                            ),
+                                                        ],
+                                                    ),
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 14,
+                                                        },
+                                                        end: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 18,
+                                                        },
+                                                    },
+                                                },
+                                            ],
+                                            node: Lambda(
+                                                [],
+                                            ),
+                                            span: Span {
+                                                begin: Position {
+                                                    filename: "",
+                                                    line: 0,
+                                                    column: 0,
+                                                },
+                                                end: Position {
+                                                    filename: "",
+                                                    line: 0,
+                                                    column: 0,
+                                                },
+                                            },
+                                        },
+                                    ],
+                                    node: Lambda(
+                                        [],
+                                    ),
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                        end: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                    },
+                                },
+                                Trace {
+                                    step: 8,
+                                    children: [],
+                                    node: Function(
+                                        "+",
+                                        [
+                                            U64(
+                                                1,
+                                            ),
+                                            U64(
+                                                5,
+                                            ),
+                                        ],
+                                    ),
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 6,
+                                        },
+                                        end: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 10,
+                                        },
+                                    },
+                                },
+                            ],
+                            node: Lambda(
+                                [],
+                            ),
+                            span: Span {
+                                begin: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                                end: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                            },
+                        },
+                    ],
+                    node: Lambda(
+                        [],
+                    ),
+                    span: Span {
+                        begin: Position {
+                            filename: "",
+                            line: 0,
+                            column: 0,
+                        },
+                        end: Position {
+                            filename: "",
+                            line: 0,
+                            column: 0,
+                        },
+                    },
+                },
+                Trace {
+                    step: 6,
+                    children: [
+                        Trace {
+                            step: 7,
+                            children: [
+                                Trace {
+                                    step: 8,
+                                    children: [
+                                        Trace {
+                                            step: 9,
+                                            children: [
+                                                Trace {
+                                                    step: 10,
+                                                    children: [
+                                                        Trace {
+                                                            step: 11,
+                                                            children: [],
+                                                            node: Function(
+                                                                "*",
+                                                                [
+                                                                    U64(
+                                                                        3,
+                                                                    ),
+                                                                    U64(
+                                                                        2,
+                                                                    ),
+                                                                ],
+                                                            ),
+                                                            span: Span {
+                                                                begin: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 22,
+                                                                },
+                                                                end: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 26,
+                                                                },
+                                                            },
+                                                        },
+                                                    ],
+                                                    node: Lambda(
+                                                        [],
+                                                    ),
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "",
+                                                            line: 0,
+                                                            column: 0,
+                                                        },
+                                                        end: Position {
+                                                            filename: "",
+                                                            line: 0,
+                                                            column: 0,
+                                                        },
+                                                    },
+                                                },
+                                                Trace {
+                                                    step: 11,
+                                                    children: [],
+                                                    node: Function(
+                                                        "+",
+                                                        [
+                                                            U64(
+                                                                2,
+                                                            ),
+                                                            U64(
+                                                                6,
+                                                            ),
+                                                        ],
+                                                    ),
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 14,
+                                                        },
+                                                        end: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 18,
+                                                        },
+                                                    },
+                                                },
+                                            ],
+                                            node: Lambda(
+                                                [],
+                                            ),
+                                            span: Span {
+                                                begin: Position {
+                                                    filename: "",
+                                                    line: 0,
+                                                    column: 0,
+                                                },
+                                                end: Position {
+                                                    filename: "",
+                                                    line: 0,
+                                                    column: 0,
+                                                },
+                                            },
+                                        },
+                                    ],
+                                    node: Lambda(
+                                        [],
+                                    ),
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                        end: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                    },
+                                },
+                                Trace {
+                                    step: 9,
+                                    children: [],
+                                    node: Function(
+                                        "+",
+                                        [
+                                            U64(
+                                                1,
+                                            ),
+                                            U64(
+                                                8,
+                                            ),
+                                        ],
+                                    ),
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 6,
+                                        },
+                                        end: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 10,
+                                        },
+                                    },
+                                },
+                            ],
+                            node: Lambda(
+                                [],
+                            ),
+                            span: Span {
+                                begin: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                                end: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                            },
+                        },
+                    ],
+                    node: Lambda(
+                        [],
+                    ),
+                    span: Span {
+                        begin: Position {
+                            filename: "",
+                            line: 0,
+                            column: 0,
+                        },
+                        end: Position {
+                            filename: "",
+                            line: 0,
+                            column: 0,
+                        },
+                    },
+                },
+                Trace {
+                    step: 7,
+                    children: [
+                        Trace {
+                            step: 8,
+                            children: [
+                                Trace {
+                                    step: 9,
+                                    children: [
+                                        Trace {
+                                            step: 10,
+                                            children: [
+                                                Trace {
+                                                    step: 11,
+                                                    children: [
+                                                        Trace {
+                                                            step: 12,
+                                                            children: [],
+                                                            node: Function(
+                                                                "*",
+                                                                [
+                                                                    U64(
+                                                                        3,
+                                                                    ),
+                                                                    U64(
+                                                                        3,
+                                                                    ),
+                                                                ],
+                                                            ),
+                                                            span: Span {
+                                                                begin: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 22,
+                                                                },
+                                                                end: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 26,
+                                                                },
+                                                            },
+                                                        },
+                                                    ],
+                                                    node: Lambda(
+                                                        [],
+                                                    ),
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "",
+                                                            line: 0,
+                                                            column: 0,
+                                                        },
+                                                        end: Position {
+                                                            filename: "",
+                                                            line: 0,
+                                                            column: 0,
+                                                        },
+                                                    },
+                                                },
+                                                Trace {
+                                                    step: 12,
+                                                    children: [],
+                                                    node: Function(
+                                                        "+",
+                                                        [
+                                                            U64(
+                                                                2,
+                                                            ),
+                                                            U64(
+                                                                9,
+                                                            ),
+                                                        ],
+                                                    ),
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 14,
+                                                        },
+                                                        end: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 18,
+                                                        },
+                                                    },
+                                                },
+                                            ],
+                                            node: Lambda(
+                                                [],
+                                            ),
+                                            span: Span {
+                                                begin: Position {
+                                                    filename: "",
+                                                    line: 0,
+                                                    column: 0,
+                                                },
+                                                end: Position {
+                                                    filename: "",
+                                                    line: 0,
+                                                    column: 0,
+                                                },
+                                            },
+                                        },
+                                    ],
+                                    node: Lambda(
+                                        [],
+                                    ),
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                        end: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                    },
+                                },
+                                Trace {
+                                    step: 10,
+                                    children: [],
+                                    node: Function(
+                                        "+",
+                                        [
+                                            U64(
+                                                1,
+                                            ),
+                                            U64(
+                                                11,
+                                            ),
+                                        ],
+                                    ),
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 6,
+                                        },
+                                        end: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 10,
+                                        },
+                                    },
+                                },
+                            ],
+                            node: Lambda(
+                                [],
+                            ),
+                            span: Span {
+                                begin: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                                end: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                            },
+                        },
+                    ],
+                    node: Lambda(
+                        [],
+                    ),
+                    span: Span {
+                        begin: Position {
+                            filename: "",
+                            line: 0,
+                            column: 0,
+                        },
+                        end: Position {
+                            filename: "",
+                            line: 0,
+                            column: 0,
+                        },
+                    },
+                },
+                Trace {
+                    step: 8,
+                    children: [
+                        Trace {
+                            step: 9,
+                            children: [
+                                Trace {
+                                    step: 10,
+                                    children: [
+                                        Trace {
+                                            step: 11,
+                                            children: [
+                                                Trace {
+                                                    step: 12,
+                                                    children: [
+                                                        Trace {
+                                                            step: 13,
+                                                            children: [],
+                                                            node: Function(
+                                                                "*",
+                                                                [
+                                                                    U64(
+                                                                        3,
+                                                                    ),
+                                                                    U64(
+                                                                        4,
+                                                                    ),
+                                                                ],
+                                                            ),
+                                                            span: Span {
+                                                                begin: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 22,
+                                                                },
+                                                                end: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 26,
+                                                                },
+                                                            },
+                                                        },
+                                                    ],
+                                                    node: Lambda(
+                                                        [],
+                                                    ),
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "",
+                                                            line: 0,
+                                                            column: 0,
+                                                        },
+                                                        end: Position {
+                                                            filename: "",
+                                                            line: 0,
+                                                            column: 0,
+                                                        },
+                                                    },
+                                                },
+                                                Trace {
+                                                    step: 13,
+                                                    children: [],
+                                                    node: Function(
+                                                        "+",
+                                                        [
+                                                            U64(
+                                                                2,
+                                                            ),
+                                                            U64(
+                                                                12,
+                                                            ),
+                                                        ],
+                                                    ),
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 14,
+                                                        },
+                                                        end: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 18,
+                                                        },
+                                                    },
+                                                },
+                                            ],
+                                            node: Lambda(
+                                                [],
+                                            ),
+                                            span: Span {
+                                                begin: Position {
+                                                    filename: "",
+                                                    line: 0,
+                                                    column: 0,
+                                                },
+                                                end: Position {
+                                                    filename: "",
+                                                    line: 0,
+                                                    column: 0,
+                                                },
+                                            },
+                                        },
+                                    ],
+                                    node: Lambda(
+                                        [],
+                                    ),
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                        end: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                    },
+                                },
+                                Trace {
+                                    step: 11,
+                                    children: [],
+                                    node: Function(
+                                        "+",
+                                        [
+                                            U64(
+                                                1,
+                                            ),
+                                            U64(
+                                                14,
+                                            ),
+                                        ],
+                                    ),
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 6,
+                                        },
+                                        end: Position {
+                                            filename: "test.rex",
+                                            line: 1,
+                                            column: 10,
+                                        },
+                                    },
+                                },
+                            ],
+                            node: Lambda(
+                                [],
+                            ),
+                            span: Span {
+                                begin: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                                end: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                            },
+                        },
+                    ],
+                    node: Lambda(
+                        [],
+                    ),
+                    span: Span {
+                        begin: Position {
+                            filename: "",
+                            line: 0,
+                            column: 0,
+                        },
+                        end: Position {
+                            filename: "",
+                            line: 0,
+                            column: 0,
+                        },
+                    },
+                },
+                Trace {
+                    step: 9,
+                    children: [],
+                    node: ListCtor,
+                    span: Span {
+                        begin: Position {
+                            filename: "",
+                            line: 0,
+                            column: 0,
+                        },
+                        end: Position {
+                            filename: "",
+                            line: 0,
+                            column: 0,
+                        },
+                    },
+                },
+            ],
+            node: Function(
+                "map",
+                [
+                    Lambda(
+                        Lambda {
+                            id: Id(
+                                26,
+                            ),
+                            params: [
+                                Variable {
+                                    id: Id(
+                                        25,
+                                    ),
+                                    name: "x0",
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                        end: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                    },
+                                },
+                            ],
+                            body: Call(
+                                Call {
+                                    id: Id(
+                                        27,
+                                    ),
+                                    base: Lambda(
+                                        Lambda {
+                                            id: Id(
+                                                13,
+                                            ),
+                                            params: [
+                                                Variable {
+                                                    id: Id(
+                                                        12,
+                                                    ),
+                                                    name: "x0",
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 6,
+                                                        },
+                                                        end: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 10,
+                                                        },
+                                                    },
+                                                },
+                                            ],
+                                            body: Call(
+                                                Call {
+                                                    id: Id(
+                                                        14,
+                                                    ),
+                                                    base: Variable(
+                                                        Variable {
+                                                            id: Id(
+                                                                2,
+                                                            ),
+                                                            name: "+",
+                                                            span: Span {
+                                                                begin: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 6,
+                                                                },
+                                                                end: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 10,
+                                                                },
+                                                            },
+                                                        },
+                                                    ),
+                                                    args: [
+                                                        Uint(
+                                                            1,
+                                                            Span {
+                                                                begin: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 10,
+                                                                },
+                                                                end: Position {
+                                                                    filename: "test.rex",
+                                                                    line: 1,
+                                                                    column: 10,
+                                                                },
+                                                            },
+                                                        ),
+                                                        Variable(
+                                                            Variable {
+                                                                id: Id(
+                                                                    12,
+                                                                ),
+                                                                name: "x0",
+                                                                span: Span {
+                                                                    begin: Position {
+                                                                        filename: "test.rex",
+                                                                        line: 1,
+                                                                        column: 6,
+                                                                    },
+                                                                    end: Position {
+                                                                        filename: "test.rex",
+                                                                        line: 1,
+                                                                        column: 10,
+                                                                    },
+                                                                },
+                                                            },
+                                                        ),
+                                                    ],
+                                                    span: Span {
+                                                        begin: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 6,
+                                                        },
+                                                        end: Position {
+                                                            filename: "test.rex",
+                                                            line: 1,
+                                                            column: 10,
+                                                        },
+                                                    },
+                                                },
+                                            ),
+                                            span: Span {
+                                                begin: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 6,
+                                                },
+                                                end: Position {
+                                                    filename: "test.rex",
+                                                    line: 1,
+                                                    column: 10,
+                                                },
+                                            },
+                                        },
+                                    ),
+                                    args: [
+                                        Call(
+                                            Call {
+                                                id: Id(
+                                                    28,
+                                                ),
+                                                base: Lambda(
+                                                    Lambda {
+                                                        id: Id(
+                                                            22,
+                                                        ),
+                                                        params: [
+                                                            Variable {
+                                                                id: Id(
+                                                                    21,
+                                                                ),
+                                                                name: "x0",
+                                                                span: Span {
+                                                                    begin: Position {
+                                                                        filename: "",
+                                                                        line: 0,
+                                                                        column: 0,
+                                                                    },
+                                                                    end: Position {
+                                                                        filename: "",
+                                                                        line: 0,
+                                                                        column: 0,
+                                                                    },
+                                                                },
+                                                            },
+                                                        ],
+                                                        body: Call(
+                                                            Call {
+                                                                id: Id(
+                                                                    23,
+                                                                ),
+                                                                base: Lambda(
+                                                                    Lambda {
+                                                                        id: Id(
+                                                                            16,
+                                                                        ),
+                                                                        params: [
+                                                                            Variable {
+                                                                                id: Id(
+                                                                                    15,
+                                                                                ),
+                                                                                name: "x0",
+                                                                                span: Span {
+                                                                                    begin: Position {
+                                                                                        filename: "test.rex",
+                                                                                        line: 1,
+                                                                                        column: 14,
+                                                                                    },
+                                                                                    end: Position {
+                                                                                        filename: "test.rex",
+                                                                                        line: 1,
+                                                                                        column: 18,
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        ],
+                                                                        body: Call(
+                                                                            Call {
+                                                                                id: Id(
+                                                                                    17,
+                                                                                ),
+                                                                                base: Variable(
+                                                                                    Variable {
+                                                                                        id: Id(
+                                                                                            5,
+                                                                                        ),
+                                                                                        name: "+",
+                                                                                        span: Span {
+                                                                                            begin: Position {
+                                                                                                filename: "test.rex",
+                                                                                                line: 1,
+                                                                                                column: 14,
+                                                                                            },
+                                                                                            end: Position {
+                                                                                                filename: "test.rex",
+                                                                                                line: 1,
+                                                                                                column: 18,
+                                                                                            },
+                                                                                        },
+                                                                                    },
+                                                                                ),
+                                                                                args: [
+                                                                                    Uint(
+                                                                                        2,
+                                                                                        Span {
+                                                                                            begin: Position {
+                                                                                                filename: "test.rex",
+                                                                                                line: 1,
+                                                                                                column: 18,
+                                                                                            },
+                                                                                            end: Position {
+                                                                                                filename: "test.rex",
+                                                                                                line: 1,
+                                                                                                column: 18,
+                                                                                            },
+                                                                                        },
+                                                                                    ),
+                                                                                    Variable(
+                                                                                        Variable {
+                                                                                            id: Id(
+                                                                                                15,
+                                                                                            ),
+                                                                                            name: "x0",
+                                                                                            span: Span {
+                                                                                                begin: Position {
+                                                                                                    filename: "test.rex",
+                                                                                                    line: 1,
+                                                                                                    column: 14,
+                                                                                                },
+                                                                                                end: Position {
+                                                                                                    filename: "test.rex",
+                                                                                                    line: 1,
+                                                                                                    column: 18,
+                                                                                                },
+                                                                                            },
+                                                                                        },
+                                                                                    ),
+                                                                                ],
+                                                                                span: Span {
+                                                                                    begin: Position {
+                                                                                        filename: "test.rex",
+                                                                                        line: 1,
+                                                                                        column: 14,
+                                                                                    },
+                                                                                    end: Position {
+                                                                                        filename: "test.rex",
+                                                                                        line: 1,
+                                                                                        column: 18,
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        ),
+                                                                        span: Span {
+                                                                            begin: Position {
+                                                                                filename: "test.rex",
+                                                                                line: 1,
+                                                                                column: 14,
+                                                                            },
+                                                                            end: Position {
+                                                                                filename: "test.rex",
+                                                                                line: 1,
+                                                                                column: 18,
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                ),
+                                                                args: [
+                                                                    Call(
+                                                                        Call {
+                                                                            id: Id(
+                                                                                24,
+                                                                            ),
+                                                                            base: Lambda(
+                                                                                Lambda {
+                                                                                    id: Id(
+                                                                                        19,
+                                                                                    ),
+                                                                                    params: [
+                                                                                        Variable {
+                                                                                            id: Id(
+                                                                                                18,
+                                                                                            ),
+                                                                                            name: "x0",
+                                                                                            span: Span {
+                                                                                                begin: Position {
+                                                                                                    filename: "test.rex",
+                                                                                                    line: 1,
+                                                                                                    column: 22,
+                                                                                                },
+                                                                                                end: Position {
+                                                                                                    filename: "test.rex",
+                                                                                                    line: 1,
+                                                                                                    column: 26,
+                                                                                                },
+                                                                                            },
+                                                                                        },
+                                                                                    ],
+                                                                                    body: Call(
+                                                                                        Call {
+                                                                                            id: Id(
+                                                                                                20,
+                                                                                            ),
+                                                                                            base: Variable(
+                                                                                                Variable {
+                                                                                                    id: Id(
+                                                                                                        7,
+                                                                                                    ),
+                                                                                                    name: "*",
+                                                                                                    span: Span {
+                                                                                                        begin: Position {
+                                                                                                            filename: "test.rex",
+                                                                                                            line: 1,
+                                                                                                            column: 22,
+                                                                                                        },
+                                                                                                        end: Position {
+                                                                                                            filename: "test.rex",
+                                                                                                            line: 1,
+                                                                                                            column: 26,
+                                                                                                        },
+                                                                                                    },
+                                                                                                },
+                                                                                            ),
+                                                                                            args: [
+                                                                                                Uint(
+                                                                                                    3,
+                                                                                                    Span {
+                                                                                                        begin: Position {
+                                                                                                            filename: "test.rex",
+                                                                                                            line: 1,
+                                                                                                            column: 26,
+                                                                                                        },
+                                                                                                        end: Position {
+                                                                                                            filename: "test.rex",
+                                                                                                            line: 1,
+                                                                                                            column: 26,
+                                                                                                        },
+                                                                                                    },
+                                                                                                ),
+                                                                                                Variable(
+                                                                                                    Variable {
+                                                                                                        id: Id(
+                                                                                                            18,
+                                                                                                        ),
+                                                                                                        name: "x0",
+                                                                                                        span: Span {
+                                                                                                            begin: Position {
+                                                                                                                filename: "test.rex",
+                                                                                                                line: 1,
+                                                                                                                column: 22,
+                                                                                                            },
+                                                                                                            end: Position {
+                                                                                                                filename: "test.rex",
+                                                                                                                line: 1,
+                                                                                                                column: 26,
+                                                                                                            },
+                                                                                                        },
+                                                                                                    },
+                                                                                                ),
+                                                                                            ],
+                                                                                            span: Span {
+                                                                                                begin: Position {
+                                                                                                    filename: "test.rex",
+                                                                                                    line: 1,
+                                                                                                    column: 22,
+                                                                                                },
+                                                                                                end: Position {
+                                                                                                    filename: "test.rex",
+                                                                                                    line: 1,
+                                                                                                    column: 26,
+                                                                                                },
+                                                                                            },
+                                                                                        },
+                                                                                    ),
+                                                                                    span: Span {
+                                                                                        begin: Position {
+                                                                                            filename: "test.rex",
+                                                                                            line: 1,
+                                                                                            column: 22,
+                                                                                        },
+                                                                                        end: Position {
+                                                                                            filename: "test.rex",
+                                                                                            line: 1,
+                                                                                            column: 26,
+                                                                                        },
+                                                                                    },
+                                                                                },
+                                                                            ),
+                                                                            args: [
+                                                                                Variable(
+                                                                                    Variable {
+                                                                                        id: Id(
+                                                                                            21,
+                                                                                        ),
+                                                                                        name: "x0",
+                                                                                        span: Span {
+                                                                                            begin: Position {
+                                                                                                filename: "",
+                                                                                                line: 0,
+                                                                                                column: 0,
+                                                                                            },
+                                                                                            end: Position {
+                                                                                                filename: "",
+                                                                                                line: 0,
+                                                                                                column: 0,
+                                                                                            },
+                                                                                        },
+                                                                                    },
+                                                                                ),
+                                                                            ],
+                                                                            span: Span {
+                                                                                begin: Position {
+                                                                                    filename: "",
+                                                                                    line: 0,
+                                                                                    column: 0,
+                                                                                },
+                                                                                end: Position {
+                                                                                    filename: "",
+                                                                                    line: 0,
+                                                                                    column: 0,
+                                                                                },
+                                                                            },
+                                                                        },
+                                                                    ),
+                                                                ],
+                                                                span: Span {
+                                                                    begin: Position {
+                                                                        filename: "",
+                                                                        line: 0,
+                                                                        column: 0,
+                                                                    },
+                                                                    end: Position {
+                                                                        filename: "",
+                                                                        line: 0,
+                                                                        column: 0,
+                                                                    },
+                                                                },
+                                                            },
+                                                        ),
+                                                        span: Span {
+                                                            begin: Position {
+                                                                filename: "",
+                                                                line: 0,
+                                                                column: 0,
+                                                            },
+                                                            end: Position {
+                                                                filename: "",
+                                                                line: 0,
+                                                                column: 0,
+                                                            },
+                                                        },
+                                                    },
+                                                ),
+                                                args: [
+                                                    Variable(
+                                                        Variable {
+                                                            id: Id(
+                                                                25,
+                                                            ),
+                                                            name: "x0",
+                                                            span: Span {
+                                                                begin: Position {
+                                                                    filename: "",
+                                                                    line: 0,
+                                                                    column: 0,
+                                                                },
+                                                                end: Position {
+                                                                    filename: "",
+                                                                    line: 0,
+                                                                    column: 0,
+                                                                },
+                                                            },
+                                                        },
+                                                    ),
+                                                ],
+                                                span: Span {
+                                                    begin: Position {
+                                                        filename: "",
+                                                        line: 0,
+                                                        column: 0,
+                                                    },
+                                                    end: Position {
+                                                        filename: "",
+                                                        line: 0,
+                                                        column: 0,
+                                                    },
+                                                },
+                                            },
+                                        ),
+                                    ],
+                                    span: Span {
+                                        begin: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                        end: Position {
+                                            filename: "",
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                    },
+                                },
+                            ),
+                            span: Span {
+                                begin: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                                end: Position {
+                                    filename: "",
+                                    line: 0,
+                                    column: 0,
+                                },
+                            },
+                        },
+                    ),
+                    List(
+                        [
+                            U64(
+                                1,
+                            ),
+                            U64(
+                                2,
+                            ),
+                            U64(
+                                3,
+                            ),
+                            U64(
+                                4,
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            span: Span {
+                begin: Position {
+                    filename: "test.rex",
+                    line: 1,
+                    column: 1,
+                },
+                end: Position {
+                    filename: "test.rex",
+                    line: 1,
+                    column: 40,
+                },
+            },
+        },
+    ],
+    node: Root,
+    span: Span {
+        begin: Position {
+            filename: "test.rex",
+            line: 1,
+            column: 1,
+        },
+        end: Position {
+            filename: "test.rex",
+            line: 1,
+            column: 40,
+        },
+    },
+}

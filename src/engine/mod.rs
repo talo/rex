@@ -7,82 +7,13 @@ use crate::{
     span::{Span, Spanned as _},
 };
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Value {
-    Null,
-    Bool(bool),
-    U64(u64),
-    I64(i64),
-    F64(f64),
-    String(String),
-    List(Vec<Value>),
-    Function(Function),
-    Lambda(Lambda),
-}
+pub mod error;
+pub mod trace;
+pub mod value;
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum TraceNode {
-    Root,
-    ListCtor,
-    Lambda(Vec<String>),
-    Function(String, Vec<Value>),
-    Error(Error),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Trace {
-    pub step: u64,
-    pub children: Vec<Trace>,
-    pub node: TraceNode,
-    pub span: Span,
-}
-
-impl Trace {
-    pub fn from_span(span: Span) -> Self {
-        Self {
-            step: 0,
-            children: Vec::new(),
-            node: TraceNode::Root,
-            span,
-        }
-    }
-
-    pub fn step(&mut self, node: TraceNode, span: Span) -> &mut Trace {
-        let n = self.children.len();
-        let next_step = if n > 0 {
-            unsafe { self.children.get_unchecked_mut(n - 1) }.step + 1
-        } else {
-            self.step + 1
-        };
-        self.children.push(Self {
-            step: next_step,
-            children: Vec::new(),
-            node,
-            span,
-        });
-        unsafe { self.children.get_unchecked_mut(n) }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum Error {
-    #[error("custom error: {message}")]
-    Custom { message: String },
-    #[error("type error: expected {expected}, got {got}")]
-    Type { expected: String, got: String },
-    #[error("variable not found: {name}")]
-    VarNotFound { name: String },
-    #[error("division by zero")]
-    DivByZero,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Function {
-    pub id: Id,
-    pub name: String,
-    pub params: Vec<Type>,
-    pub ret: Type,
-}
+pub use error::*;
+pub use trace::*;
+pub use value::*;
 
 #[async_trait::async_trait]
 pub trait Runner {
@@ -174,11 +105,11 @@ where
         span: &Span,
         xs: Vec<IR>,
     ) -> Result<Value, Error> {
-        let step = trace.step(TraceNode::ListCtor, span.clone());
         let mut ys = Vec::new();
         for x in xs {
-            ys.push(self.eval(step, x).await?);
+            ys.push(self.eval(trace, x).await?);
         }
+        trace.step(TraceNode::ListCtor, span.clone());
         Ok(Value::List(ys))
     }
 
@@ -189,11 +120,18 @@ where
         while call.args.len() > 0 {
             match base {
                 Value::Lambda(mut lam) => {
-                    while call.args.len() > 0 && lam.params.len() > 0 {
-                        let arg = call.args.pop_front().unwrap();
+                    let mut trace_params = Vec::new();
+                    let mut trace_args = Vec::new();
+                    while lam.params.len() > 0 && call.args.len() > 0 {
                         let var = lam.params.pop_front().unwrap();
-                        self.replace_var_in_lambda(&mut lam, var.id, arg);
+                        let arg = call.args.pop_front().unwrap();
+                        let arg = self.eval(trace, arg).await?;
+                        trace_params.push(var.name.clone());
+                        trace_args.push(arg.clone());
+                        self.replace_var_in_lambda(&mut lam, var.id, value_to_ir(arg));
                     }
+                    let trace =
+                        trace.step(TraceNode::Lambda(trace_params, trace_args), span.clone());
                     if lam.params.len() > 0 {
                         return Ok(Value::Lambda(lam));
                     }
@@ -235,7 +173,7 @@ where
                             args.push(self.eval(trace, call.args.pop_front().unwrap()).await?);
                         }
 
-                        trace.step(
+                        let trace = trace.step(
                             TraceNode::Function(f.name.clone(), args.clone()),
                             span.clone(),
                         );
@@ -528,17 +466,19 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, _trace) = engine.run(ir).await;
+        let (result, trace) = engine.run(ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
+        println!("{}", trace);
 
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\x -> x 1) ((+) 2)"#));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, _trace) = engine.run(ir).await;
+        let (result, trace) = engine.run(ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
+        println!("{}", trace);
     }
 
     #[tokio::test]
@@ -547,7 +487,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, _trace) = engine.run(ir).await;
+        let (result, trace) = engine.run(ir).await;
         let value = result.unwrap();
         assert_eq!(
             value,
@@ -580,6 +520,7 @@ mod test {
                 span: Span::new("test.rex", 1, 1, 1, 5),
             })
         );
+        println!("{}", trace);
     }
 
     #[tokio::test]
@@ -588,9 +529,10 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, _trace) = engine.run(ir).await;
+        let (result, trace) = engine.run(ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(15));
+        println!("{}", trace);
     }
 
     #[tokio::test]
@@ -602,7 +544,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(OpRunner, resolver.curr_id);
-        let (result, _trace) = engine.run(ir).await;
+        let (result, trace) = engine.run(ir).await;
         let value = result.unwrap();
         assert_eq!(
             value,
@@ -613,6 +555,7 @@ mod test {
                 Value::U64(15)
             ])
         );
+        println!("{}", trace);
     }
 
     #[tokio::test]
