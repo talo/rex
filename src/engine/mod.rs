@@ -17,10 +17,14 @@ pub use value::*;
 
 #[async_trait::async_trait]
 pub trait Runner {
-    async fn lookup(&mut self, var: &Variable) -> Result<Option<Value>, Error>;
+    type Ctx;
+
+    async fn lookup(&mut self, ctx: &mut Self::Ctx, var: &Variable)
+        -> Result<Option<Value>, Error>;
     async fn run(
         &mut self,
         engine: &mut Engine,
+        ctx: &mut Self::Ctx,
         trace: &mut Trace,
         f: Function,
         args: VecDeque<Value>,
@@ -39,10 +43,14 @@ impl Engine {
     pub async fn run<R: Runner + Send>(
         &mut self,
         runner: &mut R,
+        mut ctx: R::Ctx,
         ir: IR,
-    ) -> (Result<Value, Error>, Trace) {
+    ) -> (Result<Value, Error>, Trace)
+    where
+        R::Ctx: Send,
+    {
         let mut trace = Trace::from_span(ir.span().clone());
-        let result = self.eval(runner, &mut trace, ir).await;
+        let result = self.eval(runner, &mut ctx, &mut trace, ir).await;
         (result, trace)
     }
 
@@ -50,20 +58,24 @@ impl Engine {
     pub async fn eval<R: Runner + Send>(
         &mut self,
         runner: &mut R,
+        ctx: &mut R::Ctx,
         trace: &mut Trace,
         ir: IR,
-    ) -> Result<Value, Error> {
+    ) -> Result<Value, Error>
+    where
+        R::Ctx: Send,
+    {
         match ir {
             IR::Null(span, ..) => self.eval_null(trace, &span).await,
             IR::Bool(x, span, ..) => self.eval_bool(trace, &span, x).await,
             IR::Uint(x, span, ..) => self.eval_int(trace, &span, x).await,
             IR::Float(x, span, ..) => self.eval_float(trace, &span, x).await,
             IR::String(x, span, ..) => self.eval_string(trace, &span, x).await,
-            IR::List(xs, span, ..) => self.eval_list(runner, trace, &span, xs).await,
-            IR::Record(xs, span, ..) => self.eval_record(runner, trace, &span, xs).await,
-            IR::Call(call) => self.eval_call(runner, trace, call).await,
+            IR::List(xs, span, ..) => self.eval_list(runner, ctx, trace, &span, xs).await,
+            IR::Record(xs, span, ..) => self.eval_record(runner, ctx, trace, &span, xs).await,
+            IR::Call(call) => self.eval_call(runner, ctx, trace, call).await,
             IR::Lambda(lam) => self.eval_lambda(trace, lam).await,
-            IR::Variable(var) => self.eval_variable(runner, trace, var).await,
+            IR::Variable(var) => self.eval_variable(runner, ctx, trace, var).await,
             _ => unimplemented!(),
         }
     }
@@ -106,13 +118,17 @@ impl Engine {
     async fn eval_list<R: Runner + Send>(
         &mut self,
         runner: &mut R,
+        ctx: &mut R::Ctx,
         trace: &mut Trace,
         span: &Span,
         xs: Vec<IR>,
-    ) -> Result<Value, Error> {
+    ) -> Result<Value, Error>
+    where
+        R::Ctx: Send,
+    {
         let mut ys = Vec::new();
         for x in xs {
-            ys.push(self.eval(runner, trace, x).await?);
+            ys.push(self.eval(runner, ctx, trace, x).await?);
         }
         trace.step(TraceNode::ListCtor, span.clone());
         Ok(Value::List(ys))
@@ -121,13 +137,17 @@ impl Engine {
     async fn eval_record<R: Runner + Send>(
         &mut self,
         runner: &mut R,
+        ctx: &mut R::Ctx,
         trace: &mut Trace,
         _span: &Span,
         xs: BTreeMap<String, IR>,
-    ) -> Result<Value, Error> {
+    ) -> Result<Value, Error>
+    where
+        R::Ctx: Send,
+    {
         let mut ys = BTreeMap::new();
         for (field_name, x) in xs {
-            ys.insert(field_name, self.eval(runner, trace, x).await?);
+            ys.insert(field_name, self.eval(runner, ctx, trace, x).await?);
         }
         Ok(Value::Record(ys))
     }
@@ -135,11 +155,15 @@ impl Engine {
     async fn eval_call<R: Runner + Send>(
         &mut self,
         runner: &mut R,
+        ctx: &mut R::Ctx,
         trace: &mut Trace,
         mut call: Call,
-    ) -> Result<Value, Error> {
+    ) -> Result<Value, Error>
+    where
+        R::Ctx: Send,
+    {
         let span = call.span.clone();
-        let mut base = self.eval(runner, trace, *call.base).await?;
+        let mut base = self.eval(runner, ctx, trace, *call.base).await?;
 
         while call.args.len() > 0 {
             match base {
@@ -149,7 +173,7 @@ impl Engine {
                     while lam.params.len() > 0 && call.args.len() > 0 {
                         let var = lam.params.pop_front().unwrap();
                         let arg = call.args.pop_front().unwrap();
-                        let arg = self.eval(runner, trace, arg).await?;
+                        let arg = self.eval(runner, ctx, trace, arg).await?;
                         trace_params.push(var.name.clone());
                         trace_args.push(arg.clone());
                         self.replace_var_in_lambda(
@@ -163,7 +187,7 @@ impl Engine {
                     if lam.params.len() > 0 {
                         return Ok(Value::Lambda(lam));
                     }
-                    base = self.eval(runner, trace, *lam.body).await?;
+                    base = self.eval(runner, ctx, trace, *lam.body).await?;
                 }
 
                 Value::Function(f) => {
@@ -199,7 +223,7 @@ impl Engine {
                         let mut args = Vec::with_capacity(f.params.len());
                         for _ in 0..f.params.len() {
                             args.push(
-                                self.eval(runner, trace, call.args.pop_front().unwrap())
+                                self.eval(runner, ctx, trace, call.args.pop_front().unwrap())
                                     .await?,
                             );
                         }
@@ -207,7 +231,7 @@ impl Engine {
                             TraceNode::Function(f.name.clone(), args.clone()),
                             span.clone(),
                         );
-                        base = runner.run(self, trace, f, args.into()).await?;
+                        base = runner.run(self, ctx, trace, f, args.into()).await?;
                     }
                 }
                 _ => {
@@ -229,11 +253,12 @@ impl Engine {
     async fn eval_variable<R: Runner + Send>(
         &mut self,
         runner: &mut R,
+        ctx: &mut R::Ctx,
         _trace: &mut Trace,
         var: Variable,
     ) -> Result<Value, Error> {
         runner
-            .lookup(&var)
+            .lookup(ctx, &var)
             .await
             .and_then(|x| x.ok_or(Error::VarNotFound { name: var.name }))
     }
@@ -287,7 +312,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(10));
 
@@ -295,7 +320,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(24));
 
@@ -303,7 +328,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(2));
 
@@ -311,7 +336,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::String("hello, world!".to_string()));
 
@@ -322,7 +347,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::String("hello, world!".to_string()));
     }
@@ -333,7 +358,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -342,7 +367,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -351,7 +376,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -363,7 +388,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(
             value,
@@ -405,7 +430,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(15));
         println!("{}", trace);
@@ -420,7 +445,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(
             value,
@@ -440,7 +465,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(20));
         assert_eq!(

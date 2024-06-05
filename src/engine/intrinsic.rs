@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, marker::PhantomData};
 
 use ouroboros::Type;
 
@@ -9,11 +9,26 @@ use crate::{
 
 use super::{value_to_ir, Engine, Error, Function, Runner, Trace, TraceNode, Value};
 
-pub struct IntrinsicRunner;
+pub struct IntrinsicRunner<T>(PhantomData<T>);
+
+impl<T> IntrinsicRunner<T> {
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
 
 #[async_trait::async_trait]
-impl Runner for IntrinsicRunner {
-    async fn lookup(&mut self, var: &Variable) -> Result<Option<Value>, Error> {
+impl<T> Runner for IntrinsicRunner<T>
+where
+    T: Send,
+{
+    type Ctx = T;
+
+    async fn lookup(
+        &mut self,
+        _ctx: &mut Self::Ctx,
+        var: &Variable,
+    ) -> Result<Option<Value>, Error> {
         // FIXME: All types are unit types until type inference is implemented
         match var.name.as_str() {
             "++" => Ok(Some(Value::Function(Function {
@@ -71,6 +86,7 @@ impl Runner for IntrinsicRunner {
     async fn run(
         &mut self,
         engine: &mut Engine,
+        ctx: &mut Self::Ctx,
         trace: &mut Trace,
         f: Function,
         mut args: VecDeque<Value>,
@@ -181,7 +197,8 @@ impl Runner for IntrinsicRunner {
                             apps.push(
                                 engine
                                     .eval(
-                                        &mut IntrinsicRunner,
+                                        self,
+                                        ctx,
                                         trace,
                                         IR::Call(Call {
                                             id,
