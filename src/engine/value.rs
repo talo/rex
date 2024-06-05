@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::BTreeMap, fmt::Display};
 
 use ouroboros::Type;
 
@@ -16,6 +16,7 @@ pub enum Value {
     F64(f64),
     String(String),
     List(Vec<Value>),
+    Record(BTreeMap<String, Value>),
     Function(Function),
     Lambda(Lambda),
 }
@@ -39,11 +40,24 @@ impl Display for Value {
                 }
                 write!(f, "]")
             }
+            Value::Record(xs) => {
+                write!(f, "{{")?;
+                for (i, (field_name, x)) in xs.iter().enumerate() {
+                    field_name.fmt(f)?;
+                    write!(f, ": ")?;
+                    x.fmt(f)?;
+                    if i < xs.len() - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, "}}")
+            }
             Value::Function(function) => {
                 write!(
                     f,
                     "({}: ",
                     match function.name.as_str() {
+                        "++" => "(++)",
                         "+" => "(+)",
                         "-" => "(-)",
                         "*" => "(*)",
@@ -93,6 +107,12 @@ pub fn value_to_ir(val: Value, span: Span) -> IR {
         Value::List(xs) => IR::List(
             xs.into_iter()
                 .map(|x| value_to_ir(x, span.clone()))
+                .collect(),
+            span,
+        ),
+        Value::Record(xs) => IR::Record(
+            xs.into_iter()
+                .map(|(field_name, x)| (field_name, value_to_ir(x, span.clone())))
                 .collect(),
             span,
         ),

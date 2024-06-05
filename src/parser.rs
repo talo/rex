@@ -9,6 +9,7 @@ use crate::{
 pub enum Operator {
     Add,
     And,
+    Concat,
     Div,
     Dot,
     Eq,
@@ -27,6 +28,7 @@ impl Operator {
         match self {
             Operator::Add => "+".to_string(),
             Operator::And => "&&".to_string(),
+            Operator::Concat => "++".to_string(),
             Operator::Div => "/".to_string(),
             Operator::Dot => ".".to_string(),
             Operator::Eq => "==".to_string(),
@@ -161,6 +163,7 @@ impl Parser {
         // Parse the binary operator.
         let operator = match token {
             Token::Add(..) => Operator::Add,
+            Token::Concat(..) => Operator::Concat,
             Token::Div(..) => Operator::Div,
             Token::Dot(..) => Operator::Dot,
             Token::Mul(..) => Operator::Mul,
@@ -196,12 +199,17 @@ impl Parser {
                 } else if prec == next_token.precedence() {
                     match next_token {
                         // token is left-associative
-                        Token::Add(..) | Token::Div(..) | Token::Mul(..) | Token::Sub(..) => self
-                            .parse_binary_expr(Expr::Call(
-                                Expr::Variable(operator.to_string(), operator_span.clone()).into(),
-                                vec![lhs_expr, rhs_expr],
-                                Span::from_begin_end(span_begin, span_end),
-                            )),
+                        Token::Add(..)
+                        | Token::And(..)
+                        | Token::Concat(..)
+                        | Token::Div(..)
+                        | Token::Mul(..)
+                        | Token::Or(..)
+                        | Token::Sub(..) => self.parse_binary_expr(Expr::Call(
+                            Expr::Variable(operator.to_string(), operator_span.clone()).into(),
+                            vec![lhs_expr, rhs_expr],
+                            Span::from_begin_end(span_begin, span_end),
+                        )),
                         // token is right-associative
                         _ => {
                             let rhs_expr = self.parse_binary_expr(rhs_expr);
@@ -302,6 +310,14 @@ impl Parser {
                 self.next_token();
                 Expr::Variable("+".to_string(), span)
             }
+            Some(Token::And(span, ..)) => {
+                self.next_token();
+                Expr::Variable("&&".to_string(), span)
+            }
+            Some(Token::Concat(span, ..)) => {
+                self.next_token();
+                Expr::Variable("++".to_string(), span)
+            }
             Some(Token::Div(span, ..)) => {
                 self.next_token();
                 Expr::Variable("/".to_string(), span)
@@ -313,6 +329,10 @@ impl Parser {
             Some(Token::Mul(span, ..)) => {
                 self.next_token();
                 Expr::Variable("*".to_string(), span)
+            }
+            Some(Token::Or(span, ..)) => {
+                self.next_token();
+                Expr::Variable("||".to_string(), span)
             }
             Some(Token::Sub(span, ..)) => {
                 self.next_token();
@@ -328,7 +348,10 @@ impl Parser {
                 self.next_token();
                 span
             }
-            _ => unimplemented!(),
+            oops => {
+                dbg!(oops);
+                unimplemented!()
+            }
         };
 
         expr.set_span_begin(span_begin.begin.clone());

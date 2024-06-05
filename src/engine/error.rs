@@ -8,4 +8,6 @@ pub enum Error {
     VarNotFound { name: String },
     #[error("division by zero")]
     DivByZero,
+    #[error("index out of bounds: {index}")]
+    IndexOutOfBounds { index: u64 },
 }

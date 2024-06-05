@@ -40,6 +40,7 @@ pub enum Token {
     // Operators
     Add(Span),
     And(Span),
+    Concat(Span),
     Div(Span),
     Dot(Span),
     Eq(Span),
@@ -154,11 +155,13 @@ impl Token {
                 }
                 
                 // Operators
-                else if capture.name("Add").is_some() {
+                else if capture.name("Concat").is_some() {
+                    Token::Concat(span)
+                } else if capture.name("Add").is_some() {
                     Token::Add(span)
                 } else if capture.name("And").is_some() {
                     Token::And(span)
-                } else if capture.name("Div").is_some() {
+                }else if capture.name("Div").is_some() {
                     Token::Div(span)
                 } else if capture.name("Dot").is_some() {
                     Token::Dot(span)
@@ -253,6 +256,7 @@ impl Token {
             r"(?P<WhitespaceNewline>(\n|\r))|",
 
             // Operators
+            r"(?P<Concat>\+\+)|",
             r"(?P<Add>\+)|",
             r"(?P<And>&&)|",
             r"(?P<Div>/)|",
@@ -297,7 +301,7 @@ impl Token {
             Gt(..) |
             Ge(..) => Precedence(3),
             Add(..) |
-            Sub(..) => Precedence(4),
+            Sub(..) | Concat(..) => Precedence(4),
             Mul(..) |
             Div(..) => Precedence(5),
             Dot(..) => Precedence(6),
@@ -349,6 +353,7 @@ impl Spanned for Token {
             // Operators
             Add(span, ..) => span,
             And(span, ..) => span,
+            Concat(span, ..) => span,
             Div(span, ..) => span,
             Eq(span, ..) => span,
             Ne(span, ..) => span,
@@ -408,6 +413,7 @@ impl Spanned for Token {
             // Operators
             Add(span, ..) => span,
             And(span, ..) => span,
+            Concat(span, ..) => span,
             Div(span, ..) => span,
             Eq(span, ..) => span,
             Ne(span, ..) => span,
@@ -469,6 +475,7 @@ impl fmt::Display for Token {
             // Operators
             Add(..) => write!(f, "+"),
             And(..) => write!(f, "&&"),
+            Concat(..) => write!(f, "++"),
             Div(..) => write!(f, "/"),
             Eq(..) => write!(f, "=="),
             Ne(..) => write!(f, "!="),

@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::{
     resolver::{Call, Id, Lambda, Variable, IR},
@@ -60,6 +60,7 @@ impl Engine {
             IR::Float(x, span, ..) => self.eval_float(trace, &span, x).await,
             IR::String(x, span, ..) => self.eval_string(trace, &span, x).await,
             IR::List(xs, span, ..) => self.eval_list(runner, trace, &span, xs).await,
+            IR::Record(xs, span, ..) => self.eval_record(runner, trace, &span, xs).await,
             IR::Call(call) => self.eval_call(runner, trace, call).await,
             IR::Lambda(lam) => self.eval_lambda(trace, lam).await,
             IR::Variable(var) => self.eval_variable(runner, trace, var).await,
@@ -115,6 +116,20 @@ impl Engine {
         }
         trace.step(TraceNode::ListCtor, span.clone());
         Ok(Value::List(ys))
+    }
+
+    async fn eval_record<R: Runner + Send>(
+        &mut self,
+        runner: &mut R,
+        trace: &mut Trace,
+        _span: &Span,
+        xs: BTreeMap<String, IR>,
+    ) -> Result<Value, Error> {
+        let mut ys = BTreeMap::new();
+        for (field_name, x) in xs {
+            ys.insert(field_name, self.eval(runner, trace, x).await?);
+        }
+        Ok(Value::Record(ys))
     }
 
     async fn eval_call<R: Runner + Send>(
@@ -264,7 +279,7 @@ mod test {
         span::Span,
     };
 
-    use super::{Engine, OpRunner};
+    use super::{Engine, IntrinsicRunner};
 
     #[tokio::test]
     async fn test_ops() {
@@ -272,7 +287,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut OpRunner, ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(10));
 
@@ -280,7 +295,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut OpRunner, ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(24));
 
@@ -288,9 +303,28 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut OpRunner, ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(2));
+
+        let mut parser = Parser::new(Token::tokenize("test.rex", r#"(++) "hello, " "world!""#));
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, _trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let value = result.unwrap();
+        assert_eq!(value, Value::String("hello, world!".to_string()));
+
+        let mut parser = Parser::new(Token::tokenize(
+            "test.rex",
+            r#""hello" ++ ", " ++ "world!""#,
+        ));
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, _trace) = engine.run(&mut IntrinsicRunner, ir).await;
+        let value = result.unwrap();
+        assert_eq!(value, Value::String("hello, world!".to_string()));
     }
 
     #[tokio::test]
@@ -299,7 +333,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut OpRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -308,7 +342,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut OpRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -317,7 +351,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut OpRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -329,7 +363,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut OpRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(
             value,
@@ -371,7 +405,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut OpRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(15));
         println!("{}", trace);
@@ -386,7 +420,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut OpRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(
             value,
@@ -406,7 +440,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut OpRunner, ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner, ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(20));
         assert_eq!(

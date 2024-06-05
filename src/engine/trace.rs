@@ -39,6 +39,7 @@ impl Display for TraceNode {
                     f,
                     "({} ",
                     match name.as_str() {
+                        "++" => "(++)",
                         "+" => "(+)",
                         "-" => "(-)",
                         "*" => "(*)",

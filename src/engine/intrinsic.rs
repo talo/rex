@@ -9,10 +9,10 @@ use crate::{
 
 use super::{value_to_ir, Engine, Error, Function, Runner, Trace, TraceNode, Value};
 
-pub struct OpRunner;
+pub struct IntrinsicRunner;
 
 #[async_trait::async_trait]
-impl Runner for OpRunner {
+impl Runner for IntrinsicRunner {
     async fn lookup(&mut self, var: &Variable) -> Result<Option<Value>, Error> {
         // FIXME: All types are unit types until type inference is implemented
         match var.name.as_str() {
@@ -58,25 +58,7 @@ impl Runner for OpRunner {
                 params: vec![Type::Unit, Type::Unit],
                 ret: Type::Unit,
             }))),
-            "zip" => Ok(Some(Value::Function(Function {
-                id: var.id,
-                name: var.name.clone(),
-                params: vec![Type::Unit, Type::Unit],
-                ret: Type::Unit,
-            }))),
-            "enumerate" => Ok(Some(Value::Function(Function {
-                id: var.id,
-                name: var.name.clone(),
-                params: vec![Type::Unit],
-                ret: Type::Unit,
-            }))),
-            "take" => Ok(Some(Value::Function(Function {
-                id: var.id,
-                name: var.name.clone(),
-                params: vec![Type::Unit, Type::Unit],
-                ret: Type::Unit,
-            }))),
-            "skip" => Ok(Some(Value::Function(Function {
+            "get" => Ok(Some(Value::Function(Function {
                 id: var.id,
                 name: var.name.clone(),
                 params: vec![Type::Unit, Type::Unit],
@@ -94,6 +76,16 @@ impl Runner for OpRunner {
         mut args: VecDeque<Value>,
     ) -> Result<Value, Error> {
         match f.name.as_str() {
+            "++" => {
+                let a = args.pop_front().unwrap();
+                let b = args.pop_front().unwrap();
+                match (a, b) {
+                    (Value::String(a), Value::String(b)) => {
+                        Ok(Value::String(format!("{}{}", a, b)))
+                    }
+                    _ => unreachable!(),
+                }
+            }
             "+" => {
                 let a = args.pop_front().unwrap();
                 let b = args.pop_front().unwrap();
@@ -189,7 +181,7 @@ impl Runner for OpRunner {
                             apps.push(
                                 engine
                                     .eval(
-                                        &mut OpRunner,
+                                        &mut IntrinsicRunner,
                                         trace,
                                         IR::Call(Call {
                                             id,
@@ -204,6 +196,30 @@ impl Runner for OpRunner {
                         trace.step(TraceNode::ListCtor, Span::empty());
                         Ok(Value::List(apps))
                     }
+                    _ => unreachable!(),
+                }
+            }
+            "get" => {
+                let n = args.pop_front().unwrap();
+                let xs = args.pop_front().unwrap();
+                match xs {
+                    Value::List(xs) => match n {
+                        Value::U64(n) => {
+                            if n as usize >= xs.len() {
+                                Err(Error::IndexOutOfBounds { index: n })
+                            } else {
+                                Ok(xs[n as usize].clone())
+                            }
+                        }
+                        Value::I64(n) => {
+                            if n as usize >= xs.len() {
+                                Err(Error::IndexOutOfBounds { index: n as u64 })
+                            } else {
+                                Ok(xs[n as usize].clone())
+                            }
+                        }
+                        _ => unreachable!(),
+                    },
                     _ => unreachable!(),
                 }
             }
