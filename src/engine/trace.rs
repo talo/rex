@@ -5,6 +5,11 @@ use crate::span::Span;
 use super::{Error, Value};
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum TraceNode {
     Root,
     ListCtor,
@@ -63,6 +68,11 @@ impl Display for TraceNode {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct Trace {
     pub step: u64,
     pub children: Vec<Trace>,

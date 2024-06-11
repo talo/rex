@@ -45,17 +45,33 @@ impl Operator {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum Expr {
-    Null(Span),
-    Bool(bool, Span),
-    Int(u64, Span),
-    Float(f64, Span),
-    String(String, Span),
-    List(Vec<Expr>, Span),
-    Record(BTreeMap<String, Expr>, Span),
-    Variable(String, Span),
-    Call(Box<Expr>, Vec<Expr>, Span),
-    Lambda(Vec<String>, Box<Expr>, Span),
+    Null(#[cfg_attr(feature = "serde", serde(skip))] Span),
+    Bool(bool, #[cfg_attr(feature = "serde", serde(skip))] Span),
+    Int(u64, #[cfg_attr(feature = "serde", serde(skip))] Span),
+    Float(f64, #[cfg_attr(feature = "serde", serde(skip))] Span),
+    String(String, #[cfg_attr(feature = "serde", serde(skip))] Span),
+    List(Vec<Expr>, #[cfg_attr(feature = "serde", serde(skip))] Span),
+    Record(
+        BTreeMap<String, Expr>,
+        #[cfg_attr(feature = "serde", serde(skip))] Span,
+    ),
+    Var(String, #[cfg_attr(feature = "serde", serde(skip))] Span),
+    Call(
+        Box<Expr>,
+        Vec<Expr>,
+        #[cfg_attr(feature = "serde", serde(skip))] Span,
+    ),
+    Lambda(
+        Vec<String>,
+        Box<Expr>,
+        #[cfg_attr(feature = "serde", serde(skip))] Span,
+    ),
 }
 
 impl Spanned for Expr {
@@ -68,7 +84,7 @@ impl Spanned for Expr {
             Expr::String(_, span, ..) => span,
             Expr::List(_, span, ..) => span,
             Expr::Record(_, span, ..) => span,
-            Expr::Variable(_, span, ..) => span,
+            Expr::Var(_, span, ..) => span,
             Expr::Call(_, _, span, ..) => span,
             Expr::Lambda(_, _, span, ..) => span,
         }
@@ -83,7 +99,7 @@ impl Spanned for Expr {
             Expr::String(_, span, ..) => span,
             Expr::List(_, span, ..) => span,
             Expr::Record(_, span, ..) => span,
-            Expr::Variable(_, span, ..) => span,
+            Expr::Var(_, span, ..) => span,
             Expr::Call(_, _, span, ..) => span,
             Expr::Lambda(_, _, span, ..) => span,
         }
@@ -192,7 +208,7 @@ impl Parser {
                     // expression is should be parsed first, as the left hand side
                     // of the next.
                     self.parse_binary_expr(Expr::Call(
-                        Expr::Variable(operator.to_string(), operator_span.clone()).into(),
+                        Expr::Var(operator.to_string(), operator_span.clone()).into(),
                         vec![lhs_expr, rhs_expr],
                         Span::from_begin_end(span_begin, span_end),
                     ))
@@ -206,7 +222,7 @@ impl Parser {
                         | Token::Mul(..)
                         | Token::Or(..)
                         | Token::Sub(..) => self.parse_binary_expr(Expr::Call(
-                            Expr::Variable(operator.to_string(), operator_span.clone()).into(),
+                            Expr::Var(operator.to_string(), operator_span.clone()).into(),
                             vec![lhs_expr, rhs_expr],
                             Span::from_begin_end(span_begin, span_end),
                         )),
@@ -215,7 +231,7 @@ impl Parser {
                             let rhs_expr = self.parse_binary_expr(rhs_expr);
                             let span_end = rhs_expr.span().end.clone();
                             Expr::Call(
-                                Expr::Variable(operator.to_string(), operator_span.clone()).into(),
+                                Expr::Var(operator.to_string(), operator_span.clone()).into(),
                                 vec![lhs_expr, rhs_expr],
                                 Span::from_begin_end(span_begin, span_end),
                             )
@@ -228,7 +244,7 @@ impl Parser {
                     let rhs_expr = self.parse_binary_expr(rhs_expr);
                     let span_end = rhs_expr.span().end.clone();
                     Expr::Call(
-                        Expr::Variable(operator.to_string(), operator_span.clone()).into(),
+                        Expr::Var(operator.to_string(), operator_span.clone()).into(),
                         vec![lhs_expr, rhs_expr],
                         Span::from_begin_end(span_begin, span_end),
                     )
@@ -236,7 +252,7 @@ impl Parser {
             }
             // There are no more parts of the expression.
             None => Expr::Call(
-                Expr::Variable(operator.to_string(), operator_span.clone()).into(),
+                Expr::Var(operator.to_string(), operator_span.clone()).into(),
                 vec![lhs_expr, rhs_expr],
                 Span::from_begin_end(span_begin, span_end),
             ),
@@ -308,35 +324,35 @@ impl Parser {
         let mut expr = match self.current_token() {
             Some(Token::Add(span, ..)) => {
                 self.next_token();
-                Expr::Variable("+".to_string(), span)
+                Expr::Var("+".to_string(), span)
             }
             Some(Token::And(span, ..)) => {
                 self.next_token();
-                Expr::Variable("&&".to_string(), span)
+                Expr::Var("&&".to_string(), span)
             }
             Some(Token::Concat(span, ..)) => {
                 self.next_token();
-                Expr::Variable("++".to_string(), span)
+                Expr::Var("++".to_string(), span)
             }
             Some(Token::Div(span, ..)) => {
                 self.next_token();
-                Expr::Variable("/".to_string(), span)
+                Expr::Var("/".to_string(), span)
             }
             Some(Token::Dot(span, ..)) => {
                 self.next_token();
-                Expr::Variable(".".to_string(), span)
+                Expr::Var(".".to_string(), span)
             }
             Some(Token::Mul(span, ..)) => {
                 self.next_token();
-                Expr::Variable("*".to_string(), span)
+                Expr::Var("*".to_string(), span)
             }
             Some(Token::Or(span, ..)) => {
                 self.next_token();
-                Expr::Variable("||".to_string(), span)
+                Expr::Var("||".to_string(), span)
             }
             Some(Token::Sub(span, ..)) => {
                 self.next_token();
-                Expr::Variable("-".to_string(), span)
+                Expr::Var("-".to_string(), span)
             }
             _ => self.parse_expr(),
         };
@@ -430,7 +446,7 @@ impl Parser {
         let span_end = expr.span().end.clone();
 
         Expr::Call(
-            Expr::Variable("-".to_string(), span_token.clone()).into(),
+            Expr::Var("-".to_string(), span_token.clone()).into(),
             vec![expr],
             Span::from_begin_end(span_token.begin.clone(), span_end),
         )
@@ -527,7 +543,7 @@ impl Parser {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Ident(val, span, ..)) => Expr::Variable(val, span),
+            Some(Token::Ident(val, span, ..)) => Expr::Var(val, span),
             _ => unimplemented!(),
         }
     }
@@ -623,7 +639,7 @@ mod tests {
                     Expr::Float(3.14, Span::new("test.rex", 1, 12, 1, 15)),
                     Expr::String("foo".to_string(), Span::new("test.rex", 1, 18, 1, 22)),
                     Expr::List(vec![], Span::new("test.rex", 1, 25, 1, 26)),
-                    Expr::Variable("ident".to_string(), Span::new("test.rex", 1, 29, 1, 33))
+                    Expr::Var("ident".to_string(), Span::new("test.rex", 1, 29, 1, 33))
                 ],
                 Span::new("test.rex", 1, 1, 1, 34)
             )
@@ -636,14 +652,14 @@ mod tests {
         let expr = parser.parse_expr();
         assert_eq!(
             expr,
-            Expr::Variable("foo".to_string(), Span::new("test.rex", 1, 1, 1, 3)),
+            Expr::Var("foo".to_string(), Span::new("test.rex", 1, 1, 1, 3)),
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "(bar)"));
         let expr = parser.parse_expr();
         assert_eq!(
             expr,
-            Expr::Variable("bar".to_string(), Span::new("test.rex", 1, 1, 1, 5)),
+            Expr::Var("bar".to_string(), Span::new("test.rex", 1, 1, 1, 5)),
         );
     }
 
@@ -654,7 +670,7 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable("+".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
+                Expr::Var("+".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
                 vec![
                     Expr::Int(1, Span::new("test.rex", 1, 1, 1, 1)),
                     Expr::Int(2, Span::new("test.rex", 1, 5, 1, 5))
@@ -668,11 +684,11 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable("+".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
+                Expr::Var("+".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
                 vec![
                     Expr::Int(1, Span::new("test.rex", 1, 1, 1, 1)),
                     Expr::Call(
-                        Expr::Variable("*".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
+                        Expr::Var("*".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
                         vec![
                             Expr::Int(2, Span::new("test.rex", 1, 5, 1, 5)),
                             Expr::Int(3, Span::new("test.rex", 1, 9, 1, 9))
@@ -689,10 +705,10 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable("+".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
+                Expr::Var("+".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
                 vec![
                     Expr::Call(
-                        Expr::Variable("*".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
+                        Expr::Var("*".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
                         vec![
                             Expr::Int(1, Span::new("test.rex", 1, 1, 1, 1)),
                             Expr::Int(2, Span::new("test.rex", 1, 5, 1, 5))
@@ -710,11 +726,11 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable("*".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
+                Expr::Var("*".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
                 vec![
                     Expr::Int(1, Span::new("test.rex", 1, 1, 1, 1)),
                     Expr::Call(
-                        Expr::Variable("+".to_string(), Span::new("test.rex", 1, 8, 1, 8)).into(),
+                        Expr::Var("+".to_string(), Span::new("test.rex", 1, 8, 1, 8)).into(),
                         vec![
                             Expr::Int(2, Span::new("test.rex", 1, 6, 1, 6)),
                             Expr::Int(3, Span::new("test.rex", 1, 10, 1, 10))
@@ -734,10 +750,10 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable(".".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
+                Expr::Var(".".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
                 vec![
-                    Expr::Variable("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)),
-                    Expr::Variable("g".to_string(), Span::new("test.rex", 1, 5, 1, 5)),
+                    Expr::Var("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)),
+                    Expr::Var("g".to_string(), Span::new("test.rex", 1, 5, 1, 5)),
                 ],
                 Span::new("test.rex", 1, 1, 1, 5)
             ),
@@ -748,14 +764,14 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable(".".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
+                Expr::Var(".".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
                 vec![
-                    Expr::Variable("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)),
+                    Expr::Var("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)),
                     Expr::Call(
-                        Expr::Variable(".".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
+                        Expr::Var(".".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
                         vec![
-                            Expr::Variable("g".to_string(), Span::new("test.rex", 1, 5, 1, 5)),
-                            Expr::Variable("h".to_string(), Span::new("test.rex", 1, 9, 1, 9)),
+                            Expr::Var("g".to_string(), Span::new("test.rex", 1, 5, 1, 5)),
+                            Expr::Var("h".to_string(), Span::new("test.rex", 1, 9, 1, 9)),
                         ],
                         Span::new("test.rex", 1, 5, 1, 9)
                     )
@@ -769,17 +785,17 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable(".".to_string(), Span::new("test.rex", 1, 9, 1, 9)).into(),
+                Expr::Var(".".to_string(), Span::new("test.rex", 1, 9, 1, 9)).into(),
                 vec![
                     Expr::Call(
-                        Expr::Variable(".".to_string(), Span::new("test.rex", 1, 4, 1, 4)).into(),
+                        Expr::Var(".".to_string(), Span::new("test.rex", 1, 4, 1, 4)).into(),
                         vec![
-                            Expr::Variable("f".to_string(), Span::new("test.rex", 1, 2, 1, 2)),
-                            Expr::Variable("g".to_string(), Span::new("test.rex", 1, 6, 1, 6)),
+                            Expr::Var("f".to_string(), Span::new("test.rex", 1, 2, 1, 2)),
+                            Expr::Var("g".to_string(), Span::new("test.rex", 1, 6, 1, 6)),
                         ],
                         Span::new("test.rex", 1, 1, 1, 7)
                     ),
-                    Expr::Variable("h".to_string(), Span::new("test.rex", 1, 11, 1, 11)),
+                    Expr::Var("h".to_string(), Span::new("test.rex", 1, 11, 1, 11)),
                 ],
                 Span::new("test.rex", 1, 1, 1, 11)
             ),
@@ -793,8 +809,8 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
-                vec![Expr::Variable(
+                Expr::Var("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
+                vec![Expr::Var(
                     "x".to_string(),
                     Span::new("test.rex", 1, 3, 1, 3)
                 )],
@@ -807,10 +823,10 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
+                Expr::Var("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
                 vec![
-                    Expr::Variable("x".to_string(), Span::new("test.rex", 1, 3, 1, 3)),
-                    Expr::Variable("y".to_string(), Span::new("test.rex", 1, 5, 1, 5))
+                    Expr::Var("x".to_string(), Span::new("test.rex", 1, 3, 1, 3)),
+                    Expr::Var("y".to_string(), Span::new("test.rex", 1, 5, 1, 5))
                 ],
                 Span::new("test.rex", 1, 1, 1, 5)
             ),
@@ -821,18 +837,18 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
+                Expr::Var("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
                 vec![
-                    Expr::Variable("x".to_string(), Span::new("test.rex", 1, 3, 1, 3)),
+                    Expr::Var("x".to_string(), Span::new("test.rex", 1, 3, 1, 3)),
                     Expr::Call(
-                        Expr::Variable("g".to_string(), Span::new("test.rex", 1, 6, 1, 6)).into(),
-                        vec![Expr::Variable(
+                        Expr::Var("g".to_string(), Span::new("test.rex", 1, 6, 1, 6)).into(),
+                        vec![Expr::Var(
                             "y".to_string(),
                             Span::new("test.rex", 1, 8, 1, 8)
                         ),],
                         Span::new("test.rex", 1, 5, 1, 9)
                     ),
-                    Expr::Variable("z".to_string(), Span::new("test.rex", 1, 11, 1, 11))
+                    Expr::Var("z".to_string(), Span::new("test.rex", 1, 11, 1, 11))
                 ],
                 Span::new("test.rex", 1, 1, 1, 11)
             ),
@@ -847,7 +863,7 @@ mod tests {
             expr,
             Expr::Lambda(
                 vec!["x".to_string()],
-                Expr::Variable("x".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
+                Expr::Var("x".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
                 Span::new("test.rex", 1, 1, 1, 7)
             ),
         );
@@ -859,10 +875,10 @@ mod tests {
             Expr::Lambda(
                 vec!["f".to_string(), "x".to_string(), "y".to_string()],
                 Expr::Call(
-                    Expr::Variable("f".to_string(), Span::new("test.rex", 1, 11, 1, 11)).into(),
+                    Expr::Var("f".to_string(), Span::new("test.rex", 1, 11, 1, 11)).into(),
                     vec![
-                        Expr::Variable("y".to_string(), Span::new("test.rex", 1, 13, 1, 13)),
-                        Expr::Variable("x".to_string(), Span::new("test.rex", 1, 15, 1, 15))
+                        Expr::Var("y".to_string(), Span::new("test.rex", 1, 13, 1, 13)),
+                        Expr::Var("x".to_string(), Span::new("test.rex", 1, 15, 1, 15))
                     ],
                     Span::new("test.rex", 1, 11, 1, 15)
                 )
@@ -879,10 +895,10 @@ mod tests {
                 Expr::Lambda(
                     vec!["f".to_string(), "x".to_string(), "y".to_string()],
                     Expr::Call(
-                        Expr::Variable("+".to_string(), Span::new("test.rex", 1, 14, 1, 14)).into(),
+                        Expr::Var("+".to_string(), Span::new("test.rex", 1, 14, 1, 14)).into(),
                         vec![
-                            Expr::Variable("x".to_string(), Span::new("test.rex", 1, 12, 1, 12)),
-                            Expr::Variable("y".to_string(), Span::new("test.rex", 1, 16, 1, 16))
+                            Expr::Var("x".to_string(), Span::new("test.rex", 1, 12, 1, 12)),
+                            Expr::Var("y".to_string(), Span::new("test.rex", 1, 16, 1, 16))
                         ],
                         Span::new("test.rex", 1, 12, 1, 16)
                     )
@@ -906,17 +922,17 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable("+".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
+                Expr::Var("+".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
                 vec![
                     Expr::Call(
-                        Expr::Variable("+".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
+                        Expr::Var("+".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
                         vec![
-                            Expr::Variable("x".to_string(), Span::new("test.rex", 1, 1, 1, 1)),
-                            Expr::Variable("y".to_string(), Span::new("test.rex", 1, 5, 1, 5)),
+                            Expr::Var("x".to_string(), Span::new("test.rex", 1, 1, 1, 1)),
+                            Expr::Var("y".to_string(), Span::new("test.rex", 1, 5, 1, 5)),
                         ],
                         Span::new("test.rex", 1, 1, 1, 5)
                     ),
-                    Expr::Variable("z".to_string(), Span::new("test.rex", 1, 9, 1, 9)),
+                    Expr::Var("z".to_string(), Span::new("test.rex", 1, 9, 1, 9)),
                 ],
                 Span::new("test.rex", 1, 1, 1, 9)
             ),
@@ -927,19 +943,19 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable("+".to_string(), Span::new("test.rex", 1, 5, 1, 5)).into(),
+                Expr::Var("+".to_string(), Span::new("test.rex", 1, 5, 1, 5)).into(),
                 vec![
                     Expr::Call(
-                        Expr::Variable("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
-                        vec![Expr::Variable(
+                        Expr::Var("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
+                        vec![Expr::Var(
                             "x".to_string(),
                             Span::new("test.rex", 1, 3, 1, 3)
                         ),],
                         Span::new("test.rex", 1, 1, 1, 3)
                     ),
                     Expr::Call(
-                        Expr::Variable("g".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
-                        vec![Expr::Variable(
+                        Expr::Var("g".to_string(), Span::new("test.rex", 1, 7, 1, 7)).into(),
+                        vec![Expr::Var(
                             "y".to_string(),
                             Span::new("test.rex", 1, 9, 1, 9)
                         ),],
@@ -955,12 +971,12 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable(".".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
+                Expr::Var(".".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
                 vec![
-                    Expr::Variable("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
+                    Expr::Var("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
                     Expr::Call(
-                        Expr::Variable("g".to_string(), Span::new("test.rex", 1, 5, 1, 5)).into(),
-                        vec![Expr::Variable(
+                        Expr::Var("g".to_string(), Span::new("test.rex", 1, 5, 1, 5)).into(),
+                        vec![Expr::Var(
                             "x".to_string(),
                             Span::new("test.rex", 1, 7, 1, 7)
                         ),],
@@ -977,15 +993,15 @@ mod tests {
             expr,
             Expr::Call(
                 Expr::Call(
-                    Expr::Variable(".".to_string(), Span::new("test.rex", 1, 4, 1, 4)).into(),
+                    Expr::Var(".".to_string(), Span::new("test.rex", 1, 4, 1, 4)).into(),
                     vec![
-                        Expr::Variable("f".to_string(), Span::new("test.rex", 1, 2, 1, 2)).into(),
-                        Expr::Variable("g".to_string(), Span::new("test.rex", 1, 6, 1, 6)).into(),
+                        Expr::Var("f".to_string(), Span::new("test.rex", 1, 2, 1, 2)).into(),
+                        Expr::Var("g".to_string(), Span::new("test.rex", 1, 6, 1, 6)).into(),
                     ],
                     Span::new("test.rex", 1, 1, 1, 7)
                 )
                 .into(),
-                vec![Expr::Variable("x".to_string(), Span::new("test.rex", 1, 9, 1, 9)).into(),],
+                vec![Expr::Var("x".to_string(), Span::new("test.rex", 1, 9, 1, 9)).into(),],
                 Span::new("test.rex", 1, 1, 1, 9)
             ),
         );
@@ -995,36 +1011,29 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable("+".to_string(), Span::new("test.rex", 1, 5, 1, 5)).into(),
+                Expr::Var("+".to_string(), Span::new("test.rex", 1, 5, 1, 5)).into(),
                 vec![
                     Expr::Call(
-                        Expr::Variable("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
-                        vec![
-                            Expr::Variable("x".to_string(), Span::new("test.rex", 1, 3, 1, 3))
-                                .into(),
-                        ],
+                        Expr::Var("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
+                        vec![Expr::Var("x".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),],
                         Span::new("test.rex", 1, 1, 1, 3)
                     ),
                     Expr::Call(
-                        Expr::Variable("*".to_string(), Span::new("test.rex", 1, 11, 1, 11)).into(),
+                        Expr::Var("*".to_string(), Span::new("test.rex", 1, 11, 1, 11)).into(),
                         vec![
                             Expr::Call(
-                                Expr::Variable("g".to_string(), Span::new("test.rex", 1, 7, 1, 7))
+                                Expr::Var("g".to_string(), Span::new("test.rex", 1, 7, 1, 7))
                                     .into(),
-                                vec![Expr::Variable(
-                                    "y".to_string(),
-                                    Span::new("test.rex", 1, 9, 1, 9)
-                                )
-                                .into(),],
+                                vec![
+                                    Expr::Var("y".to_string(), Span::new("test.rex", 1, 9, 1, 9))
+                                        .into(),
+                                ],
                                 Span::new("test.rex", 1, 7, 1, 9)
                             ),
                             Expr::Call(
-                                Expr::Variable(
-                                    "h".to_string(),
-                                    Span::new("test.rex", 1, 13, 1, 13)
-                                )
-                                .into(),
-                                vec![Expr::Variable(
+                                Expr::Var("h".to_string(), Span::new("test.rex", 1, 13, 1, 13))
+                                    .into(),
+                                vec![Expr::Var(
                                     "z".to_string(),
                                     Span::new("test.rex", 1, 15, 1, 15)
                                 )
@@ -1044,22 +1053,19 @@ mod tests {
         assert_eq!(
             expr,
             Expr::Call(
-                Expr::Variable(".".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
+                Expr::Var(".".to_string(), Span::new("test.rex", 1, 3, 1, 3)).into(),
                 vec![
-                    Expr::Variable("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
+                    Expr::Var("f".to_string(), Span::new("test.rex", 1, 1, 1, 1)).into(),
                     Expr::Call(
-                        Expr::Variable(".".to_string(), Span::new("test.rex", 1, 13, 1, 13)).into(),
+                        Expr::Var(".".to_string(), Span::new("test.rex", 1, 13, 1, 13)).into(),
                         vec![
                             Expr::Call(
-                                Expr::Variable("g".to_string(), Span::new("test.rex", 1, 5, 1, 5))
+                                Expr::Var("g".to_string(), Span::new("test.rex", 1, 5, 1, 5))
                                     .into(),
                                 vec![Expr::Call(
-                                    Expr::Variable(
-                                        "h".to_string(),
-                                        Span::new("test.rex", 1, 8, 1, 8)
-                                    )
-                                    .into(),
-                                    vec![Expr::Variable(
+                                    Expr::Var("h".to_string(), Span::new("test.rex", 1, 8, 1, 8))
+                                        .into(),
+                                    vec![Expr::Var(
                                         "x".to_string(),
                                         Span::new("test.rex", 1, 10, 1, 10)
                                     )
@@ -1068,8 +1074,7 @@ mod tests {
                                 ),],
                                 Span::new("test.rex", 1, 5, 1, 11)
                             ),
-                            Expr::Variable("i".to_string(), Span::new("test.rex", 1, 15, 1, 15))
-                                .into(),
+                            Expr::Var("i".to_string(), Span::new("test.rex", 1, 15, 1, 15)).into(),
                         ],
                         Span::new("test.rex", 1, 5, 1, 15)
                     ),
@@ -1095,34 +1100,30 @@ mod tests {
             Expr::Lambda(
                 vec!["x".to_string(), "y".to_string(), "z".to_string()],
                 Expr::Call(
-                    Expr::Variable("map".to_string(), Span::new("test.rex", 3, 2, 3, 4)).into(),
+                    Expr::Var("map".to_string(), Span::new("test.rex", 3, 2, 3, 4)).into(),
                     vec![
                         Expr::Call(
-                            Expr::Variable(".".to_string(), Span::new("test.rex", 4, 6, 4, 6))
-                                .into(),
+                            Expr::Var(".".to_string(), Span::new("test.rex", 4, 6, 4, 6)).into(),
                             vec![
-                                Expr::Variable("f".to_string(), Span::new("test.rex", 4, 4, 4, 4))
+                                Expr::Var("f".to_string(), Span::new("test.rex", 4, 4, 4, 4))
                                     .into(),
                                 Expr::Call(
-                                    Expr::Variable(
-                                        ".".to_string(),
-                                        Span::new("test.rex", 4, 16, 4, 16)
-                                    )
-                                    .into(),
+                                    Expr::Var(".".to_string(), Span::new("test.rex", 4, 16, 4, 16))
+                                        .into(),
                                     vec![
                                         Expr::Call(
-                                            Expr::Variable(
+                                            Expr::Var(
                                                 "g".to_string(),
                                                 Span::new("test.rex", 4, 8, 4, 8)
                                             )
                                             .into(),
                                             vec![Expr::Call(
-                                                Expr::Variable(
+                                                Expr::Var(
                                                     "h".to_string(),
                                                     Span::new("test.rex", 4, 11, 4, 11)
                                                 )
                                                 .into(),
-                                                vec![Expr::Variable(
+                                                vec![Expr::Var(
                                                     "z".to_string(),
                                                     Span::new("test.rex", 4, 13, 4, 13)
                                                 )
@@ -1131,7 +1132,7 @@ mod tests {
                                             ),],
                                             Span::new("test.rex", 4, 8, 4, 14)
                                         ),
-                                        Expr::Variable(
+                                        Expr::Var(
                                             "i".to_string(),
                                             Span::new("test.rex", 4, 18, 4, 18)
                                         )
@@ -1143,20 +1144,16 @@ mod tests {
                             Span::new("test.rex", 4, 3, 4, 19)
                         ),
                         Expr::Call(
-                            Expr::Variable("j".to_string(), Span::new("test.rex", 5, 4, 5, 4))
-                                .into(),
+                            Expr::Var("j".to_string(), Span::new("test.rex", 5, 4, 5, 4)).into(),
                             vec![
-                                Expr::Variable("x".to_string(), Span::new("test.rex", 5, 6, 5, 6))
+                                Expr::Var("x".to_string(), Span::new("test.rex", 5, 6, 5, 6))
                                     .into(),
-                                Expr::Variable("y".to_string(), Span::new("test.rex", 5, 8, 5, 8))
+                                Expr::Var("y".to_string(), Span::new("test.rex", 5, 8, 5, 8))
                                     .into(),
                                 Expr::Call(
-                                    Expr::Variable(
-                                        "k".to_string(),
-                                        Span::new("test.rex", 5, 11, 5, 11)
-                                    )
-                                    .into(),
-                                    vec![Expr::Variable(
+                                    Expr::Var("k".to_string(), Span::new("test.rex", 5, 11, 5, 11))
+                                        .into(),
+                                    vec![Expr::Var(
                                         "z".to_string(),
                                         Span::new("test.rex", 5, 13, 5, 13)
                                     )

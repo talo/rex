@@ -19,6 +19,11 @@ pub enum Error {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct Id(pub u64);
 
 impl Id {
@@ -38,6 +43,11 @@ impl Id {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum IR {
     Null(Span),
     Bool(bool, Span),
@@ -46,7 +56,7 @@ pub enum IR {
     Float(f64, Span),
     String(String, Span),
     List(Vec<IR>, Span),
-    Record(BTreeMap<String, IR>, Span),
+    Record(BTreeMap<String, serde_json::Value>, Span),
     Call(Call),
     Lambda(Lambda),
     Variable(Variable),
@@ -87,6 +97,11 @@ impl Spanned for IR {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct Variable {
     pub id: Id,
     pub name: String,
@@ -94,6 +109,11 @@ pub struct Variable {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct Call {
     pub id: Id,
     pub base: Box<IR>,
@@ -102,6 +122,11 @@ pub struct Call {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct Lambda {
     pub id: Id,
     pub params: VecDeque<Variable>,
@@ -137,7 +162,7 @@ impl Resolver {
             Expr::String(x, span, ..) => Ok(IR::String(x, span)),
             Expr::List(xs, span, ..) => self.resolve_list(xs, span),
             Expr::Record(xs, span, ..) => self.resolve_record(xs, span),
-            Expr::Variable(name, span, ..) => self.resolve_variable(name, span),
+            Expr::Var(name, span, ..) => self.resolve_variable(name, span),
             Expr::Call(base, args, span, ..) => self.resolve_call(*base, args, span),
             Expr::Lambda(param_names, body, span, ..) => {
                 self.resolve_lambda(param_names, *body, span)
@@ -156,7 +181,10 @@ impl Resolver {
     fn resolve_record(&mut self, xs: BTreeMap<String, Expr>, span: Span) -> Result<IR> {
         let mut ys = BTreeMap::new();
         for (field_name, x) in xs {
-            ys.insert(field_name, self.resolve(x)?);
+            ys.insert(
+                field_name,
+                serde_json::to_value(self.resolve(x)?).expect("should serialize to json"),
+            );
         }
         Ok(IR::Record(ys, span))
     }

@@ -10,5 +10,11 @@ ouroboros = { git = "ssh://git@github.com/talo/ouroboros.git", default-features 
     "serde",
 ] }
 regex = "1.10.4"
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0.87", optional = true }
 thiserror = "1.0"
 tokio = { version = "1.27.0", features = ["macros", "rt"] }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "dep:serde_json"]

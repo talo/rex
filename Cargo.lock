@@ -199,6 +199,8 @@ dependencies = [
  "async-trait",
  "ouroboros",
  "regex",
+ "serde",
+ "serde_json",
  "thiserror",
  "tokio",
 ]

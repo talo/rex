@@ -7,10 +7,15 @@ use std::fmt::{self, Display};
 /// A Position represents an arbitrary source position. It includes the
 /// filename, line number, and column number.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct Position {
-    filename: String,
-    line: usize,
-    column: usize,
+    pub filename: String,
+    pub line: usize,
+    pub column: usize,
 }
 
 impl Position {
@@ -66,6 +71,11 @@ impl fmt::Display for Position {
 /// A Span represents an arbitrary source range. It includes the beginning and
 /// ending Positions.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct Span {
     pub begin: Position,
     pub end: Position,
@@ -133,9 +143,25 @@ impl Span {
     }
 }
 
+impl Default for Span {
+    fn default() -> Span {
+        Span::empty()
+    }
+}
+
 impl Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} - {}", self.begin, self.end)
+        if self.begin.filename == ""
+            && self.begin.line == 0
+            && self.begin.column == 0
+            && self.end.filename == ""
+            && self.end.line == 0
+            && self.end.column == 0
+        {
+            Ok(())
+        } else {
+            write!(f, "{} - {}", self.begin, self.end)
+        }
     }
 }
 

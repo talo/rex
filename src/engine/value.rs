@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, fmt::Display};
 
 use ouroboros::Type;
+use serde::ser::Error;
 
 use crate::{
     resolver::{Id, Lambda, Variable, IR},
@@ -8,6 +9,11 @@ use crate::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -16,7 +22,7 @@ pub enum Value {
     F64(f64),
     String(String),
     List(Vec<Value>),
-    Record(BTreeMap<String, Value>),
+    Record(BTreeMap<String, serde_json::Value>),
     Function(Function),
     Lambda(Lambda),
 }
@@ -89,11 +95,64 @@ impl Display for Value {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct Function {
     pub id: Id,
     pub name: String,
     pub params: Vec<Type>,
     pub ret: Type,
+}
+
+impl From<serde_json::Value> for Value {
+    fn from(value: serde_json::Value) -> Self {
+        match value {
+            serde_json::Value::Null => Value::Null,
+            serde_json::Value::Bool(x) => Value::Bool(x),
+            serde_json::Value::Number(x) => {
+                if x.is_i64() {
+                    Value::I64(x.as_i64().unwrap())
+                } else if x.is_u64() {
+                    Value::U64(x.as_u64().unwrap())
+                } else {
+                    Value::F64(x.as_f64().unwrap())
+                }
+            }
+            serde_json::Value::String(x) => Value::String(x),
+            serde_json::Value::Array(xs) => Value::List(xs.into_iter().map(Value::from).collect()),
+            serde_json::Value::Object(xs) => Value::Record(xs.into_iter().collect()),
+        }
+    }
+}
+
+impl TryInto<serde_json::Value> for Value {
+    type Error = serde_json::Error;
+
+    fn try_into(self) -> Result<serde_json::Value, Self::Error> {
+        match self {
+            Value::Null => Ok(serde_json::Value::Null),
+            Value::Bool(x) => Ok(serde_json::Value::Bool(x)),
+            Value::U64(x) => Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+            Value::I64(x) => Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+            Value::F64(x) => Ok(serde_json::Value::Number(
+                serde_json::Number::from_f64(x).unwrap(),
+            )),
+            Value::String(x) => Ok(serde_json::Value::String(x)),
+            Value::List(xs) => Ok(serde_json::Value::Array(
+                xs.into_iter()
+                    .map(|x| x.try_into())
+                    .collect::<Result<_, _>>()?,
+            )),
+            Value::Record(xs) => Ok(serde_json::Value::Object(xs.into_iter().collect())),
+            Value::Function(_) => Err(serde_json::Error::custom(
+                "cannot serialize function to JSON",
+            )),
+            Value::Lambda(_) => Err(serde_json::Error::custom("cannot serialize lambda to JSON")),
+        }
+    }
 }
 
 pub fn value_to_ir(val: Value, span: Span) -> IR {
@@ -110,12 +169,7 @@ pub fn value_to_ir(val: Value, span: Span) -> IR {
                 .collect(),
             span,
         ),
-        Value::Record(xs) => IR::Record(
-            xs.into_iter()
-                .map(|(field_name, x)| (field_name, value_to_ir(x, span.clone())))
-                .collect(),
-            span,
-        ),
+        Value::Record(xs) => IR::Record(xs, span),
         Value::Function(f) => IR::Variable(Variable {
             id: f.id,
             name: f.name,

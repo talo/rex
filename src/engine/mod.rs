@@ -136,20 +136,16 @@ impl Engine {
 
     async fn eval_record<R: Runner + Send>(
         &mut self,
-        runner: &mut R,
-        ctx: &mut R::Ctx,
-        trace: &mut Trace,
+        _runner: &mut R,
+        _ctx: &mut R::Ctx,
+        _trace: &mut Trace,
         _span: &Span,
-        xs: BTreeMap<String, IR>,
+        xs: BTreeMap<String, serde_json::Value>,
     ) -> Result<Value, Error>
     where
         R::Ctx: Send,
     {
-        let mut ys = BTreeMap::new();
-        for (field_name, x) in xs {
-            ys.insert(field_name, self.eval(runner, ctx, trace, x).await?);
-        }
-        Ok(Value::Record(ys))
+        Ok(Value::Record(xs))
     }
 
     async fn eval_call<R: Runner + Send>(
