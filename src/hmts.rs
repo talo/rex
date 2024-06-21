@@ -41,6 +41,12 @@ pub struct TypeEnv {
     env: HashMap<Id, Type>,
 }
 
+impl Default for TypeEnv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeEnv {
     pub fn new() -> Self {
         TypeEnv {
@@ -53,7 +59,7 @@ impl TypeEnv {
     }
 
     pub fn get(&self, id: &Id) -> Option<&Type> {
-        self.env.get(&id)
+        self.env.get(id)
     }
 }
 
@@ -61,6 +67,12 @@ impl TypeEnv {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Substitution {
     subs: HashMap<TypeVarId, Type>,
+}
+
+impl Default for Substitution {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Substitution {
@@ -178,6 +190,12 @@ pub struct TypeInferer {
     pub curr_id: TypeVarId,
 }
 
+impl Default for TypeInferer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeInferer {
     pub fn new() -> Self {
         TypeInferer {
@@ -239,7 +257,7 @@ impl TypeInferer {
                                         }
                                     }
                                     if success {
-                                        match unify(&subst3.apply(&*ret), &ret_ty) {
+                                        match unify(&subst3.apply(&ret), &ret_ty) {
                                             Ok(subst4) => {
                                                 subst1.compose(&subst3);
                                                 subst1.compose(&subst4);

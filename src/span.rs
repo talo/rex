@@ -151,10 +151,10 @@ impl Default for Span {
 
 impl Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.begin.filename == ""
+        if self.begin.filename.is_empty()
             && self.begin.line == 0
             && self.begin.column == 0
-            && self.end.filename == ""
+            && self.end.filename.is_empty()
             && self.end.line == 0
             && self.end.column == 0
         {

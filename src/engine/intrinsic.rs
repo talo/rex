@@ -11,6 +11,12 @@ use super::{value_to_ir, Engine, Error, Function, Runner, Trace, TraceNode, Valu
 
 pub struct IntrinsicRunner<T>(PhantomData<T>);
 
+impl<T> Default for IntrinsicRunner<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> IntrinsicRunner<T> {
     pub fn new() -> Self {
         Self(PhantomData)

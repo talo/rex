@@ -95,7 +95,7 @@ impl Token {
 
             let begin_line = line;
             let begin_column = column;
-            column += (&capture[0]).to_string().chars().count();
+            column += capture[0].to_string().chars().count();
             let span = Span::new(filename, begin_line, begin_column, line, column - 1);
             if &capture[0] == "\n" {
                 line += 1;
@@ -214,10 +214,7 @@ impl Token {
         }
         
         // Filter whitespace
-        tokens.into_iter().filter(|token| match *token {
-            Token::Whitespace(..) => false,
-            _ => true,
-        }).collect()
+        tokens.into_iter().filter(|token| !matches!(*token, Token::Whitespace(..))).collect()
     }
 
     /// Get the regular expression that can capture all Tokens. The regular
@@ -311,10 +308,7 @@ impl Token {
     }
 
     pub fn is_whitespace(&self) -> bool {
-        match self {
-            Token::Whitespace(..) | Token::WhitespaceNewline(..) => true,
-            _ => false,
-        }
+        matches!(self, Token::Whitespace(..) | Token::WhitespaceNewline(..))
     }
 }
 
@@ -470,7 +464,7 @@ impl fmt::Display for Token {
             Question(..) => write!(f, "?"),
             SemiColon(..) => write!(f, ";"),
             Whitespace(..) => write!(f, " "),
-            WhitespaceNewline(..) => write!(f, "\n"),
+            WhitespaceNewline(..) => writeln!(f),
 
             // Operators
             Add(..) => write!(f, "+"),

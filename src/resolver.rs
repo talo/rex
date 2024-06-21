@@ -198,7 +198,7 @@ impl Resolver {
     fn resolve_variable(&mut self, name: String, span: Span) -> Result<IR> {
         match self.scope.get(&name) {
             Some(id) => Ok(IR::Variable(Variable {
-                id: id.clone(),
+                id: *id,
                 name,
                 span,
             })),
