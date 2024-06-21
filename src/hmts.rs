@@ -10,7 +10,7 @@ impl TypeVarId {
         Self(0)
     }
 
-    pub fn next(&mut self) -> Self {
+    pub fn inc(&mut self) -> Self {
         let id = self.0;
         self.0 += 1;
         Self(id)
@@ -235,7 +235,7 @@ impl TypeInferer {
 
                 let ret_ty = match expected {
                     Some(expected_ty) => expected_ty.clone(),
-                    None => Type::Variable(self.curr_id.next()),
+                    None => Type::Variable(self.curr_id.inc()),
                 };
 
                 match base_ty {
@@ -290,7 +290,7 @@ impl TypeInferer {
                 let mut new_env = env.clone();
                 let mut param_types = Vec::new();
                 for param in &lambda.params {
-                    let param_ty = Type::Variable(self.curr_id.next());
+                    let param_ty = Type::Variable(self.curr_id.inc());
                     new_env.insert(param.id, param_ty.clone());
                     param_types.push(param_ty);
                 }
@@ -299,7 +299,7 @@ impl TypeInferer {
             }
 
             IR::List(elems, _) => {
-                let mut elem_ty = Type::Variable(self.curr_id.next());
+                let mut elem_ty = Type::Variable(self.curr_id.inc());
                 let mut subst = Substitution::new();
 
                 for elem in elems {

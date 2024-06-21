@@ -106,10 +106,6 @@ impl Trace {
         unsafe { self.children.get_unchecked_mut(n) }
     }
 
-    pub fn to_string(&self) -> String {
-        self.to_string_pretty(0, 2)
-    }
-
     pub fn to_string_pretty(&self, indent: usize, ident_size: usize) -> String {
         let mut s = String::new();
         if !matches!(&self.node, TraceNode::Root) {
@@ -135,6 +131,6 @@ impl Trace {
 
 impl Display for Trace {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.to_string_pretty(0, 2))
     }
 }

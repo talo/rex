@@ -31,14 +31,10 @@ impl Id {
         Id(0)
     }
 
-    pub fn next(&mut self) -> Id {
+    pub fn inc(&mut self) -> Id {
         let id = self.0;
         self.0 += 1;
         Id(id)
-    }
-
-    pub fn to_string(&self) -> String {
-        self.0.to_string()
     }
 }
 
@@ -154,7 +150,7 @@ impl Resolver {
     }
 
     pub fn inject_builtin(&mut self, name: &str) -> Id {
-        let id = self.curr_id.next();
+        let id = self.curr_id.inc();
         self.scope.insert(name.to_string(), id);
         id
     }
@@ -203,7 +199,7 @@ impl Resolver {
                 span,
             })),
             None => {
-                let id = self.curr_id.next();
+                let id = self.curr_id.inc();
                 Ok(IR::Variable(Variable { id, name, span }))
             }
         }
@@ -215,7 +211,7 @@ impl Resolver {
         for x in args {
             xs.push_back(self.resolve(x)?);
         }
-        let id = self.curr_id.next();
+        let id = self.curr_id.inc();
         let call = Call {
             id,
             base,
@@ -230,7 +226,7 @@ impl Resolver {
         let mut params = VecDeque::with_capacity(param_names.len());
         let mut scope = self.scope.clone();
         for param_name in param_names {
-            let id = self.curr_id.next();
+            let id = self.curr_id.inc();
             params.push_back(Variable {
                 id,
                 name: param_name.clone(),
@@ -253,7 +249,7 @@ impl Resolver {
         self.curr_id = resolver.curr_id;
 
         Ok(IR::Lambda(Lambda {
-            id: self.curr_id.next(),
+            id: self.curr_id.inc(),
             params,
             body,
             span,

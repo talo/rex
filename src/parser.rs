@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display},
+};
 
 use crate::{
     lexer::{Token, Tokens},
@@ -23,9 +26,9 @@ pub enum Operator {
     Sub,
 }
 
-impl Operator {
-    pub fn to_string(&self) -> String {
-        match self {
+impl Display for Operator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
             Operator::Add => "+".to_string(),
             Operator::And => "&&".to_string(),
             Operator::Concat => "++".to_string(),
@@ -40,7 +43,8 @@ impl Operator {
             Operator::Mul => "*".to_string(),
             Operator::Or => "||".to_string(),
             Operator::Sub => "-".to_string(),
-        }
+        };
+        write!(f, "{}", s)
     }
 }
 
@@ -199,45 +203,28 @@ impl Parser {
         let span_end = rhs_expr.span().end.clone();
 
         match self.current_token() {
-            Some(next_token) => {
-                if prec > next_token.precedence() {
-                    // The next token is of a lower precedence so this binary
-                    // expression is should be parsed first, as the left hand side
-                    // of the next.
-                    self.parse_binary_expr(Expr::Call(
-                        Expr::Var(operator.to_string(), operator_span.clone()).into(),
-                        vec![lhs_expr, rhs_expr],
-                        Span::from_begin_end(span_begin, span_end),
-                    ))
-                } else if prec == next_token.precedence() {
-                    match next_token {
-                        // token is left-associative
-                        Token::Add(..)
-                        | Token::And(..)
-                        | Token::Concat(..)
-                        | Token::Div(..)
-                        | Token::Mul(..)
-                        | Token::Or(..)
-                        | Token::Sub(..) => self.parse_binary_expr(Expr::Call(
-                            Expr::Var(operator.to_string(), operator_span.clone()).into(),
-                            vec![lhs_expr, rhs_expr],
-                            Span::from_begin_end(span_begin, span_end),
-                        )),
-                        // token is right-associative
-                        _ => {
-                            let rhs_expr = self.parse_binary_expr(rhs_expr);
-                            let span_end = rhs_expr.span().end.clone();
-                            Expr::Call(
-                                Expr::Var(operator.to_string(), operator_span.clone()).into(),
-                                vec![lhs_expr, rhs_expr],
-                                Span::from_begin_end(span_begin, span_end),
-                            )
-                        }
-                    }
-                } else {
-                    // The next token is of a higher precedence so the right hand
-                    // side of this expression is actually the left hand side of
-                    // the next binary expression.
+            Some(next_token) if prec > next_token.precedence() => {
+                self.parse_binary_expr(Expr::Call(
+                    Expr::Var(operator.to_string(), operator_span.clone()).into(),
+                    vec![lhs_expr, rhs_expr],
+                    Span::from_begin_end(span_begin, span_end),
+                ))
+            }
+            Some(next_token) if prec == next_token.precedence() => match next_token {
+                // token is left-associative
+                Token::Add(..)
+                | Token::And(..)
+                | Token::Concat(..)
+                | Token::Div(..)
+                | Token::Mul(..)
+                | Token::Or(..)
+                | Token::Sub(..) => self.parse_binary_expr(Expr::Call(
+                    Expr::Var(operator.to_string(), operator_span.clone()).into(),
+                    vec![lhs_expr, rhs_expr],
+                    Span::from_begin_end(span_begin, span_end),
+                )),
+                // token is right-associative
+                _ => {
                     let rhs_expr = self.parse_binary_expr(rhs_expr);
                     let span_end = rhs_expr.span().end.clone();
                     Expr::Call(
@@ -246,6 +233,18 @@ impl Parser {
                         Span::from_begin_end(span_begin, span_end),
                     )
                 }
+            },
+            Some(_next_token) => {
+                // The next token is of a higher precedence so the right hand
+                // side of this expression is actually the left hand side of
+                // the next binary expression.
+                let rhs_expr = self.parse_binary_expr(rhs_expr);
+                let span_end = rhs_expr.span().end.clone();
+                Expr::Call(
+                    Expr::Var(operator.to_string(), operator_span.clone()).into(),
+                    vec![lhs_expr, rhs_expr],
+                    Span::from_begin_end(span_begin, span_end),
+                )
             }
             // There are no more parts of the expression.
             None => Expr::Call(

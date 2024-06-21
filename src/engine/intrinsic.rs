@@ -170,18 +170,18 @@ where
                 let a = args.pop_front().unwrap();
                 let b = args.pop_front().unwrap();
                 let x = Variable {
-                    id: engine.curr_id.next(),
+                    id: engine.curr_id.inc(),
                     name: "x0".to_string(),
                     span: Span::empty(),
                 };
                 Ok(Value::Lambda(Lambda {
-                    id: engine.curr_id.next(),
+                    id: engine.curr_id.inc(),
                     params: vec![x.clone()].into(),
                     body: Box::new(IR::Call(Call {
-                        id: engine.curr_id.next(),
+                        id: engine.curr_id.inc(),
                         base: Box::new(value_to_ir(a, Span::empty())),
                         args: vec![IR::Call(Call {
-                            id: engine.curr_id.next(),
+                            id: engine.curr_id.inc(),
                             base: Box::new(value_to_ir(b, Span::empty())),
                             args: vec![IR::Variable(x)].into(),
                             span: Span::empty(),
@@ -199,7 +199,7 @@ where
                     Value::List(xs) => {
                         let mut apps = Vec::with_capacity(xs.len());
                         for x in xs {
-                            let id = engine.curr_id.next();
+                            let id = engine.curr_id.inc();
                             apps.push(
                                 engine
                                     .eval(

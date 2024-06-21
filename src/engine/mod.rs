@@ -192,7 +192,7 @@ impl Engine {
                         let mut vars = VecDeque::with_capacity(n_vars);
                         for i in 0..n_vars {
                             vars.push_back(Variable {
-                                id: self.curr_id.next(),
+                                id: self.curr_id.inc(),
                                 name: format!("x{}", i),
                                 span: span.clone(),
                             });
@@ -201,10 +201,10 @@ impl Engine {
                             call.args.push_back(IR::Variable(var.clone()));
                         }
                         return Ok(Value::Lambda(Lambda {
-                            id: self.curr_id.next(),
+                            id: self.curr_id.inc(),
                             params: vars,
                             body: Box::new(IR::Call(Call {
-                                id: self.curr_id.next(),
+                                id: self.curr_id.inc(),
                                 base: Box::new(IR::Variable(Variable {
                                     id: f.id,
                                     name: f.name.clone(),
@@ -260,29 +260,29 @@ impl Engine {
     }
 
     fn replace_var_in_lambda(&mut self, lam: &mut Lambda, var_id: Id, val: IR) {
-        self.replace_var_in_ir(lam.body.as_mut(), var_id, val);
+        Engine::replace_var_in_ir(lam.body.as_mut(), var_id, val);
     }
 
-    fn replace_var_in_ir(&mut self, ir: &mut IR, var_id: Id, val: IR) {
+    fn replace_var_in_ir(ir: &mut IR, var_id: Id, val: IR) {
         match ir {
             IR::Variable(var) if var.id == var_id => {
                 *ir = val;
             }
             IR::Call(call) => {
-                self.replace_var_in_ir(call.base.as_mut(), var_id, val.clone());
+                Engine::replace_var_in_ir(call.base.as_mut(), var_id, val.clone());
                 for arg in call.args.iter_mut() {
-                    self.replace_var_in_ir(arg, var_id, val.clone());
+                    Engine::replace_var_in_ir(arg, var_id, val.clone());
                 }
             }
             IR::Lambda(lam) => {
                 if lam.params.iter().any(|v| v.id == var_id) {
                     return;
                 }
-                self.replace_var_in_ir(lam.body.as_mut(), var_id, val);
+                Engine::replace_var_in_ir(lam.body.as_mut(), var_id, val);
             }
             IR::List(xs, ..) => {
                 for x in xs.iter_mut() {
-                    self.replace_var_in_ir(x, var_id, val.clone());
+                    Engine::replace_var_in_ir(x, var_id, val.clone());
                 }
             }
             _ => {}
