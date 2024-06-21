@@ -34,8 +34,8 @@ impl Position {
     {
         Position {
             filename: filename.to_string(),
-            line: line,
-            column: column,
+            line,
+            column,
         }
     }
 
@@ -60,7 +60,7 @@ impl Position {
 
 impl fmt::Display for Position {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        if self.filename.len() > 0 {
+        if !self.filename.is_empty() {
             write!(formatter, "{}:{}:{}", self.filename, self.line, self.column)
         } else {
             write!(formatter, "{}:{}", self.line, self.column)

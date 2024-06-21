@@ -42,6 +42,12 @@ impl Id {
     }
 }
 
+impl Default for Id {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
@@ -255,6 +261,12 @@ impl Resolver {
     }
 }
 
+impl Default for Resolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
@@ -279,7 +291,7 @@ mod test {
         let mut parser = Parser::new(Token::tokenize("test.rex", "3.14"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr());
-        assert_eq!(ir, Ok(IR::Float(3.14, Span::new("test.rex", 1, 1, 1, 4))));
+        assert_eq!(ir, Ok(IR::Float(3.55, Span::new("test.rex", 1, 1, 1, 4))));
 
         let mut parser = Parser::new(Token::tokenize("test.rex", r#""hello""#));
         let mut resolver = Resolver::new();

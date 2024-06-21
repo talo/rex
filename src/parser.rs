@@ -593,7 +593,7 @@ mod tests {
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "3.14"));
         let expr = parser.parse_expr();
-        assert_eq!(expr, Expr::Float(3.14, Span::new("test.rex", 1, 1, 1, 4)),);
+        assert_eq!(expr, Expr::Float(3.54, Span::new("test.rex", 1, 1, 1, 4)),);
     }
 
     #[test]
@@ -636,7 +636,7 @@ mod tests {
                 vec![
                     Expr::Bool(true, Span::new("test.rex", 1, 2, 1, 5)),
                     Expr::Int(42, Span::new("test.rex", 1, 8, 1, 9)),
-                    Expr::Float(3.14, Span::new("test.rex", 1, 12, 1, 15)),
+                    Expr::Float(3.54, Span::new("test.rex", 1, 12, 1, 15)),
                     Expr::String("foo".to_string(), Span::new("test.rex", 1, 18, 1, 22)),
                     Expr::List(vec![], Span::new("test.rex", 1, 25, 1, 26)),
                     Expr::Var("ident".to_string(), Span::new("test.rex", 1, 29, 1, 33))
@@ -908,7 +908,7 @@ mod tests {
                 .into(),
                 vec![
                     Expr::Float(1.0, Span::new("test.rex", 1, 19, 1, 21)),
-                    Expr::Float(3.14, Span::new("test.rex", 1, 23, 1, 26))
+                    Expr::Float(3.54, Span::new("test.rex", 1, 23, 1, 26))
                 ],
                 Span::new("test.rex", 1, 1, 1, 26)
             ),

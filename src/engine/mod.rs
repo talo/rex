@@ -161,12 +161,12 @@ impl Engine {
         let span = call.span.clone();
         let mut base = self.eval(runner, ctx, trace, *call.base).await?;
 
-        while call.args.len() > 0 {
+        while !call.args.is_empty() {
             match base {
                 Value::Lambda(mut lam) => {
                     let mut trace_params = Vec::new();
                     let mut trace_args = Vec::new();
-                    while lam.params.len() > 0 && call.args.len() > 0 {
+                    while !lam.params.is_empty() & !call.args.is_empty()  {
                         let var = lam.params.pop_front().unwrap();
                         let arg = call.args.pop_front().unwrap();
                         let arg = self.eval(runner, ctx, trace, arg).await?;
@@ -180,7 +180,7 @@ impl Engine {
                     }
                     let trace =
                         trace.step(TraceNode::Lambda(trace_params, trace_args), span.clone());
-                    if lam.params.len() > 0 {
+                    if !lam.params.is_empty() {
                         return Ok(Value::Lambda(lam));
                     }
                     base = self.eval(runner, ctx, trace, *lam.body).await?;

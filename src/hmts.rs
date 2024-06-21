@@ -17,6 +17,12 @@ impl TypeVarId {
     }
 }
 
+impl Default for TypeVarId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Type {
     Void,
