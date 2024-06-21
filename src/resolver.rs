@@ -288,7 +288,7 @@ mod test {
         let ir = resolver.resolve(parser.parse_expr());
         assert_eq!(ir, Ok(IR::Uint(42, Span::new("test.rex", 1, 1, 1, 2))));
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "3.14"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "3.55"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr());
         assert_eq!(ir, Ok(IR::Float(3.55, Span::new("test.rex", 1, 1, 1, 4))));
@@ -313,7 +313,7 @@ mod test {
                 vec![
                     IR::Uint(0, Span::new("test.rex", 1, 2, 1, 2)),
                     IR::Uint(1, Span::new("test.rex", 1, 5, 1, 5)),
-                    IR::Uint(42, Span::new("test.rex", 1, 8, 1, 8))
+                    IR::Uint(42, Span::new("test.rex", 1, 8, 1, 9))
                 ],
                 Span::new("test.rex", 1, 1, 1, 10)
             ))
@@ -355,12 +355,12 @@ mod test {
                     base: Box::new(IR::Variable(Variable {
                         id: Id(1),
                         name: "f".to_string(),
-                        span: Span::new("test.rex", 1, 7, 1, 17) // FIXME: Lambda variables should have their own span
+                        span: Span::new("test.rex", 1, 7, 1, 7) // FIXME: Lambda variables should have their own span
                     })),
                     args: vec![IR::Variable(Variable {
                         id: Id(0),
                         name: "x".to_string(),
-                        span: Span::new("test.rex", 1, 1, 1, 9)
+                        span: Span::new("test.rex", 1, 9, 1, 9)
                     })]
                     .into(),
                     span: Span::new("test.rex", 1, 7, 1, 9)
