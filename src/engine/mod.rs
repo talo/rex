@@ -76,7 +76,7 @@ impl Engine {
             IR::Call(call) => self.eval_call(runner, ctx, trace, call).await,
             IR::Lambda(lam) => self.eval_lambda(trace, lam).await,
             IR::Variable(var) => self.eval_variable(runner, ctx, trace, var).await,
-            _ => unimplemented!(),
+            _ => Err(Error::Custom(format!("IR kind {:?} not implemented", ir))),
         }
     }
 
@@ -306,7 +306,7 @@ mod test {
     async fn test_ops() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 2 + 3 + 4"));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -314,7 +314,7 @@ mod test {
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 * 2 * 3 * 4"));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -322,7 +322,7 @@ mod test {
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "(/) 6 3"));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -330,7 +330,7 @@ mod test {
 
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"(++) "hello, " "world!""#));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -341,7 +341,7 @@ mod test {
             r#""hello" ++ ", " ++ "world!""#,
         ));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -352,7 +352,7 @@ mod test {
     async fn test_lambda() {
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\x -> x + 1) 2"#));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -361,7 +361,7 @@ mod test {
 
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\x -> x 1) ((+) 2)"#));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -370,7 +370,7 @@ mod test {
 
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\x -> x 1 2) (+)"#));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -382,7 +382,7 @@ mod test {
     async fn test_curry() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "(+) 1"));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -424,7 +424,7 @@ mod test {
     async fn test_compose() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "((+) 1 . (+) 2 . (*) 3) 4"));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -439,7 +439,7 @@ mod test {
             "map ((+) 1 . (+) 2 . (*) 3) [1, 2, 3, 4]",
         ));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
@@ -459,7 +459,7 @@ mod test {
     async fn test_trace() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 * (2 + 3) * 4"));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();

@@ -26,6 +26,24 @@ pub enum Operator {
     Sub,
 }
 
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+pub enum Error {
+    #[error("parse error {0}")]
+    Parse(String),
+}
+
+impl From<String> for Error {
+    fn from(s: String) -> Error {
+        Error::Parse(s)
+    }
+}
+
+impl From<&str> for Error {
+    fn from(s: &str) -> Error {
+        Error::Parse(s.to_string())
+    }
+}
+
 impl Display for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
@@ -160,12 +178,12 @@ impl Parser {
         self.token_cursor += 1;
     }
 
-    pub fn parse_expr(&mut self) -> Expr {
-        let lhs_expr = self.parse_unary_expr();
+    pub fn parse_expr(&mut self) -> Result<Expr, Error> {
+        let lhs_expr = self.parse_unary_expr()?;
         self.parse_binary_expr(lhs_expr)
     }
 
-    pub fn parse_binary_expr(&mut self, lhs_expr: Expr) -> Expr {
+    pub fn parse_binary_expr(&mut self, lhs_expr: Expr) -> Result<Expr, Error> {
         let span_begin = lhs_expr.span().begin.clone();
 
         // Get the next token.
@@ -173,7 +191,7 @@ impl Parser {
             Some(token) => token,
             // Having no next token should finish the parsing of the binary
             // expression.
-            None => return lhs_expr,
+            None => return Ok(lhs_expr),
         };
         let prec = token.precedence();
 
@@ -190,7 +208,7 @@ impl Parser {
                     token.span().clone(),
                     format!("unexpect token {}", token),
                 ));
-                return lhs_expr;
+                return Ok(lhs_expr);
             }
         };
         let operator_span = token.span();
@@ -199,7 +217,7 @@ impl Parser {
         self.next_token();
 
         // Parse the next part of this binary expression.
-        let rhs_expr = self.parse_unary_expr();
+        let rhs_expr = self.parse_unary_expr()?;
         let span_end = rhs_expr.span().end.clone();
 
         match self.current_token() {
@@ -225,37 +243,37 @@ impl Parser {
                 )),
                 // token is right-associative
                 _ => {
-                    let rhs_expr = self.parse_binary_expr(rhs_expr);
+                    let rhs_expr = self.parse_binary_expr(rhs_expr)?;
                     let span_end = rhs_expr.span().end.clone();
-                    Expr::Call(
+                    Ok(Expr::Call(
                         Expr::Var(operator.to_string(), operator_span.clone()).into(),
                         vec![lhs_expr, rhs_expr],
                         Span::from_begin_end(span_begin, span_end),
-                    )
+                    ))
                 }
             },
             Some(_next_token) => {
                 // The next token is of a higher precedence so the right hand
                 // side of this expression is actually the left hand side of
                 // the next binary expression.
-                let rhs_expr = self.parse_binary_expr(rhs_expr);
+                let rhs_expr = self.parse_binary_expr(rhs_expr)?;
                 let span_end = rhs_expr.span().end.clone();
-                Expr::Call(
+                Ok(Expr::Call(
                     Expr::Var(operator.to_string(), operator_span.clone()).into(),
                     vec![lhs_expr, rhs_expr],
                     Span::from_begin_end(span_begin, span_end),
-                )
+                ))
             }
             // There are no more parts of the expression.
-            None => Expr::Call(
+            None => Ok(Expr::Call(
                 Expr::Var(operator.to_string(), operator_span.clone()).into(),
                 vec![lhs_expr, rhs_expr],
                 Span::from_begin_end(span_begin, span_end),
-            ),
+            )),
         }
     }
 
-    pub fn parse_unary_expr(&mut self) -> Expr {
+    pub fn parse_unary_expr(&mut self) -> Result<Expr, Error> {
         let token = self.current_token();
         let call_target_expr = match token {
             Some(Token::ParenL(..)) => self.parse_paren_expr(),
@@ -267,8 +285,10 @@ impl Parser {
             Some(Token::Ident(..)) => self.parse_ident_expr(),
             Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
             Some(Token::Sub(..)) => self.parse_neg_expr(),
-            _ => unimplemented!(),
-        };
+            _ => {
+                return Err("expected expression".into());
+            }
+        }?;
         let call_target_expr_span = call_target_expr.span().clone();
 
         let mut call_arg_exprs = Vec::new();
@@ -286,26 +306,26 @@ impl Parser {
                 Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
                 Some(Token::Sub(..)) => self.parse_neg_expr(),
                 _ => break,
-            };
+            }?;
             call_arg_exprs_span = Some(call_arg_expr.span().clone());
             call_arg_exprs.push(call_arg_expr);
         }
 
         if call_arg_exprs.is_empty() {
-            call_target_expr
+            Ok(call_target_expr)
         } else {
-            Expr::Call(
+            Ok(Expr::Call(
                 call_target_expr.into(),
                 call_arg_exprs,
                 Span::from_begin_end(
                     call_target_expr_span.begin,
                     call_arg_exprs_span.unwrap().end,
                 ),
-            )
+            ))
         }
     }
 
-    pub fn parse_paren_expr(&mut self) -> Expr {
+    pub fn parse_paren_expr(&mut self) -> Result<Expr, Error> {
         // Eat the left parenthesis.
         let token = self.current_token();
         let span_begin = match token {
@@ -313,7 +333,9 @@ impl Parser {
                 self.next_token();
                 span
             }
-            _ => unimplemented!(),
+            _ => {
+                return Err("expected `(`".to_string().into());
+            }
         };
 
         // Parse the inner expression.
@@ -350,7 +372,7 @@ impl Parser {
                 self.next_token();
                 Expr::Var("-".to_string(), span)
             }
-            _ => self.parse_expr(),
+            _ => self.parse_expr()?,
         };
 
         // Eat the right parenthesis.
@@ -362,16 +384,16 @@ impl Parser {
             }
             oops => {
                 dbg!(oops);
-                unimplemented!()
+                Err("expected `)`")?
             }
         };
 
         expr.set_span_begin(span_begin.begin.clone());
         expr.set_span_end(span_end.end.clone());
-        expr
+        Ok(expr)
     }
 
-    pub fn parse_bracket_expr(&mut self) -> Expr {
+    pub fn parse_bracket_expr(&mut self) -> Result<Expr, Error> {
         // Eat the left bracket.
         let token = self.current_token();
         let span_begin = match token {
@@ -379,23 +401,25 @@ impl Parser {
                 self.next_token();
                 span.begin.clone()
             }
-            _ => unimplemented!(),
+            _ => {
+                return Err(Error::Parse("expected `[`".to_string()));
+            }
         };
 
         // Catch the case where the list is empty.
         let token = self.current_token();
         if let Some(Token::BracketR(span, ..)) = token {
             self.next_token();
-            return Expr::List(
+            return Ok(Expr::List(
                 vec![],
                 Span::from_begin_end(span_begin.clone(), span.end.clone()),
-            );
+            ));
         }
 
         let mut exprs = Vec::new();
         loop {
             // Parse the next expression.
-            let expr = self.parse_expr();
+            let expr = self.parse_expr()?;
             let span_expr = expr.span().clone();
             exprs.push(expr);
             // Eat the comma.
@@ -420,13 +444,18 @@ impl Parser {
                 self.next_token();
                 span.end.clone()
             }
-            _ => unimplemented!(),
+            _ => {
+                return Err("expected `]`".into());
+            }
         };
 
-        Expr::List(exprs, Span::from_begin_end(span_begin, span_end))
+        Ok(Expr::List(
+            exprs,
+            Span::from_begin_end(span_begin, span_end),
+        ))
     }
 
-    pub fn parse_neg_expr(&mut self) -> Expr {
+    pub fn parse_neg_expr(&mut self) -> Result<Expr, Error> {
         // Eat the minus.
         let token = self.current_token();
         let span_token = match token {
@@ -434,22 +463,24 @@ impl Parser {
                 self.next_token();
                 span
             }
-            _ => unimplemented!(),
+            _ => {
+                return Err(Error::Parse("expected `-`".to_string()));
+            }
         };
 
         // Parse the inner expression.
-        let expr = self.parse_expr();
+        let expr = self.parse_expr()?;
         let span_end = expr.span().end.clone();
 
-        Expr::Call(
+        Ok(Expr::Call(
             Expr::Var("-".to_string(), span_token.clone()).into(),
             vec![expr],
             Span::from_begin_end(span_token.begin.clone(), span_end),
-        )
+        ))
     }
 
     //
-    pub fn parse_lambda_expr(&mut self) -> Expr {
+    pub fn parse_lambda_expr(&mut self) -> Result<Expr, Error> {
         // Eat the backslash.
         let token = self.current_token();
         let span_begin = match token {
@@ -457,7 +488,9 @@ impl Parser {
                 self.next_token();
                 span.begin.clone()
             }
-            _ => unimplemented!(),
+            _ => {
+                return Err(Error::Parse("expected `\\`".to_string()));
+            }
         };
 
         // Parse the params.
@@ -480,67 +513,69 @@ impl Parser {
                 self.next_token();
                 span
             }
-            _ => unimplemented!(),
+            _ => {
+                return Err(Error::Parse("expected `->`".to_string()));
+            }
         };
 
         // Parse the body.
-        let body = self.parse_expr();
+        let body = self.parse_expr()?;
         let span_end = body.span().end.clone();
 
-        Expr::Lambda(
+        Ok(Expr::Lambda(
             params,
             body.into(),
             Span::from_begin_end(span_begin, span_end),
-        )
+        ))
     }
 
     //
-    pub fn parse_literal_bool_expr(&mut self) -> Expr {
+    pub fn parse_literal_bool_expr(&mut self) -> Result<Expr, Error> {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Bool(val, span, ..)) => Expr::Bool(val, span),
-            _ => unimplemented!(),
+            Some(Token::Bool(val, span, ..)) => Ok(Expr::Bool(val, span)),
+            _ => Err(Error::Parse("expected bool".to_string())),
         }
     }
 
     //
-    pub fn parse_literal_float_expr(&mut self) -> Expr {
+    pub fn parse_literal_float_expr(&mut self) -> Result<Expr, Error> {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Float(val, span, ..)) => Expr::Float(val, span),
-            _ => unimplemented!(),
+            Some(Token::Float(val, span, ..)) => Ok(Expr::Float(val, span)),
+            _ => Err(Error::Parse("expected float".to_string())),
         }
     }
 
     //
-    pub fn parse_literal_int_expr(&mut self) -> Expr {
+    pub fn parse_literal_int_expr(&mut self) -> Result<Expr, Error> {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Int(val, span, ..)) => Expr::Int(val, span),
-            _ => unimplemented!(),
+            Some(Token::Int(val, span, ..)) => Ok(Expr::Int(val, span)),
+            _ => Err(Error::Parse("expected int".to_string())),
         }
     }
 
     //
-    pub fn parse_literal_str_expr(&mut self) -> Expr {
+    pub fn parse_literal_str_expr(&mut self) -> Result<Expr, Error> {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::String(val, span, ..)) => Expr::String(val, span),
-            _ => unimplemented!(),
+            Some(Token::String(val, span, ..)) => Ok(Expr::String(val, span)),
+            _ => Err(Error::Parse("expected string".to_string())),
         }
     }
 
     //
-    pub fn parse_ident_expr(&mut self) -> Expr {
+    pub fn parse_ident_expr(&mut self) -> Result<Expr, Error> {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Ident(val, span, ..)) => Expr::Var(val, span),
-            _ => unimplemented!(),
+            Some(Token::Ident(val, span, ..)) => Ok(Expr::Var(val, span)),
+            _ => Err(Error::Parse("expected ident".to_string())),
         }
     }
 
@@ -560,46 +595,46 @@ mod tests {
     #[test]
     fn test_parse_literals() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "true"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Bool(true, Span::new("test.rex", 1, 1, 1, 4)),);
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "false"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Bool(false, Span::new("test.rex", 1, 1, 1, 5)),);
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "0"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Int(0, Span::new("test.rex", 1, 1, 1, 1)),);
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "1"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Int(1, Span::new("test.rex", 1, 1, 1, 1)),);
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "42"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Int(42, Span::new("test.rex", 1, 1, 1, 2)),);
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "0.0"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Float(0.0, Span::new("test.rex", 1, 1, 1, 3)),);
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "1.0"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Float(1.0, Span::new("test.rex", 1, 1, 1, 3)),);
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "3.54"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Float(3.54, Span::new("test.rex", 1, 1, 1, 4)),);
     }
 
     #[test]
     fn test_parse_list() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "[]"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::List(vec![], Span::new("test.rex", 1, 1, 1, 2)));
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "[[]]"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::List(
@@ -609,7 +644,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "[[], []]"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::List(
@@ -625,7 +660,7 @@ mod tests {
             "test.rex",
             "[true, 42, 3.54, \"foo\", [], ident]",
         ));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::List(
@@ -645,14 +680,14 @@ mod tests {
     #[test]
     fn test_parse_variable() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "foo"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Var("foo".to_string(), Span::new("test.rex", 1, 1, 1, 3)),
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "(bar)"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Var("bar".to_string(), Span::new("test.rex", 1, 1, 1, 5)),
@@ -662,7 +697,7 @@ mod tests {
     #[test]
     fn test_parse_math_operators() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 2"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -676,7 +711,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 2 * 3"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -697,7 +732,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 * 2 + 3"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -718,7 +753,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 * (2 + 3)"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -742,7 +777,7 @@ mod tests {
     #[test]
     fn test_parse_dot_operator() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "f . g"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -756,7 +791,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "f . g . h"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -777,7 +812,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "(f . g) . h"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -801,7 +836,7 @@ mod tests {
     #[test]
     fn test_call() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "f x"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -815,7 +850,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "f x y"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -829,7 +864,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "f x (g y) z"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -854,7 +889,7 @@ mod tests {
     #[test]
     fn test_lambda() {
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"\x -> x"#));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Lambda(
@@ -865,7 +900,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"\f x y -> f y x"#));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Lambda(
@@ -884,7 +919,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\f x y -> x + y) 1.0 3.54"#));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -914,7 +949,7 @@ mod tests {
     #[test]
     fn test_precedence() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "x + y + z"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -935,7 +970,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "f x + g y"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -963,7 +998,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "f . g x"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -984,7 +1019,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "(f . g) x"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -1006,7 +1041,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "f x + g y * h z"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -1050,7 +1085,7 @@ mod tests {
         );
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "f . g (h x) . i"));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Call(
@@ -1094,7 +1129,7 @@ mod tests {
   (f . g (h z) . i)
   (j x y (k z))"#,
         ));
-        let expr = parser.parse_expr();
+        let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Lambda(
