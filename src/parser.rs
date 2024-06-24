@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     lexer::{Token, Tokens},
-    span::{Span, Spanned},
+    span::{Position, Span, Spanned},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -26,21 +26,15 @@ pub enum Operator {
     Sub,
 }
 
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum Error {
-    #[error("parse error {0}")]
-    Parse(String),
+    #[error("parse errors {0:?}")]
+    Parser(Vec<ParserErr>),
 }
 
-impl From<String> for Error {
-    fn from(s: String) -> Error {
-        Error::Parse(s)
-    }
-}
-
-impl From<&str> for Error {
-    fn from(s: &str) -> Error {
-        Error::Parse(s.to_string())
+impl From<Vec<ParserErr>> for Error {
+    fn from(errors: Vec<ParserErr>) -> Error {
+        Error::Parser(errors)
     }
 }
 
@@ -128,6 +122,7 @@ impl Spanned for Expr {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct ParserErr {
     span: Span,
     message: String,
@@ -142,6 +137,24 @@ impl ParserErr {
 impl fmt::Display for ParserErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}: {}", self.span.begin, self.message)
+    }
+}
+
+impl From<String> for ParserErr {
+    fn from(message: String) -> ParserErr {
+        ParserErr {
+            span: Span::new("unknown", 0, 0, 0, 0),
+            message,
+        }
+    }
+}
+
+impl From<&str> for ParserErr {
+    fn from(message: &str) -> ParserErr {
+        ParserErr {
+            span: Span::new("unknown", 0, 0, 0, 0),
+            message: message.to_string(),
+        }
     }
 }
 
@@ -206,7 +219,7 @@ impl Parser {
             _ => {
                 self.errors.push(ParserErr::new(
                     token.span().clone(),
-                    format!("unexpect token {}", token),
+                    format!("unexpected token {}", token),
                 ));
                 return Ok(lhs_expr);
             }
@@ -285,8 +298,19 @@ impl Parser {
             Some(Token::Ident(..)) => self.parse_ident_expr(),
             Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
             Some(Token::Sub(..)) => self.parse_neg_expr(),
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("unexpected expression {}", token),
+                ));
+                return Err(Error::Parser(self.errors.clone()));
+            }
             _ => {
-                return Err("expected expression".into());
+                self.errors.push(ParserErr::new(
+                    Span::new("unknown", 0, 0, 0, 0),
+                    format!("unexpected expression {:?}", token),
+                ));
+                return Err(Error::Parser(self.errors.clone()));
             }
         }?;
         let call_target_expr_span = call_target_expr.span().clone();
@@ -333,8 +357,15 @@ impl Parser {
                 self.next_token();
                 span
             }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected '(' got {}", token),
+                ));
+                return Err(Error::Parser(self.errors.clone()));
+            }
             _ => {
-                return Err("expected `(`".to_string().into());
+                return Err(vec!["expected `(`".to_string().into()].into());
             }
         };
 
@@ -382,9 +413,16 @@ impl Parser {
                 self.next_token();
                 span
             }
-            oops => {
-                dbg!(oops);
-                Err("expected `)`")?
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `)` got {}", token),
+                ));
+                return Ok(expr);
+            }
+            _ => {
+                self.errors.push("expected `)`".into());
+                return Ok(expr);
             }
         };
 
@@ -401,8 +439,16 @@ impl Parser {
                 self.next_token();
                 span.begin.clone()
             }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `[` got {}", token),
+                ));
+                return Err(self.errors.clone().into());
+            }
             _ => {
-                return Err(Error::Parse("expected `[`".to_string()));
+                self.errors.push("expected `[`".into());
+                return Err(self.errors.clone().into());
             }
         };
 
@@ -444,8 +490,23 @@ impl Parser {
                 self.next_token();
                 span.end.clone()
             }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `]` got {}", token),
+                ));
+
+                return Ok(Expr::List(
+                    exprs,
+                    Span::from_begin_end(span_begin, Position::new("", 0, 0)),
+                ));
+            }
             _ => {
-                return Err("expected `]`".into());
+                self.errors.push("expected `]`".into());
+                return Ok(Expr::List(
+                    exprs,
+                    Span::from_begin_end(span_begin, Position::new("", 0, 0)),
+                ));
             }
         };
 
@@ -463,8 +524,16 @@ impl Parser {
                 self.next_token();
                 span
             }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `-` got {}", token),
+                ));
+                return Err(self.errors.clone().into());
+            }
             _ => {
-                return Err(Error::Parse("expected `-`".to_string()));
+                self.errors.push("expected `-`".into());
+                return Err(self.errors.clone().into());
             }
         };
 
@@ -488,8 +557,16 @@ impl Parser {
                 self.next_token();
                 span.begin.clone()
             }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `\\` got {}", token),
+                ));
+                return Err(self.errors.clone().into());
+            }
             _ => {
-                return Err(Error::Parse("expected `\\`".to_string()));
+                self.errors.push("expected `\\`".into());
+                return Err(self.errors.clone().into());
             }
         };
 
@@ -513,8 +590,16 @@ impl Parser {
                 self.next_token();
                 span
             }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `->` got {}", token),
+                ));
+                return Err(self.errors.clone().into());
+            }
             _ => {
-                return Err(Error::Parse("expected `->`".to_string()));
+                self.errors.push("expected `->`".into());
+                return Err(self.errors.clone().into());
             }
         };
 
@@ -535,7 +620,17 @@ impl Parser {
         self.next_token();
         match token {
             Some(Token::Bool(val, span, ..)) => Ok(Expr::Bool(val, span)),
-            _ => Err(Error::Parse("expected bool".to_string())),
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `bool` got {}", token),
+                ));
+                Err(self.errors.clone().into())
+            }
+            _ => {
+                self.errors.push("expected `bool`".into());
+                Err(self.errors.clone().into())
+            }
         }
     }
 
@@ -545,7 +640,17 @@ impl Parser {
         self.next_token();
         match token {
             Some(Token::Float(val, span, ..)) => Ok(Expr::Float(val, span)),
-            _ => Err(Error::Parse("expected float".to_string())),
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `float` got {}", token),
+                ));
+                Err(self.errors.clone().into())
+            }
+            _ => {
+                self.errors.push("expected `float`".into());
+                Err(self.errors.clone().into())
+            }
         }
     }
 
@@ -555,7 +660,17 @@ impl Parser {
         self.next_token();
         match token {
             Some(Token::Int(val, span, ..)) => Ok(Expr::Int(val, span)),
-            _ => Err(Error::Parse("expected int".to_string())),
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `int` got {}", token),
+                ));
+                Err(self.errors.clone().into())
+            }
+            _ => {
+                self.errors.push("expected `int`".into());
+                Err(self.errors.clone().into())
+            }
         }
     }
 
@@ -565,7 +680,17 @@ impl Parser {
         self.next_token();
         match token {
             Some(Token::String(val, span, ..)) => Ok(Expr::String(val, span)),
-            _ => Err(Error::Parse("expected string".to_string())),
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `str` got {}", token),
+                ));
+                Err(self.errors.clone().into())
+            }
+            _ => {
+                self.errors.push("expected `str`".into());
+                Err(self.errors.clone().into())
+            }
         }
     }
 
@@ -575,7 +700,17 @@ impl Parser {
         self.next_token();
         match token {
             Some(Token::Ident(val, span, ..)) => Ok(Expr::Var(val, span)),
-            _ => Err(Error::Parse("expected ident".to_string())),
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `ident` got {}", token),
+                ));
+                Err(self.errors.clone().into())
+            }
+            _ => {
+                self.errors.push("expected `ident`".into());
+                Err(self.errors.clone().into())
+            }
         }
     }
 
