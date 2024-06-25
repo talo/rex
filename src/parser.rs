@@ -193,7 +193,15 @@ impl Parser {
 
     pub fn parse_expr(&mut self) -> Result<Expr, Error> {
         let lhs_expr = self.parse_unary_expr()?;
-        self.parse_binary_expr(lhs_expr)
+        let expr = self.parse_binary_expr(lhs_expr);
+        if let Err(err) = &expr {
+            self.errors.push(format!("{}", err).into());
+        }
+        if self.errors.is_empty() {
+            expr
+        } else {
+            Err(Error::Parser(self.errors.clone()))
+        }
     }
 
     pub fn parse_binary_expr(&mut self, lhs_expr: Expr) -> Result<Expr, Error> {
