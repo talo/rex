@@ -225,10 +225,6 @@ impl Parser {
             Token::Mul(..) => Operator::Mul,
             Token::Sub(..) => Operator::Sub,
             _ => {
-                self.errors.push(ParserErr::new(
-                    token.span().clone(),
-                    format!("unexpected token {}", token),
-                ));
                 return Ok(lhs_expr);
             }
         };
