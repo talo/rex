@@ -99,6 +99,10 @@ where
                     (Value::String(a), Value::String(b)) => {
                         Ok(Value::String(format!("{}{}", a, b)))
                     }
+                    (Value::List(mut a), Value::List(b)) => {
+                        a.extend(b);
+                        Ok(Value::List(a))
+                    }
                     _ => unreachable!(),
                 }
             }
