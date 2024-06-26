@@ -417,11 +417,8 @@ impl Parser {
                 self.next_token();
                 span
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
-                    token.span().clone(),
-                    format!("expected `)` got {}", token),
-                ));
+            Some(_) => {
+                // parse inner expressions
                 return Ok(expr);
             }
             _ => {
