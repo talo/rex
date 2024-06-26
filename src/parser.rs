@@ -477,11 +477,14 @@ impl Parser {
             match token {
                 Some(Token::Comma(..)) => self.next_token(),
                 Some(Token::BracketL(..)) => break,
-                _ => {
+                None => {
                     self.errors.push(ParserErr::new(
                         Span::from_begin_end(span_begin.clone(), span_expr.end.clone()),
                         "expected `,` or `]`".to_string(),
                     ));
+                    break;
+                }
+                _ => {
                     break;
                 }
             };
