@@ -166,7 +166,7 @@ impl Engine {
                 Value::Lambda(mut lam) => {
                     let mut trace_params = Vec::new();
                     let mut trace_args = Vec::new();
-                    while !lam.params.is_empty() & !call.args.is_empty()  {
+                    while !lam.params.is_empty() & !call.args.is_empty() {
                         let var = lam.params.pop_front().unwrap();
                         let arg = call.args.pop_front().unwrap();
                         let arg = self.eval(runner, ctx, trace, arg).await?;
@@ -457,19 +457,13 @@ mod test {
 
     #[tokio::test]
     async fn test_get() {
-        let mut parser = Parser::new(Token::tokenize(
-            "test.rex",
-            "get 1 [1, 2, 3, 4]",
-        ));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "get 1 [1, 2, 3, 4]"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
-        assert_eq!(
-            value,
-            Value::U64(2)
-        );
+        assert_eq!(value, Value::U64(2));
         println!("{}", trace);
 
         // TODO: implement once we have record representation
@@ -493,22 +487,14 @@ mod test {
     async fn test_map_composed_lambda() {
         let mut parser = Parser::new(Token::tokenize(
             "test.rex",
-            "map ((+) 1 . \\x -> x + 2) ([1, 2] ++ [3, 4])",
+            "map ((+) 1 . \\x -> x + 2) (get 1 ([[1, 2]] ++ [[3, 4]]))",
         ));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
         let value = result.unwrap();
-        assert_eq!(
-            value,
-            Value::List(vec![
-                Value::U64(4),
-                Value::U64(5),
-                Value::U64(6),
-                Value::U64(7)
-            ])
-        );
+        assert_eq!(value, Value::List(vec![Value::U64(6), Value::U64(7)]));
         println!("{}", trace);
     }
 
