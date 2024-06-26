@@ -105,6 +105,10 @@ where
                     (Value::String(a), Value::String(b)) => {
                         Ok(Value::String(format!("{}{}", a, b)))
                     }
+                    (Value::List(mut a), Value::List(b)) => {
+                        a.extend(b);
+                        Ok(Value::List(a))
+                    }
                     _ => unreachable!(),
                 }
             }
@@ -248,7 +252,7 @@ where
                             if let Some(v) = xs.get(&n) {
                                 Ok(v.clone().into())
                             } else {
-                                Err(Error::VarNotFound { name: n })
+                                Err(Error::FieldNotFound { name: n })
                             }
                         }
                         v => Err(Error::Type { expected: "String".to_string(), got: v.to_string() }),
