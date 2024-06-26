@@ -456,6 +456,40 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_get() {
+        let mut parser = Parser::new(Token::tokenize(
+            "test.rex",
+            "get 1 [1, 2, 3, 4]",
+        ));
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(
+            value,
+            Value::U64(2)
+        );
+        println!("{}", trace);
+
+        // TODO: implement once we have record representation
+        // let mut parser = Parser::new(Token::tokenize(
+        //     "test.rex",
+        //     r#"get "a" {"a": 1}"#,
+        // ));
+        // let mut resolver = Resolver::new();
+        // let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        // let mut engine = Engine::new(resolver.curr_id);
+        // let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        // let value = result.unwrap();
+        // assert_eq!(
+        //     value,
+        //     Value::U64(2)
+        // );
+        // println!("{}", trace);
+    }
+
+    #[tokio::test]
     async fn test_trace() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 * (2 + 3) * 4"));
         let mut resolver = Resolver::new();

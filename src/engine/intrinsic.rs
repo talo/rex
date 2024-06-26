@@ -241,9 +241,19 @@ where
                                 Ok(xs[n as usize].clone())
                             }
                         }
-                        _ => unreachable!(),
+                        v => Err(Error::Type { expected: "Number".to_string(), got: v.to_string() }),
                     },
-                    _ => unreachable!(),
+                    Value::Record(xs) => match n {
+                        Value::String(n) => {
+                            if let Some(v) = xs.get(&n) {
+                                Ok(v.clone().into())
+                            } else {
+                                Err(Error::VarNotFound { name: n })
+                            }
+                        }
+                        v => Err(Error::Type { expected: "String".to_string(), got: v.to_string() }),
+                    },
+                    v => Err(Error::Type { expected: "List or Record".to_string(), got: v.to_string() }),
                 }
             }
             _ => Err(Error::VarNotFound { name: f.name }),
