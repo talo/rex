@@ -9,23 +9,46 @@ use crate::{
 
 use super::{value_to_ir, Engine, Error, Function, Runner, Trace, TraceNode, Value};
 
-pub struct IntrinsicRunner<T>(PhantomData<T>);
+pub struct IntrinsicRunner<R, T>(R, PhantomData<T>) where R: Runner<Ctx = T>;
 
-impl<T> Default for IntrinsicRunner<T> {
-    fn default() -> Self {
-        Self::new()
+pub struct NullRunner;
+
+#[async_trait::async_trait]
+impl Runner for NullRunner {
+    type Ctx = ();
+
+    async fn lookup(&mut self, _ctx: &mut Self::Ctx, _var: &Variable) -> Result<Option<Value>, Error> {
+        Ok(None)
+    }
+
+    async fn run(
+        &mut self,
+        _engine: &mut Engine,
+        _ctx: &mut Self::Ctx,
+        _trace: &mut Trace,
+        _f: Function,
+        _args: VecDeque<Value>,
+    ) -> Result<Value, Error> {
+        unreachable!()
     }
 }
 
-impl<T> IntrinsicRunner<T> {
-    pub fn new() -> Self {
-        Self(PhantomData)
+impl Default for IntrinsicRunner<NullRunner, ()>{
+    fn default() -> Self {
+        Self::new(NullRunner)
+    }
+}
+
+impl<R, T> IntrinsicRunner<R, T> where R: Runner<Ctx = T> {
+    pub fn new(runner: R) -> Self {
+        Self(runner, PhantomData)
     }
 }
 
 #[async_trait::async_trait]
-impl<T> Runner for IntrinsicRunner<T>
+impl<R, T> Runner for IntrinsicRunner<R, T>
 where
+    R: Runner<Ctx = T> + Send,
     T: Send,
 {
     type Ctx = T;
@@ -85,7 +108,7 @@ where
                 params: vec![Type::Unit, Type::Unit],
                 ret: Type::Unit,
             }))),
-            _ => Ok(None),
+            _ => self.0.lookup(_ctx, var).await,
         }
     }
 
@@ -260,7 +283,7 @@ where
                     v => Err(Error::Type { expected: "List or Record".to_string(), got: v.to_string() }),
                 }
             }
-            _ => Err(Error::VarNotFound { name: f.name }),
+            _ => self.0.run(engine, ctx, trace, f, args).await,
         }
     }
 }

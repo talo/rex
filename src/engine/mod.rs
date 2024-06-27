@@ -308,7 +308,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(10));
 
@@ -316,7 +316,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(24));
 
@@ -324,7 +324,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(2));
 
@@ -332,7 +332,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::String("hello, world!".to_string()));
 
@@ -343,7 +343,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, _trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, _trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::String("hello, world!".to_string()));
     }
@@ -354,7 +354,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -363,7 +363,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -372,7 +372,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
@@ -384,7 +384,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(
             value,
@@ -426,7 +426,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(15));
         println!("{}", trace);
@@ -441,7 +441,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(
             value,
@@ -456,12 +456,32 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_nested_map() {
+        let mut parser = Parser::new(Token::tokenize(
+            "test.rex",
+            "map (\\x -> ( (+) 1 . (+) 2 . (*) 3 ) ( get 1 x ) ) [ [1, 2, 3, 4] ]",
+        ));
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(
+            value,
+            Value::List(vec![
+                Value::U64(9),
+            ])
+        );
+        println!("{}", trace);
+    }
+
+    #[tokio::test]
     async fn test_get() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "get 1 [1, 2, 3, 4]"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(2));
         println!("{}", trace);
@@ -474,7 +494,7 @@ mod test {
         // let mut resolver = Resolver::new();
         // let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         // let mut engine = Engine::new(resolver.curr_id);
-        // let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        // let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         // let value = result.unwrap();
         // assert_eq!(
         //     value,
@@ -492,7 +512,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::List(vec![Value::U64(6), Value::U64(7)]));
         println!("{}", trace);
@@ -504,7 +524,7 @@ mod test {
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
-        let (result, trace) = engine.run(&mut IntrinsicRunner::new(), (), ir).await;
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(20));
         assert_eq!(
