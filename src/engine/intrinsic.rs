@@ -9,8 +9,10 @@ use crate::{
 
 use super::{value_to_ir, Engine, Error, Function, Runner, Trace, TraceNode, Value};
 
-pub struct IntrinsicRunner<R, T>(R, PhantomData<T>) where R: Runner<Ctx = T>;
+#[derive(Clone)]
+pub struct IntrinsicRunner<R, T>(R, PhantomData<T>) where R: Runner<Ctx = T> + Clone, T: Clone;
 
+#[derive(Clone)]
 pub struct NullRunner;
 
 #[async_trait::async_trait]
@@ -39,7 +41,7 @@ impl Default for IntrinsicRunner<NullRunner, ()>{
     }
 }
 
-impl<R, T> IntrinsicRunner<R, T> where R: Runner<Ctx = T> {
+impl<R, T> IntrinsicRunner<R, T> where R: Runner<Ctx = T> + Clone, T: Clone {
     pub fn new(runner: R) -> Self {
         Self(runner, PhantomData)
     }
@@ -48,8 +50,8 @@ impl<R, T> IntrinsicRunner<R, T> where R: Runner<Ctx = T> {
 #[async_trait::async_trait]
 impl<R, T> Runner for IntrinsicRunner<R, T>
 where
-    R: Runner<Ctx = T> + Send,
-    T: Send,
+    R: Runner<Ctx = T> + Send + Clone,
+    T: Send + Clone,
 {
     type Ctx = T;
 
