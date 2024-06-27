@@ -456,6 +456,29 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_zip() {
+        let mut parser = Parser::new(Token::tokenize(
+            "test.rex",
+            "zip [1, 2, 3, 4] [4, 3, 2, 1]",
+        ));
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(
+            value,
+            Value::List(vec![
+                Value::List(vec![Value::U64(1), Value::U64(4)]),
+                Value::List(vec![Value::U64(2), Value::U64(3)]),
+                Value::List(vec![Value::U64(3), Value::U64(2)]),
+                Value::List(vec![Value::U64(4), Value::U64(1)]),
+            ])
+        );
+        println!("{}", trace);
+    }
+
+    #[tokio::test]
     async fn test_nested_map() {
         let mut parser = Parser::new(Token::tokenize(
             "test.rex",
