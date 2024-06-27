@@ -161,12 +161,12 @@ impl Engine {
         let span = call.span.clone();
         let mut base = self.eval(runner, ctx, trace, *call.base).await?;
 
-        while call.args.len() > 0 {
+        while !call.args.is_empty() {
             match base {
                 Value::Lambda(mut lam) => {
                     let mut trace_params = Vec::new();
                     let mut trace_args = Vec::new();
-                    while lam.params.len() > 0 && call.args.len() > 0 {
+                    while !lam.params.is_empty() & !call.args.is_empty()  {
                         let var = lam.params.pop_front().unwrap();
                         let arg = call.args.pop_front().unwrap();
                         let arg = self.eval(runner, ctx, trace, arg).await?;
@@ -180,7 +180,7 @@ impl Engine {
                     }
                     let trace =
                         trace.step(TraceNode::Lambda(trace_params, trace_args), span.clone());
-                    if lam.params.len() > 0 {
+                    if !lam.params.is_empty() {
                         return Ok(Value::Lambda(lam));
                     }
                     base = self.eval(runner, ctx, trace, *lam.body).await?;
@@ -192,7 +192,7 @@ impl Engine {
                         let mut vars = VecDeque::with_capacity(n_vars);
                         for i in 0..n_vars {
                             vars.push_back(Variable {
-                                id: self.curr_id.next(),
+                                id: self.curr_id.inc(),
                                 name: format!("x{}", i),
                                 span: span.clone(),
                             });
@@ -201,10 +201,10 @@ impl Engine {
                             call.args.push_back(IR::Variable(var.clone()));
                         }
                         return Ok(Value::Lambda(Lambda {
-                            id: self.curr_id.next(),
+                            id: self.curr_id.inc(),
                             params: vars,
                             body: Box::new(IR::Call(Call {
-                                id: self.curr_id.next(),
+                                id: self.curr_id.inc(),
                                 base: Box::new(IR::Variable(Variable {
                                     id: f.id,
                                     name: f.name.clone(),
@@ -260,29 +260,29 @@ impl Engine {
     }
 
     fn replace_var_in_lambda(&mut self, lam: &mut Lambda, var_id: Id, val: IR) {
-        self.replace_var_in_ir(lam.body.as_mut(), var_id, val);
+        Engine::replace_var_in_ir(lam.body.as_mut(), var_id, val);
     }
 
-    fn replace_var_in_ir(&mut self, ir: &mut IR, var_id: Id, val: IR) {
+    fn replace_var_in_ir(ir: &mut IR, var_id: Id, val: IR) {
         match ir {
             IR::Variable(var) if var.id == var_id => {
                 *ir = val;
             }
             IR::Call(call) => {
-                self.replace_var_in_ir(call.base.as_mut(), var_id, val.clone());
+                Engine::replace_var_in_ir(call.base.as_mut(), var_id, val.clone());
                 for arg in call.args.iter_mut() {
-                    self.replace_var_in_ir(arg, var_id, val.clone());
+                    Engine::replace_var_in_ir(arg, var_id, val.clone());
                 }
             }
             IR::Lambda(lam) => {
                 if lam.params.iter().any(|v| v.id == var_id) {
                     return;
                 }
-                self.replace_var_in_ir(lam.body.as_mut(), var_id, val);
+                Engine::replace_var_in_ir(lam.body.as_mut(), var_id, val);
             }
             IR::List(xs, ..) => {
                 for x in xs.iter_mut() {
-                    self.replace_var_in_ir(x, var_id, val.clone());
+                    Engine::replace_var_in_ir(x, var_id, val.clone());
                 }
             }
             _ => {}

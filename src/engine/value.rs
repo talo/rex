@@ -173,7 +173,7 @@ pub fn value_to_ir(val: Value, span: Span) -> IR {
         Value::Function(f) => IR::Variable(Variable {
             id: f.id,
             name: f.name,
-            span: span,
+            span,
         }),
         Value::Lambda(lam) => IR::Lambda(lam),
     }

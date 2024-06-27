@@ -34,8 +34,8 @@ impl Position {
     {
         Position {
             filename: filename.to_string(),
-            line: line,
-            column: column,
+            line,
+            column,
         }
     }
 
@@ -60,7 +60,7 @@ impl Position {
 
 impl fmt::Display for Position {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        if self.filename.len() > 0 {
+        if !self.filename.is_empty() {
             write!(formatter, "{}:{}:{}", self.filename, self.line, self.column)
         } else {
             write!(formatter, "{}:{}", self.line, self.column)
@@ -151,10 +151,10 @@ impl Default for Span {
 
 impl Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.begin.filename == ""
+        if self.begin.filename.is_empty()
             && self.begin.line == 0
             && self.begin.column == 0
-            && self.end.filename == ""
+            && self.end.filename.is_empty()
             && self.end.line == 0
             && self.end.column == 0
         {

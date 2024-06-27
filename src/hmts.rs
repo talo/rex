@@ -10,10 +10,16 @@ impl TypeVarId {
         Self(0)
     }
 
-    pub fn next(&mut self) -> Self {
+    pub fn inc(&mut self) -> Self {
         let id = self.0;
         self.0 += 1;
         Self(id)
+    }
+}
+
+impl Default for TypeVarId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -35,6 +41,12 @@ pub struct TypeEnv {
     env: HashMap<Id, Type>,
 }
 
+impl Default for TypeEnv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeEnv {
     pub fn new() -> Self {
         TypeEnv {
@@ -47,7 +59,7 @@ impl TypeEnv {
     }
 
     pub fn get(&self, id: &Id) -> Option<&Type> {
-        self.env.get(&id)
+        self.env.get(id)
     }
 }
 
@@ -55,6 +67,12 @@ impl TypeEnv {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Substitution {
     subs: HashMap<TypeVarId, Type>,
+}
+
+impl Default for Substitution {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Substitution {
@@ -172,6 +190,12 @@ pub struct TypeInferer {
     pub curr_id: TypeVarId,
 }
 
+impl Default for TypeInferer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeInferer {
     pub fn new() -> Self {
         TypeInferer {
@@ -211,7 +235,7 @@ impl TypeInferer {
 
                 let ret_ty = match expected {
                     Some(expected_ty) => expected_ty.clone(),
-                    None => Type::Variable(self.curr_id.next()),
+                    None => Type::Variable(self.curr_id.inc()),
                 };
 
                 match base_ty {
@@ -233,7 +257,7 @@ impl TypeInferer {
                                         }
                                     }
                                     if success {
-                                        match unify(&subst3.apply(&*ret), &ret_ty) {
+                                        match unify(&subst3.apply(&ret), &ret_ty) {
                                             Ok(subst4) => {
                                                 subst1.compose(&subst3);
                                                 subst1.compose(&subst4);
@@ -266,7 +290,7 @@ impl TypeInferer {
                 let mut new_env = env.clone();
                 let mut param_types = Vec::new();
                 for param in &lambda.params {
-                    let param_ty = Type::Variable(self.curr_id.next());
+                    let param_ty = Type::Variable(self.curr_id.inc());
                     new_env.insert(param.id, param_ty.clone());
                     param_types.push(param_ty);
                 }
@@ -275,7 +299,7 @@ impl TypeInferer {
             }
 
             IR::List(elems, _) => {
-                let mut elem_ty = Type::Variable(self.curr_id.next());
+                let mut elem_ty = Type::Variable(self.curr_id.inc());
                 let mut subst = Substitution::new();
 
                 for elem in elems {

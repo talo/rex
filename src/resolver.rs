@@ -31,14 +31,16 @@ impl Id {
         Id(0)
     }
 
-    pub fn next(&mut self) -> Id {
+    pub fn inc(&mut self) -> Id {
         let id = self.0;
         self.0 += 1;
         Id(id)
     }
+}
 
-    pub fn to_string(&self) -> String {
-        self.0.to_string()
+impl Default for Id {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -148,7 +150,7 @@ impl Resolver {
     }
 
     pub fn inject_builtin(&mut self, name: &str) -> Id {
-        let id = self.curr_id.next();
+        let id = self.curr_id.inc();
         self.scope.insert(name.to_string(), id);
         id
     }
@@ -192,12 +194,12 @@ impl Resolver {
     fn resolve_variable(&mut self, name: String, span: Span) -> Result<IR> {
         match self.scope.get(&name) {
             Some(id) => Ok(IR::Variable(Variable {
-                id: id.clone(),
+                id: *id,
                 name,
                 span,
             })),
             None => {
-                let id = self.curr_id.next();
+                let id = self.curr_id.inc();
                 Ok(IR::Variable(Variable { id, name, span }))
             }
         }
@@ -209,7 +211,7 @@ impl Resolver {
         for x in args {
             xs.push_back(self.resolve(x)?);
         }
-        let id = self.curr_id.next();
+        let id = self.curr_id.inc();
         let call = Call {
             id,
             base,
@@ -224,7 +226,7 @@ impl Resolver {
         let mut params = VecDeque::with_capacity(param_names.len());
         let mut scope = self.scope.clone();
         for param_name in param_names {
-            let id = self.curr_id.next();
+            let id = self.curr_id.inc();
             params.push_back(Variable {
                 id,
                 name: param_name.clone(),
@@ -247,11 +249,17 @@ impl Resolver {
         self.curr_id = resolver.curr_id;
 
         Ok(IR::Lambda(Lambda {
-            id: self.curr_id.next(),
+            id: self.curr_id.inc(),
             params,
             body,
             span,
         }))
+    }
+}
+
+impl Default for Resolver {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -276,10 +284,10 @@ mod test {
         let ir = resolver.resolve(parser.parse_expr());
         assert_eq!(ir, Ok(IR::Uint(42, Span::new("test.rex", 1, 1, 1, 2))));
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "3.14"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "3.55"));
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr());
-        assert_eq!(ir, Ok(IR::Float(3.14, Span::new("test.rex", 1, 1, 1, 4))));
+        assert_eq!(ir, Ok(IR::Float(3.55, Span::new("test.rex", 1, 1, 1, 4))));
 
         let mut parser = Parser::new(Token::tokenize("test.rex", r#""hello""#));
         let mut resolver = Resolver::new();
@@ -301,7 +309,7 @@ mod test {
                 vec![
                     IR::Uint(0, Span::new("test.rex", 1, 2, 1, 2)),
                     IR::Uint(1, Span::new("test.rex", 1, 5, 1, 5)),
-                    IR::Uint(42, Span::new("test.rex", 1, 8, 1, 8))
+                    IR::Uint(42, Span::new("test.rex", 1, 8, 1, 9))
                 ],
                 Span::new("test.rex", 1, 1, 1, 10)
             ))
@@ -343,12 +351,12 @@ mod test {
                     base: Box::new(IR::Variable(Variable {
                         id: Id(1),
                         name: "f".to_string(),
-                        span: Span::new("test.rex", 1, 7, 1, 17) // FIXME: Lambda variables should have their own span
+                        span: Span::new("test.rex", 1, 7, 1, 7) // FIXME: Lambda variables should have their own span
                     })),
                     args: vec![IR::Variable(Variable {
                         id: Id(0),
                         name: "x".to_string(),
-                        span: Span::new("test.rex", 1, 1, 1, 9)
+                        span: Span::new("test.rex", 1, 9, 1, 9)
                     })]
                     .into(),
                     span: Span::new("test.rex", 1, 7, 1, 9)
