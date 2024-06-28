@@ -298,6 +298,7 @@ impl Parser {
             Some(Token::Bool(..)) => self.parse_literal_bool_expr(),
             Some(Token::Float(..)) => self.parse_literal_float_expr(),
             Some(Token::Int(..)) => self.parse_literal_int_expr(),
+            Some(Token::Null(..)) => self.parse_literal_null_expr(),
             Some(Token::String(..)) => self.parse_literal_str_expr(),
             Some(Token::Ident(..)) => self.parse_ident_expr(),
             Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
@@ -673,6 +674,19 @@ impl Parser {
             }
             _ => {
                 self.errors.push("expected `int`".into());
+                Err(self.errors.clone().into())
+            }
+        }
+    }
+
+    //
+    pub fn parse_literal_null_expr(&mut self) -> Result<Expr, Error> {
+        let token = self.current_token();
+        self.next_token();
+        match token {
+            Some(Token::Null(span, ..)) => Ok(Expr::Null(span)),
+            _ => {
+                self.errors.push("expected `null`".into());
                 Err(self.errors.clone().into())
             }
         }

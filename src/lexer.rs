@@ -76,6 +76,7 @@ pub enum Token {
     Bool(bool, Span),
     Float(f64, Span),
     Int(u64, Span),
+    Null(Span),
     String(String, Span),
 
     // Idents
@@ -197,6 +198,8 @@ impl Token {
                     Token::Float(f64::from_str(capture.name("Float").unwrap().as_str()).unwrap(), span)
                 } else if capture.name("Int").is_some() {
                     Token::Int(u64::from_str(capture.name("Int").unwrap().as_str()).unwrap(), span)
+                } else if capture.name("Null").is_some() {
+                    Token::Null(span)
                 } else if capture.name("DoubleString").is_some() {
                     Token::String(capture.name("DoubleString").unwrap().as_str().to_string(), span)
                 } else if capture.name("SingleString").is_some() {
@@ -279,6 +282,7 @@ impl Token {
             r"(?P<Bool>(true|false))|",
             r"(?P<Float>[0-9]+\.[0-9]+)|",
             r"(?P<Int>[0-9]+)|",
+            r"(?P<Null>null)|",
             r#""(?P<DoubleString>(\\"|[^"])*)"|"#,
             r#"'(?P<SingleString>(\\'|[^'])*)'|"#,
 
@@ -371,6 +375,7 @@ impl Spanned for Token {
             Bool(_, span, ..) => span,
             Float(_, span, ..) => span,
             Int(_, span, ..) => span,
+            Null(span, ..) => span,
             String(_, span, ..) => span,
 
             // Idents
@@ -431,6 +436,7 @@ impl Spanned for Token {
             Bool(_, span, ..) => span,
             Float(_, span, ..) => span,
             Int(_, span, ..) => span,
+            Null(span, ..) => span,
             String(_, span, ..) => span,
 
             // Idents
@@ -493,6 +499,7 @@ impl fmt::Display for Token {
             Bool(x, ..) => write!(f, "{}", x),
             Float(x, ..) => write!(f, "{}", x),
             Int(x, ..) => write!(f, "{}", x),
+            Null(..) => write!(f, "null"),
             String(x, ..) => write!(f, "{}", x),
 
             // Idents
