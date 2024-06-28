@@ -563,6 +563,7 @@ mod test {
                             vec![Value::U64(2), Value::U64(3)],
                         ),
                         span: Span::new("test.rex", 1, 5, 1, 11),
+                        timestamp: None,
                     },
                     Trace {
                         step: 2,
@@ -572,6 +573,7 @@ mod test {
                             vec![Value::U64(1), Value::U64(5)]
                         ),
                         span: Span::new("test.rex", 1, 1, 1, 11),
+                        timestamp: None,
                     },
                     Trace {
                         step: 3,
@@ -581,9 +583,11 @@ mod test {
                             vec![Value::U64(5), Value::U64(4)]
                         ),
                         span: Span::new("test.rex", 1, 1, 1, 15),
+                        timestamp: None,
                     },
                 ],
                 node: TraceNode::Root,
+                timestamp: None,
                 span: Span::new("test.rex", 1, 1, 1, 15),
             }
         );
