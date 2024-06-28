@@ -140,7 +140,9 @@ where
                         a.extend(b);
                         Ok(Value::List(a))
                     }
-                    _ => unreachable!(),
+                    (a,b) => Err(Error::Type { expected: "String or List".to_string(), got: format!("{:?} or {:?}", a, b) }),
+                    // FIXME: only unreachable once type checking is implemented
+                    // _ => unreachable!(),
                 }
             }
             "+" => {
@@ -150,7 +152,9 @@ where
                     (Value::U64(a), Value::U64(b)) => Ok(Value::U64(a.wrapping_add(b))),
                     (Value::I64(a), Value::I64(b)) => Ok(Value::I64(a.wrapping_add(b))),
                     (Value::F64(a), Value::F64(b)) => Ok(Value::F64(a + b)),
-                    _ => unreachable!(),
+                    (a, b) => Err(Error::Type { expected: "Number".to_string(), got: format!("{:?} or {:?}", a, b) })
+                    // FIXME: only unreachable once type checking is implemented
+                    // _ => unreachable!(),
                 }
             }
             "-" => {
@@ -160,7 +164,9 @@ where
                     (Value::U64(a), Value::U64(b)) => Ok(Value::U64(a.wrapping_sub(b))),
                     (Value::I64(a), Value::I64(b)) => Ok(Value::I64(a.wrapping_sub(b))),
                     (Value::F64(a), Value::F64(b)) => Ok(Value::F64(a - b)),
-                    _ => unreachable!(),
+                    (a, b) => Err(Error::Type { expected: "Number".to_string(), got: format!("{:?} or {:?}", a, b) })
+                    // FIXME: only unreachable once type checking is implemented
+                    // _ => unreachable!(),
                 }
             }
             "*" => {
@@ -170,7 +176,9 @@ where
                     (Value::U64(a), Value::U64(b)) => Ok(Value::U64(a.wrapping_mul(b))),
                     (Value::I64(a), Value::I64(b)) => Ok(Value::I64(a.wrapping_mul(b))),
                     (Value::F64(a), Value::F64(b)) => Ok(Value::F64(a * b)),
-                    _ => unreachable!(),
+                    (a, b) => Err(Error::Type { expected: "Number".to_string(), got: format!("{:?} or {:?}", a, b) })
+                    // FIXME: only unreachable once type checking is implemented
+                    // _ => unreachable!(),
                 }
             }
             "/" => {
@@ -198,7 +206,10 @@ where
                             Ok(Value::F64(a / b))
                         }
                     }
-                    _ => unreachable!(),
+                    (a, b) => Err(Error::Type { expected: "Number".to_string(), got: format!("{:?} or {:?}", a, b) })
+
+                    // FIXME: only unreachable once type checking is implemented
+                    // _ => unreachable!(),
                 }
             }
             "." => {
@@ -254,7 +265,10 @@ where
                         trace.step(TraceNode::ListCtor, Span::empty());
                         Ok(Value::List(apps))
                     }
-                    _ => unreachable!(),
+                    xs => Err(Error::Type { expected: "List".to_string(), got: format!("{:?}", xs) })
+
+                    // FIXME: only unreachable once type checking is implemented
+                    // _ => unreachable!(),
                 }
             }
             "zip" => {
@@ -268,7 +282,10 @@ where
                         }
                         Ok(Value::List(zs))
                     }
-                    _ => unreachable!(),
+                    (xs, ys) => Err(Error::Type { expected: "List".to_string(), got: format!("{:?} or {:?}", xs, ys) })
+
+                    // FIXME: only unreachable once type checking is implemented
+                    // _ => unreachable!(),
                 }
             }
             "get" => {
