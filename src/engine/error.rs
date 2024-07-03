@@ -11,6 +11,8 @@ pub enum Error {
     Type { expected: String, got: String },
     #[error("variable not found: {name}")]
     VarNotFound { name: String },
+    #[error("field not found: {name}")]
+    FieldNotFound { name: String },
     #[error("division by zero")]
     DivByZero,
     #[error("index out of bounds: {index}")]

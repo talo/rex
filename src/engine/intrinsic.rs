@@ -9,24 +9,49 @@ use crate::{
 
 use super::{value_to_ir, Engine, Error, Function, Runner, Trace, TraceNode, Value};
 
-pub struct IntrinsicRunner<T>(PhantomData<T>);
+#[derive(Clone)]
+pub struct IntrinsicRunner<R, T>(R, PhantomData<T>) where R: Runner<Ctx = T> + Clone, T: Clone;
 
-impl<T> Default for IntrinsicRunner<T> {
-    fn default() -> Self {
-        Self::new()
+#[derive(Clone)]
+pub struct NullRunner;
+
+#[async_trait::async_trait]
+impl Runner for NullRunner {
+    type Ctx = ();
+
+    async fn lookup(&mut self, _ctx: &mut Self::Ctx, _var: &Variable) -> Result<Option<Value>, Error> {
+        Ok(None)
+    }
+
+    async fn run(
+        &mut self,
+        _engine: &mut Engine,
+        _ctx: &mut Self::Ctx,
+        _trace: &mut Trace,
+        _f: Function,
+        _args: VecDeque<Value>,
+    ) -> Result<Value, Error> {
+        unreachable!()
     }
 }
 
-impl<T> IntrinsicRunner<T> {
-    pub fn new() -> Self {
-        Self(PhantomData)
+impl Default for IntrinsicRunner<NullRunner, ()>{
+    fn default() -> Self {
+        Self::new(NullRunner)
+    }
+}
+
+impl<R, T> IntrinsicRunner<R, T> where R: Runner<Ctx = T> + Clone, T: Clone {
+    pub fn new(runner: R) -> Self {
+        Self(runner, PhantomData)
     }
 }
 
 #[async_trait::async_trait]
-impl<T> Runner for IntrinsicRunner<T>
+impl<R, T> Runner for IntrinsicRunner<R, T>
 where
-    T: Send,
+    R: Runner<Ctx = T> + Send + Clone,
+    T: Send + Clone,
 {
     type Ctx = T;
 
@@ -85,7 +110,7 @@ where
                 params: vec![Type::Unit, Type::Unit],
                 ret: Type::Unit,
             }))),
-            _ => Ok(None),
+            _ => self.0.lookup(_ctx, var).await,
         }
     }
 
@@ -245,12 +270,22 @@ where
                                 Ok(xs[n as usize].clone())
                             }
                         }
-                        _ => unreachable!(),
+                        v => Err(Error::Type { expected: "Number".to_string(), got: v.to_string() }),
                     },
-                    _ => unreachable!(),
+                    Value::Record(xs) => match n {
+                        Value::String(n) => {
+                            if let Some(v) = xs.get(&n) {
+                                Ok(v.clone().into())
+                            } else {
+                                Err(Error::FieldNotFound { name: n })
+                            }
+                        }
+                        v => Err(Error::Type { expected: "String".to_string(), got: v.to_string() }),
+                    },
+                    v => Err(Error::Type { expected: "List or Record".to_string(), got: v.to_string() }),
                 }
             }
-            _ => Err(Error::VarNotFound { name: f.name }),
+            _ => self.0.run(engine, ctx, trace, f, args).await,
         }
     }
 }

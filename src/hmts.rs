@@ -329,7 +329,7 @@ mod test {
     fn test_type_inferer() {
         let mut parser = Parser::new(Token::tokenize("test.rex", "true"));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut inferer = TypeInferer::new();
         let mut type_env = TypeEnv::new();
         let (ty, subs) = inferer.infer(&mut type_env, ir, None).unwrap();
@@ -337,7 +337,7 @@ mod test {
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "(\\x -> x) true"));
         let mut resolver = Resolver::new();
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut inferer = TypeInferer::new();
         let mut type_env = TypeEnv::new();
         let (ty, subs) = inferer.infer(&mut type_env, ir, None).unwrap();
@@ -346,7 +346,7 @@ mod test {
         let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 42"));
         let mut resolver = Resolver::new();
         let id_op_add = resolver.inject_builtin("+");
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
 
         let mut inferer = TypeInferer::new();
         let mut type_env = TypeEnv::new();
@@ -363,7 +363,7 @@ mod test {
         let mut parser = Parser::new(Token::tokenize("test.rex", "1.0 + 3.14"));
         let mut resolver = Resolver::new();
         let id_op_add = resolver.inject_builtin("+");
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
 
         let mut inferer = TypeInferer::new();
         let mut type_env = TypeEnv::new();
@@ -381,7 +381,7 @@ mod test {
         let mut resolver = Resolver::new();
         let id_op_add = resolver.inject_builtin("+");
         let id_op_foo = resolver.inject_builtin("foo");
-        let ir = resolver.resolve(parser.parse_expr()).unwrap();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
 
         let mut inferer = TypeInferer::new();
         let mut type_env = TypeEnv::new();
