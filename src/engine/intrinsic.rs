@@ -104,6 +104,12 @@ where
                 params: vec![Type::Unit, Type::Unit],
                 ret: Type::Unit,
             }))),
+            "zip" => Ok(Some(Value::Function(Function {
+                id: var.id,
+                name: var.name.clone(),
+                params: vec![Type::Unit, Type::Unit],
+                ret: Type::Unit,
+            }))),
             "get" => Ok(Some(Value::Function(Function {
                 id: var.id,
                 name: var.name.clone(),
@@ -247,6 +253,20 @@ where
                         }
                         trace.step(TraceNode::ListCtor, Span::empty());
                         Ok(Value::List(apps))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            "zip" => {
+                let xs = args.pop_front().unwrap();
+                let ys = args.pop_front().unwrap();
+                match (xs, ys) {
+                    (Value::List(xs), Value::List(ys)) => {
+                        let mut zs = Vec::with_capacity(xs.len());
+                        for (x, y) in xs.into_iter().zip(ys.into_iter()) {
+                            zs.push(Value::List(vec![x, y]));
+                        }
+                        Ok(Value::List(zs))
                     }
                     _ => unreachable!(),
                 }
