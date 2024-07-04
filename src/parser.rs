@@ -298,6 +298,7 @@ impl Parser {
             Some(Token::Bool(..)) => self.parse_literal_bool_expr(),
             Some(Token::Float(..)) => self.parse_literal_float_expr(),
             Some(Token::Int(..)) => self.parse_literal_int_expr(),
+            Some(Token::Null(..)) => self.parse_literal_null_expr(),
             Some(Token::String(..)) => self.parse_literal_str_expr(),
             Some(Token::Ident(..)) => self.parse_ident_expr(),
             Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
@@ -679,6 +680,19 @@ impl Parser {
     }
 
     //
+    pub fn parse_literal_null_expr(&mut self) -> Result<Expr, Error> {
+        let token = self.current_token();
+        self.next_token();
+        match token {
+            Some(Token::Null(span, ..)) => Ok(Expr::Null(span)),
+            _ => {
+                self.errors.push("expected `null`".into());
+                Err(self.errors.clone().into())
+            }
+        }
+    }
+
+    //
     pub fn parse_literal_str_expr(&mut self) -> Result<Expr, Error> {
         let token = self.current_token();
         self.next_token();
@@ -733,46 +747,46 @@ mod tests {
 
     #[test]
     fn test_parse_literals() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "true"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "true").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Bool(true, Span::new("test.rex", 1, 1, 1, 4)),);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "false"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "false").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Bool(false, Span::new("test.rex", 1, 1, 1, 5)),);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "0"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "0").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Int(0, Span::new("test.rex", 1, 1, 1, 1)),);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "1"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "1").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Int(1, Span::new("test.rex", 1, 1, 1, 1)),);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "42"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "42").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Int(42, Span::new("test.rex", 1, 1, 1, 2)),);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "0.0"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "0.0").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Float(0.0, Span::new("test.rex", 1, 1, 1, 3)),);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "1.0"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "1.0").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Float(1.0, Span::new("test.rex", 1, 1, 1, 3)),);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "3.54"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "3.54").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::Float(3.54, Span::new("test.rex", 1, 1, 1, 4)),);
     }
 
     #[test]
     fn test_parse_list() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "[]"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "[]").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, Expr::List(vec![], Span::new("test.rex", 1, 1, 1, 2)));
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "[[]]"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "[[]]").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -782,7 +796,7 @@ mod tests {
             )
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "[[], []]"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "[[], []]").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -795,10 +809,9 @@ mod tests {
             )
         );
 
-        let mut parser = Parser::new(Token::tokenize(
-            "test.rex",
-            "[true, 42, 3.54, \"foo\", [], ident]",
-        ));
+        let mut parser = Parser::new(
+            Token::tokenize("test.rex", "[true, 42, 3.54, \"foo\", [], ident]").unwrap(),
+        );
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -818,14 +831,14 @@ mod tests {
 
     #[test]
     fn test_parse_variable() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "foo"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "foo").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
             Expr::Var("foo".to_string(), Span::new("test.rex", 1, 1, 1, 3)),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "(bar)"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "(bar)").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -835,7 +848,7 @@ mod tests {
 
     #[test]
     fn test_parse_math_operators() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 2"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 2").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -849,7 +862,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 2 * 3"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 2 * 3").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -870,7 +883,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "1 * 2 + 3"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "1 * 2 + 3").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -891,7 +904,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "1 * (2 + 3)"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "1 * (2 + 3)").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -915,7 +928,7 @@ mod tests {
 
     #[test]
     fn test_parse_dot_operator() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "f . g"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "f . g").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -929,7 +942,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "f . g . h"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "f . g . h").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -950,7 +963,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "(f . g) . h"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "(f . g) . h").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -974,7 +987,7 @@ mod tests {
 
     #[test]
     fn test_call() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "f x"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "f x").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -988,7 +1001,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "f x y"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "f x y").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1002,7 +1015,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "f x (g y) z"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "f x (g y) z").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1027,7 +1040,7 @@ mod tests {
 
     #[test]
     fn test_lambda() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", r#"\x -> x"#));
+        let mut parser = Parser::new(Token::tokenize("test.rex", r#"\x -> x"#).unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1038,7 +1051,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", r#"\f x y -> f y x"#));
+        let mut parser = Parser::new(Token::tokenize("test.rex", r#"\f x y -> f y x"#).unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1057,7 +1070,8 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\f x y -> x + y) 1.0 3.54"#));
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", r#"(\f x y -> x + y) 1.0 3.54"#).unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1087,7 +1101,7 @@ mod tests {
 
     #[test]
     fn test_precedence() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "x + y + z"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "x + y + z").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1108,7 +1122,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "f x + g y"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "f x + g y").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1136,7 +1150,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "f . g x"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "f . g x").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1157,7 +1171,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "(f . g) x"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "(f . g) x").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1179,7 +1193,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "f x + g y * h z"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "f x + g y * h z").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1223,7 +1237,7 @@ mod tests {
             ),
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "f . g (h x) . i"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "f . g (h x) . i").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
@@ -1260,14 +1274,17 @@ mod tests {
 
     #[test]
     fn test_newline() {
-        let mut parser = Parser::new(Token::tokenize(
-            "test.rex",
-            r#"
+        let mut parser = Parser::new(
+            Token::tokenize(
+                "test.rex",
+                r#"
 \x y z ->
  map
   (f . g (h z) . i)
   (j x y (k z))"#,
-        ));
+            )
+            .unwrap(),
+        );
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,

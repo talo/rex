@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use chrono::{DateTime, Utc};
+
 use crate::span::Span;
 
 use super::{Error, Value};
@@ -67,7 +69,7 @@ impl Display for TraceNode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Deserialize, serde::Serialize),
@@ -78,12 +80,23 @@ pub struct Trace {
     pub children: Vec<Trace>,
     pub node: TraceNode,
     pub span: Span,
+    pub timestamp: Option<DateTime<Utc>>,
+}
+
+impl PartialEq for Trace {
+    fn eq(&self, other: &Self) -> bool {
+        self.step == other.step
+            && self.children == other.children
+            && self.node == other.node
+            && self.span == other.span
+    }
 }
 
 impl Trace {
     pub fn from_span(span: Span) -> Self {
         Self {
             step: 0,
+            timestamp: None,
             children: Vec::new(),
             node: TraceNode::Root,
             span,
@@ -100,6 +113,7 @@ impl Trace {
         self.children.push(Self {
             step: next_step,
             children: Vec::new(),
+            timestamp: Some(Utc::now()),
             node,
             span,
         });

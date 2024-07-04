@@ -327,7 +327,7 @@ mod test {
 
     #[test]
     fn test_type_inferer() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "true"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "true").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut inferer = TypeInferer::new();
@@ -335,7 +335,7 @@ mod test {
         let (ty, subs) = inferer.infer(&mut type_env, ir, None).unwrap();
         dbg!(ty, subs);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "(\\x -> x) true"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "(\\x -> x) true").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut inferer = TypeInferer::new();
@@ -343,24 +343,7 @@ mod test {
         let (ty, subs) = inferer.infer(&mut type_env, ir, None).unwrap();
         dbg!(ty, subs);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 42"));
-        let mut resolver = Resolver::new();
-        let id_op_add = resolver.inject_builtin("+");
-        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
-
-        let mut inferer = TypeInferer::new();
-        let mut type_env = TypeEnv::new();
-        type_env.insert(
-            id_op_add,
-            Type::Union(vec![
-                Type::Function(vec![Type::Int, Type::Int], Box::new(Type::Int)),
-                Type::Function(vec![Type::Float, Type::Float], Box::new(Type::Float)),
-            ]),
-        );
-        let (ty, subs) = inferer.infer(&mut type_env, ir, None).unwrap();
-        dbg!(ty, subs);
-
-        let mut parser = Parser::new(Token::tokenize("test.rex", "1.0 + 3.14"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "1 + 42").unwrap());
         let mut resolver = Resolver::new();
         let id_op_add = resolver.inject_builtin("+");
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
@@ -377,7 +360,24 @@ mod test {
         let (ty, subs) = inferer.infer(&mut type_env, ir, None).unwrap();
         dbg!(ty, subs);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "[]"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "1.0 + 3.14").unwrap());
+        let mut resolver = Resolver::new();
+        let id_op_add = resolver.inject_builtin("+");
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+
+        let mut inferer = TypeInferer::new();
+        let mut type_env = TypeEnv::new();
+        type_env.insert(
+            id_op_add,
+            Type::Union(vec![
+                Type::Function(vec![Type::Int, Type::Int], Box::new(Type::Int)),
+                Type::Function(vec![Type::Float, Type::Float], Box::new(Type::Float)),
+            ]),
+        );
+        let (ty, subs) = inferer.infer(&mut type_env, ir, None).unwrap();
+        dbg!(ty, subs);
+
+        let mut parser = Parser::new(Token::tokenize("test.rex", "[]").unwrap());
         let mut resolver = Resolver::new();
         let id_op_add = resolver.inject_builtin("+");
         let id_op_foo = resolver.inject_builtin("foo");

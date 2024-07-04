@@ -76,6 +76,7 @@ pub enum Token {
     Bool(bool, Span),
     Float(f64, Span),
     Int(u64, Span),
+    Null(Span),
     String(String, Span),
 
     // Idents
@@ -85,8 +86,14 @@ pub enum Token {
     Comment(String, Span),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum LexicalError {
+    #[error("Unexpected token {0}")]
+    UnexpectedToken(Span),
+}
+
 impl Token {
-    pub fn tokenize(filename: &str, input: &str) -> Vec<Token> {
+    pub fn tokenize(filename: &str, input: &str) -> Result<Vec<Token>, LexicalError> {
         let mut line = 1;
         let mut column = 1;
         let mut tokens = Vec::new();
@@ -103,7 +110,6 @@ impl Token {
             }
 
             let token = 
-
                 // Reserved keywords
                 if capture.name("As").is_some() {
                     Token::As(span)
@@ -192,8 +198,12 @@ impl Token {
                     Token::Float(f64::from_str(capture.name("Float").unwrap().as_str()).unwrap(), span)
                 } else if capture.name("Int").is_some() {
                     Token::Int(u64::from_str(capture.name("Int").unwrap().as_str()).unwrap(), span)
-                } else if capture.name("String").is_some() {
-                    Token::String(capture.name("String").unwrap().as_str().to_string(), span)
+                } else if capture.name("Null").is_some() {
+                    Token::Null(span)
+                } else if capture.name("DoubleString").is_some() {
+                    Token::String(capture.name("DoubleString").unwrap().as_str().to_string(), span)
+                } else if capture.name("SingleString").is_some() {
+                    Token::String(capture.name("SingleString").unwrap().as_str().to_string(), span)
                 }
 
                 // Idents
@@ -208,13 +218,13 @@ impl Token {
                 
                 // Other
                 else {
-                    panic!("unexpected token '{}'", &capture[0]);
+                    return Err(LexicalError::UnexpectedToken(span));
                 };
             tokens.push(token)
         }
         
         // Filter whitespace
-        tokens.into_iter().filter(|token| !matches!(*token, Token::Whitespace(..))).collect()
+        Ok(tokens.into_iter().filter(|token| !matches!(*token, Token::Whitespace(..))).collect())
     }
 
     /// Get the regular expression that can capture all Tokens. The regular
@@ -272,7 +282,9 @@ impl Token {
             r"(?P<Bool>(true|false))|",
             r"(?P<Float>[0-9]+\.[0-9]+)|",
             r"(?P<Int>[0-9]+)|",
-            r#""(?P<String>(\\"|[^"])*)"|"#,
+            r"(?P<Null>null)|",
+            r#""(?P<DoubleString>(\\"|[^"])*)"|"#,
+            r#"'(?P<SingleString>(\\'|[^'])*)'|"#,
 
             // Idents
             r"(?P<Ident>[_a-zA-Z]([_a-zA-Z]|[0-9])*)|",
@@ -363,6 +375,7 @@ impl Spanned for Token {
             Bool(_, span, ..) => span,
             Float(_, span, ..) => span,
             Int(_, span, ..) => span,
+            Null(span, ..) => span,
             String(_, span, ..) => span,
 
             // Idents
@@ -423,6 +436,7 @@ impl Spanned for Token {
             Bool(_, span, ..) => span,
             Float(_, span, ..) => span,
             Int(_, span, ..) => span,
+            Null(span, ..) => span,
             String(_, span, ..) => span,
 
             // Idents
@@ -485,6 +499,7 @@ impl fmt::Display for Token {
             Bool(x, ..) => write!(f, "{}", x),
             Float(x, ..) => write!(f, "{}", x),
             Int(x, ..) => write!(f, "{}", x),
+            Null(..) => write!(f, "null"),
             String(x, ..) => write!(f, "{}", x),
 
             // Idents

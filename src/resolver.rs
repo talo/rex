@@ -274,22 +274,22 @@ mod test {
 
     #[test]
     fn test_values() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "true"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "true").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(ir, Ok(IR::Bool(true, Span::new("test.rex", 1, 1, 1, 4))));
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "42"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "42").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(ir, Ok(IR::Uint(42, Span::new("test.rex", 1, 1, 1, 2))));
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "3.55"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "3.55").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(ir, Ok(IR::Float(3.55, Span::new("test.rex", 1, 1, 1, 4))));
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", r#""hello""#));
+        let mut parser = Parser::new(Token::tokenize("test.rex", r#""hello""#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
@@ -300,7 +300,7 @@ mod test {
             ))
         );
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", "[0, 1, 42]"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "[0, 1, 42]").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
@@ -318,7 +318,7 @@ mod test {
 
     #[test]
     fn test_variables() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "x"));
+        let mut parser = Parser::new(Token::tokenize("test.rex", "x").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
@@ -333,7 +333,7 @@ mod test {
 
     #[test]
     fn test_lambda() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", r#"\x -> f x"#));
+        let mut parser = Parser::new(Token::tokenize("test.rex", r#"\x -> f x"#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
@@ -368,7 +368,7 @@ mod test {
 
     #[test]
     fn test_lambda_capture() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", r#"\x -> \y -> f x y"#));
+        let mut parser = Parser::new(Token::tokenize("test.rex", r#"\x -> \y -> f x y"#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
@@ -420,7 +420,7 @@ mod test {
 
     #[test]
     fn test_lambda_shadow() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", r#"\x -> \x -> f x"#));
+        let mut parser = Parser::new(Token::tokenize("test.rex", r#"\x -> \x -> f x"#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
