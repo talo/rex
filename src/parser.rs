@@ -722,13 +722,24 @@ impl Parser {
         // Parse the body
         let body = self.parse_expr()?;
         let span_end = body.span().end.clone();
-
         let span = Span::from_begin_end(span_begin, span_end);
-        Ok(Expr::Call(
-            Box::new(Expr::Lambda(params, body.into(), span.clone())),
-            args,
-            span,
-        ))
+
+        // Build the lambda chain
+        let mut n = params.len();
+        let mut e = body;
+        while n > 0 {
+            e = Expr::Call(
+                Box::new(Expr::Lambda(
+                    vec![params[n - 1].clone()],
+                    Box::new(e),
+                    span.clone(),
+                )),
+                vec![args[n - 1].clone()],
+                span.clone(),
+            );
+            n -= 1;
+        }
+        Ok(e)
     }
 
     //
@@ -1220,23 +1231,31 @@ mod tests {
             expr,
             Expr::Call(
                 Expr::Lambda(
-                    vec!["x".to_string(), "y".to_string()],
+                    vec!["x".to_string()],
                     Expr::Call(
-                        Expr::Var("+".to_string(), Span::new("test.rex", 1, 28, 1, 28)).into(),
-                        vec![
-                            Expr::Var("x".to_string(), Span::new("test.rex", 1, 26, 1, 26)),
-                            Expr::Var("y".to_string(), Span::new("test.rex", 1, 30, 1, 30))
-                        ],
-                        Span::new("test.rex", 1, 26, 1, 30)
+                        Expr::Lambda(
+                            vec!["y".to_string()],
+                            Expr::Call(
+                                Expr::Var("+".to_string(), Span::new("test.rex", 1, 28, 1, 28))
+                                    .into(),
+                                vec![
+                                    Expr::Var("x".to_string(), Span::new("test.rex", 1, 26, 1, 26)),
+                                    Expr::Var("y".to_string(), Span::new("test.rex", 1, 30, 1, 30))
+                                ],
+                                Span::new("test.rex", 1, 26, 1, 30)
+                            )
+                            .into(),
+                            Span::new("test.rex", 1, 1, 1, 30)
+                        )
+                        .into(),
+                        vec![Expr::Float(3.54, Span::new("test.rex", 1, 18, 1, 21))],
+                        Span::new("test.rex", 1, 1, 1, 30)
                     )
                     .into(),
                     Span::new("test.rex", 1, 1, 1, 30)
                 )
                 .into(),
-                vec![
-                    Expr::Float(1.0, Span::new("test.rex", 1, 9, 1, 11)),
-                    Expr::Float(3.54, Span::new("test.rex", 1, 18, 1, 21))
-                ],
+                vec![Expr::Float(1.0, Span::new("test.rex", 1, 9, 1, 11)),],
                 Span::new("test.rex", 1, 1, 1, 30)
             ),
         );
