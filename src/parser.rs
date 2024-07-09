@@ -1209,7 +1209,10 @@ mod tests {
                 Span::new("test.rex", 1, 1, 1, 26)
             ),
         );
+    }
 
+    #[test]
+    fn test_let_in() {
         let mut parser =
             Parser::new(Token::tokenize("test.rex", r#"let x = 1.0, y = 3.54 in x + y"#).unwrap());
         let expr = parser.parse_expr().unwrap();
