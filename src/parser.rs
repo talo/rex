@@ -334,6 +334,7 @@ impl Parser {
                 Some(Token::String(..)) => self.parse_literal_str_expr(),
                 Some(Token::Ident(..)) => self.parse_ident_expr(),
                 Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
+                Some(Token::Let(..)) => self.parse_let_expr(),
                 Some(Token::Sub(..)) => self.parse_neg_expr(),
                 _ => break,
             }?;
@@ -1206,6 +1207,34 @@ mod tests {
                     Expr::Float(3.54, Span::new("test.rex", 1, 23, 1, 26))
                 ],
                 Span::new("test.rex", 1, 1, 1, 26)
+            ),
+        );
+
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", r#"let x = 1.0, y = 3.54 in x + y"#).unwrap());
+        let expr = parser.parse_expr().unwrap();
+        assert_eq!(
+            expr,
+            Expr::Call(
+                Expr::Lambda(
+                    vec!["x".to_string(), "y".to_string()],
+                    Expr::Call(
+                        Expr::Var("+".to_string(), Span::new("test.rex", 1, 28, 1, 28)).into(),
+                        vec![
+                            Expr::Var("x".to_string(), Span::new("test.rex", 1, 26, 1, 26)),
+                            Expr::Var("y".to_string(), Span::new("test.rex", 1, 30, 1, 30))
+                        ],
+                        Span::new("test.rex", 1, 26, 1, 30)
+                    )
+                    .into(),
+                    Span::new("test.rex", 1, 1, 1, 30)
+                )
+                .into(),
+                vec![
+                    Expr::Float(1.0, Span::new("test.rex", 1, 9, 1, 11)),
+                    Expr::Float(3.54, Span::new("test.rex", 1, 18, 1, 21))
+                ],
+                Span::new("test.rex", 1, 1, 1, 30)
             ),
         );
     }
