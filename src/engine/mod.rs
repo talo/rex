@@ -68,7 +68,8 @@ impl Engine {
         match ir {
             IR::Null(span, ..) => self.eval_null(trace, &span).await,
             IR::Bool(x, span, ..) => self.eval_bool(trace, &span, x).await,
-            IR::Uint(x, span, ..) => self.eval_int(trace, &span, x).await,
+            IR::Int(x, span, ..) => self.eval_int(trace, &span, x).await,
+            IR::Uint(x, span, ..) => self.eval_uint(trace, &span, x).await,
             IR::Float(x, span, ..) => self.eval_float(trace, &span, x).await,
             IR::String(x, span, ..) => self.eval_string(trace, &span, x).await,
             IR::List(xs, span, ..) => self.eval_list(runner, ctx, trace, &span, xs).await,
@@ -76,7 +77,6 @@ impl Engine {
             IR::Call(call) => self.eval_call(runner, ctx, trace, call).await,
             IR::Lambda(lam) => self.eval_lambda(trace, lam).await,
             IR::Variable(var) => self.eval_variable(runner, ctx, trace, var).await,
-            _ => Err(Error::Custom(format!("IR kind {:?} not implemented", ir))),
         }
     }
 
@@ -93,7 +93,11 @@ impl Engine {
         Ok(Value::Bool(x))
     }
 
-    async fn eval_int(&mut self, _trace: &mut Trace, _span: &Span, x: u64) -> Result<Value, Error> {
+    async fn eval_int(&mut self, _trace: &mut Trace, _span: &Span, x: i64) -> Result<Value, Error> {
+        Ok(Value::I64(x))
+    }
+
+    async fn eval_uint(&mut self, _trace: &mut Trace, _span: &Span, x: u64) -> Result<Value, Error> {
         Ok(Value::U64(x))
     }
 

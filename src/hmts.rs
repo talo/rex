@@ -212,6 +212,7 @@ impl TypeInferer {
         match ir {
             IR::Null(_) => Ok((Type::Bool, Substitution::new())), // Assuming Null is of type Bool for simplicity
             IR::Bool(_, _) => Ok((Type::Bool, Substitution::new())),
+            IR::Int(_, _) => Ok((Type::Int, Substitution::new())),
             IR::Uint(_, _) => Ok((Type::Int, Substitution::new())),
             IR::Float(_, _) => Ok((Type::Float, Substitution::new())),
             IR::String(_, _) => Ok((Type::String, Substitution::new())),
