@@ -437,6 +437,18 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_let() {
+        let mut parser = Parser::new(Token::tokenize("test.rex", "let x = 1, y = 2 in x + y").unwrap());
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(value, Value::U64(3));
+        println!("{}", trace);
+    }
+
+    #[tokio::test]
     async fn test_map() {
         let mut parser = Parser::new(Token::tokenize(
             "test.rex",
