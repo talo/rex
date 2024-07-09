@@ -302,6 +302,7 @@ impl Parser {
             Some(Token::String(..)) => self.parse_literal_str_expr(),
             Some(Token::Ident(..)) => self.parse_ident_expr(),
             Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
+            Some(Token::Let(..)) => self.parse_let_expr(),
             Some(Token::Sub(..)) => self.parse_neg_expr(),
             Some(token) => {
                 self.errors.push(ParserErr::new(
@@ -616,6 +617,116 @@ impl Parser {
             params,
             body.into(),
             Span::from_begin_end(span_begin, span_end),
+        ))
+    }
+
+    //
+    pub fn parse_let_expr(&mut self) -> Result<Expr, Error> {
+        // Eat the `let` token
+        let token = self.current_token();
+        let span_begin = match token {
+            Some(Token::Let(span, ..)) => {
+                self.next_token();
+                span.begin.clone()
+            }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `let` got {}", token),
+                ));
+                return Err(self.errors.clone().into());
+            }
+            _ => {
+                self.errors.push("expected `let`".into());
+                return Err(self.errors.clone().into());
+            }
+        };
+
+        // Parse the params.
+        let mut params = Vec::new();
+        let mut args = Vec::new();
+        loop {
+            // Variable name
+            let token = self.current_token();
+            match token {
+                Some(Token::Ident(val, _span, ..)) => {
+                    self.next_token();
+                    params.push(val);
+                }
+                _ => break,
+            }
+            // =
+            let token = self.current_token();
+            match token {
+                Some(Token::Assign(_span, ..)) => {
+                    self.next_token();
+                }
+                Some(token) => {
+                    self.errors.push(ParserErr::new(
+                        token.span().clone(),
+                        format!("expected `=` got {}", token),
+                    ));
+                    return Err(self.errors.clone().into());
+                }
+                _ => {
+                    self.errors.push("expected `=`".into());
+                    return Err(self.errors.clone().into());
+                }
+            }
+            // Parse the variable definition
+            let arg = self.parse_expr()?;
+            args.push(arg);
+            // Parse `,` or `in`
+            let token = self.current_token();
+            match token {
+                Some(Token::Comma(_span, ..)) => {
+                    self.next_token();
+                    continue;
+                }
+                Some(Token::In(..)) => break,
+                Some(token) => {
+                    self.errors.push(ParserErr::new(
+                        token.span().clone(),
+                        format!("expected `,` or `in` got {}", token),
+                    ));
+                    return Err(self.errors.clone().into());
+                }
+                _ => {
+                    self.errors.push("expected `,` or `in`".into());
+                    return Err(self.errors.clone().into());
+                }
+            }
+        }
+
+        // Parse the `in` token
+        let token = self.current_token();
+        let _span_arrow = match token {
+            Some(Token::In(span, ..)) => {
+                self.next_token();
+                span
+            }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    token.span().clone(),
+                    format!("expected `in` got {}", token),
+                ));
+                return Err(self.errors.clone().into());
+            }
+            _ => {
+                self.errors.push("expected `in`".into());
+                return Err(self.errors.clone().into());
+            }
+        };
+
+        // Parse the body
+        let body = self.parse_expr()?;
+        let span_end = body.span().end.clone();
+
+        let span = Span::from_begin_end(span_begin, span_end);
+        Ok(Expr::Call(
+            Box::new(Expr::Lambda(params, body.into(), span.clone())),
+            args,
+            span,
         ))
     }
 

@@ -35,7 +35,6 @@ pub enum Token {
     Else(Span),
     For(Span),
     If(Span),
-    In(Span),
 
     // Operators
     Add(Span),
@@ -56,6 +55,7 @@ pub enum Token {
     // Symbols
     ArrowL(Span),
     ArrowR(Span),
+    Assign(Span),
     BackSlash(Span),
     BraceL(Span),
     BraceR(Span),
@@ -64,6 +64,8 @@ pub enum Token {
     Colon(Span),
     Comma(Span),
     DotDot(Span),
+    In(Span),
+    Let(Span),
     ParenL(Span),
     ParenR(Span),
     Pipe(Span),
@@ -144,6 +146,10 @@ impl Token {
                     Token::Comma(span)
                 } else if capture.name("DotDot").is_some() {
                     Token::DotDot(span)
+                } else if capture.name("In").is_some() {
+                    Token::In(span)
+                } else if capture.name("Let").is_some() {
+                    Token::Let(span)
                 } else if capture.name("ParenL").is_some() {
                     Token::ParenL(span)
                 } else if capture.name("ParenR").is_some() {
@@ -189,7 +195,9 @@ impl Token {
                     Token::Or(span)
                 } else if capture.name("Sub").is_some() {
                     Token::Sub(span)
-                }
+                } else if capture.name("Assign").is_some() {
+                    Token::Assign(span) // NOTE: We have moved this here to capture the "Equal" group first
+                } 
 
                 // Literals
                 else if capture.name("Bool").is_some() {
@@ -240,11 +248,11 @@ impl Token {
             r"(?P<Else>else)|",
             r"(?P<For>for)|",
             r"(?P<If>if)|",
-            r"(?P<In>in)|",
 
             // Symbols
             r"(?P<ArrowL><-)|",
             r"(?P<ArrowR>->)|",
+            r"(?P<Assign>=)|",
             r"(?P<BackSlash>\\)|",
             r"(?P<BraceL>\{)|",
             r"(?P<BraceR>\})|",
@@ -253,6 +261,8 @@ impl Token {
             r"(?P<Colon>:)|",
             r"(?P<Comma>,)|",
             r"(?P<DotDot>\.\.)|",
+            r"(?P<In>in)|",
+            r"(?P<Let>let)|",
             r"(?P<LambdaR>->)|",
             r"(?P<ParenL>\()|",
             r"(?P<ParenR>\))|",
@@ -334,11 +344,11 @@ impl Spanned for Token {
             Else(span, ..) => span,
             For(span, ..) => span,
             If(span, ..) => span,
-            In(span, ..) => span,
 
             // Symbols
             ArrowL(span, ..) => span,
             ArrowR(span, ..) => span,
+            Assign(span, ..) => span,
             BackSlash(span, ..) => span,
             BraceL(span, ..) => span,
             BraceR(span, ..) => span,
@@ -348,6 +358,8 @@ impl Spanned for Token {
             Comma(span, ..) => span,
             Dot(span, ..) => span,
             DotDot(span, ..) => span,
+            In(span, ..) => span,
+            Let(span, ..) => span,
             ParenL(span, ..) => span,
             ParenR(span, ..) => span,
             Pipe(span, ..) => span,
@@ -395,11 +407,11 @@ impl Spanned for Token {
             Else(span, ..) => span,
             For(span, ..) => span,
             If(span, ..) => span,
-            In(span, ..) => span,
 
             // Symbols
             ArrowL(span, ..) => span,
             ArrowR(span, ..) => span,
+            Assign(span, ..) => span,
             BackSlash(span, ..) => span,
             BraceL(span, ..) => span,
             BraceR(span, ..) => span,
@@ -409,6 +421,8 @@ impl Spanned for Token {
             Comma(span, ..) => span,
             Dot(span, ..) => span,
             DotDot(span, ..) => span,
+            In(span, ..) => span,
+            Let(span, ..) => span,
             ParenL(span, ..) => span,
             ParenR(span, ..) => span,
             Pipe(span, ..) => span,
@@ -458,11 +472,11 @@ impl fmt::Display for Token {
             Else(..) => write!(f, "else"),
             For(..) => write!(f, "for"),
             If(..) => write!(f, "if"),
-            In(..) => write!(f, "in"),
 
             // Symbols
             ArrowL(..) => write!(f, "<-"),
             ArrowR(..) => write!(f, "->"),
+            Assign(..) => write!(f, "="),
             BackSlash(..) => write!(f, "\\"),
             BraceL(..) => write!(f, "{{"),
             BraceR(..) => write!(f, "}}"),
@@ -472,6 +486,8 @@ impl fmt::Display for Token {
             Comma(..) => write!(f, ","),
             Dot(..) => write!(f, "."),
             DotDot(..) => write!(f, ".."),
+            In(..) => write!(f, "in"),
+            Let(..) => write!(f, "let"),
             ParenL(..) => write!(f, "("),
             ParenR(..) => write!(f, ")"),
             Pipe(..) => write!(f, "|"),
