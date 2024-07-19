@@ -10,7 +10,10 @@ use crate::{
 use super::{value_to_ir, Engine, Error, Function, Runner, Trace, TraceNode, Value};
 
 #[derive(Clone)]
-pub struct IntrinsicRunner<R, T>(R, PhantomData<T>) where R: Runner<Ctx = T> + Clone, T: Clone;
+pub struct IntrinsicRunner<R, T>(R, PhantomData<T>)
+where
+    R: Runner<Ctx = T> + Clone,
+    T: Clone;
 
 #[derive(Clone)]
 pub struct NullRunner;
@@ -19,7 +22,11 @@ pub struct NullRunner;
 impl Runner for NullRunner {
     type Ctx = ();
 
-    async fn lookup(&mut self, _ctx: &mut Self::Ctx, _var: &Variable) -> Result<Option<Value>, Error> {
+    async fn lookup(
+        &mut self,
+        _ctx: &mut Self::Ctx,
+        _var: &Variable,
+    ) -> Result<Option<Value>, Error> {
         Ok(None)
     }
 
@@ -35,13 +42,17 @@ impl Runner for NullRunner {
     }
 }
 
-impl Default for IntrinsicRunner<NullRunner, ()>{
+impl Default for IntrinsicRunner<NullRunner, ()> {
     fn default() -> Self {
         Self::new(NullRunner)
     }
 }
 
-impl<R, T> IntrinsicRunner<R, T> where R: Runner<Ctx = T> + Clone, T: Clone {
+impl<R, T> IntrinsicRunner<R, T>
+where
+    R: Runner<Ctx = T> + Clone,
+    T: Clone,
+{
     pub fn new(runner: R) -> Self {
         Self(runner, PhantomData)
     }
@@ -140,7 +151,10 @@ where
                         a.extend(b);
                         Ok(Value::List(a))
                     }
-                    (a,b) => Err(Error::Type { expected: "String or List".to_string(), got: format!("{:?} or {:?}", a, b) }),
+                    (a, b) => Err(Error::Type {
+                        expected: "String or List".to_string(),
+                        got: format!("{:?} or {:?}", a, b),
+                    }),
                     // FIXME: only unreachable once type checking is implemented
                     // _ => unreachable!(),
                 }
@@ -152,9 +166,11 @@ where
                     (Value::U64(a), Value::U64(b)) => Ok(Value::U64(a.wrapping_add(b))),
                     (Value::I64(a), Value::I64(b)) => Ok(Value::I64(a.wrapping_add(b))),
                     (Value::F64(a), Value::F64(b)) => Ok(Value::F64(a + b)),
-                    (a, b) => Err(Error::Type { expected: "Number".to_string(), got: format!("{:?} or {:?}", a, b) })
-                    // FIXME: only unreachable once type checking is implemented
-                    // _ => unreachable!(),
+                    (a, b) => Err(Error::Type {
+                        expected: "Number".to_string(),
+                        got: format!("{:?} or {:?}", a, b),
+                    }), // FIXME: only unreachable once type checking is implemented
+                        // _ => unreachable!(),
                 }
             }
             "-" => {
@@ -164,9 +180,11 @@ where
                     (Value::U64(a), Value::U64(b)) => Ok(Value::U64(a.wrapping_sub(b))),
                     (Value::I64(a), Value::I64(b)) => Ok(Value::I64(a.wrapping_sub(b))),
                     (Value::F64(a), Value::F64(b)) => Ok(Value::F64(a - b)),
-                    (a, b) => Err(Error::Type { expected: "Number".to_string(), got: format!("{:?} or {:?}", a, b) })
-                    // FIXME: only unreachable once type checking is implemented
-                    // _ => unreachable!(),
+                    (a, b) => Err(Error::Type {
+                        expected: "Number".to_string(),
+                        got: format!("{:?} or {:?}", a, b),
+                    }), // FIXME: only unreachable once type checking is implemented
+                        // _ => unreachable!(),
                 }
             }
             "*" => {
@@ -176,9 +194,11 @@ where
                     (Value::U64(a), Value::U64(b)) => Ok(Value::U64(a.wrapping_mul(b))),
                     (Value::I64(a), Value::I64(b)) => Ok(Value::I64(a.wrapping_mul(b))),
                     (Value::F64(a), Value::F64(b)) => Ok(Value::F64(a * b)),
-                    (a, b) => Err(Error::Type { expected: "Number".to_string(), got: format!("{:?} or {:?}", a, b) })
-                    // FIXME: only unreachable once type checking is implemented
-                    // _ => unreachable!(),
+                    (a, b) => Err(Error::Type {
+                        expected: "Number".to_string(),
+                        got: format!("{:?} or {:?}", a, b),
+                    }), // FIXME: only unreachable once type checking is implemented
+                        // _ => unreachable!(),
                 }
             }
             "/" => {
@@ -206,10 +226,11 @@ where
                             Ok(Value::F64(a / b))
                         }
                     }
-                    (a, b) => Err(Error::Type { expected: "Number".to_string(), got: format!("{:?} or {:?}", a, b) })
-
-                    // FIXME: only unreachable once type checking is implemented
-                    // _ => unreachable!(),
+                    (a, b) => Err(Error::Type {
+                        expected: "Number".to_string(),
+                        got: format!("{:?} or {:?}", a, b),
+                    }), // FIXME: only unreachable once type checking is implemented
+                        // _ => unreachable!(),
                 }
             }
             "." => {
@@ -265,10 +286,11 @@ where
                         trace.step(TraceNode::ListCtor, Span::empty());
                         Ok(Value::List(apps))
                     }
-                    xs => Err(Error::Type { expected: "List".to_string(), got: format!("{:?}", xs) })
-
-                    // FIXME: only unreachable once type checking is implemented
-                    // _ => unreachable!(),
+                    xs => Err(Error::Type {
+                        expected: "List".to_string(),
+                        got: format!("{:?}", xs),
+                    }), // FIXME: only unreachable once type checking is implemented
+                        // _ => unreachable!(),
                 }
             }
             "zip" => {
@@ -282,10 +304,11 @@ where
                         }
                         Ok(Value::List(zs))
                     }
-                    (xs, ys) => Err(Error::Type { expected: "List".to_string(), got: format!("{:?} or {:?}", xs, ys) })
-
-                    // FIXME: only unreachable once type checking is implemented
-                    // _ => unreachable!(),
+                    (xs, ys) => Err(Error::Type {
+                        expected: "List".to_string(),
+                        got: format!("{:?} or {:?}", xs, ys),
+                    }), // FIXME: only unreachable once type checking is implemented
+                        // _ => unreachable!(),
                 }
             }
             "get" => {
@@ -307,7 +330,10 @@ where
                                 Ok(xs[n as usize].clone())
                             }
                         }
-                        v => Err(Error::Type { expected: "Number".to_string(), got: v.to_string() }),
+                        v => Err(Error::Type {
+                            expected: "Number".to_string(),
+                            got: v.to_string(),
+                        }),
                     },
                     Value::Record(xs) => match n {
                         Value::String(n) => {
@@ -317,9 +343,15 @@ where
                                 Err(Error::FieldNotFound { name: n })
                             }
                         }
-                        v => Err(Error::Type { expected: "String".to_string(), got: v.to_string() }),
+                        v => Err(Error::Type {
+                            expected: "String".to_string(),
+                            got: v.to_string(),
+                        }),
                     },
-                    v => Err(Error::Type { expected: "List or Record".to_string(), got: v.to_string() }),
+                    v => Err(Error::Type {
+                        expected: "List or Record".to_string(),
+                        got: v.to_string(),
+                    }),
                 }
             }
             _ => self.0.run(engine, ctx, trace, f, args).await,

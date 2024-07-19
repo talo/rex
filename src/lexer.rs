@@ -70,7 +70,7 @@ pub enum Token {
     ParenR(Span),
     Pipe(Span),
     Question(Span),
-    SemiColon(Span),    
+    SemiColon(Span),
     Whitespace(Span),
     WhitespaceNewline(Span),
 
@@ -101,7 +101,6 @@ impl Token {
         let mut tokens = Vec::new();
 
         for capture in Token::regex().captures_iter(input) {
-
             let begin_line = line;
             let begin_column = column;
             column += capture[0].to_string().chars().count();
@@ -111,7 +110,8 @@ impl Token {
                 column = 1;
             }
 
-            let token = 
+            // be careful of the ordering of these groups
+            let token =
                 // Reserved keywords
                 if capture.name("As").is_some() {
                     Token::As(span)
@@ -165,7 +165,7 @@ impl Token {
                 } else if capture.name("WhitespaceNewline").is_some() {
                     Token::WhitespaceNewline(span)
                 }
-                
+
                 // Operators
                 else if capture.name("Concat").is_some() {
                     Token::Concat(span)
@@ -197,7 +197,7 @@ impl Token {
                     Token::Sub(span)
                 } else if capture.name("Assign").is_some() {
                     Token::Assign(span) // NOTE: We have moved this here to capture the "Equal" group first
-                } 
+                }
 
                 // Literals
                 else if capture.name("Bool").is_some() {
@@ -223,16 +223,18 @@ impl Token {
                 else if capture.name("Comment").is_some() {
                     Token::Comment(capture.name("Comment").unwrap().as_str().to_string(), span)
                 }
-                
                 // Other
                 else {
                     return Err(LexicalError::UnexpectedToken(span));
                 };
             tokens.push(token)
         }
-        
+
         // Filter whitespace
-        Ok(tokens.into_iter().filter(|token| !matches!(*token, Token::Whitespace(..))).collect())
+        Ok(tokens
+            .into_iter()
+            .filter(|token| !matches!(*token, Token::Whitespace(..)))
+            .collect())
     }
 
     /// Get the regular expression that can capture all Tokens. The regular
@@ -242,13 +244,11 @@ impl Token {
     /// An unwrapped Regex object.
     pub fn regex() -> regex::Regex {
         regex::Regex::from_str(concat!(
-
-            // Reserved keywords
-            r"(?P<As>as)|",
-            r"(?P<Else>else)|",
-            r"(?P<For>for)|",
-            r"(?P<If>if)|",
-
+            // Reserved keywords (with word boundaries)
+            r"(?P<As>\bas\b)|",
+            r"(?P<Else>\belse\b)|",
+            r"(?P<For>\bfor\b)|",
+            r"(?P<If>\bif\b)|",
             // Symbols
             r"(?P<ArrowL><-)|",
             r"(?P<ArrowR>->)|",
@@ -261,8 +261,8 @@ impl Token {
             r"(?P<Colon>:)|",
             r"(?P<Comma>,)|",
             r"(?P<DotDot>\.\.)|",
-            r"(?P<In>in)|",
-            r"(?P<Let>let)|",
+            r"(?P<In>\bin\b)|",   // Added word boundaries
+            r"(?P<Let>\blet\b)|", // Added word boundaries
             r"(?P<LambdaR>->)|",
             r"(?P<ParenL>\()|",
             r"(?P<ParenR>\))|",
@@ -271,7 +271,6 @@ impl Token {
             r"(?P<SemiColon>;)|",
             r"(?P<Whitespace>( |\t))|",
             r"(?P<WhitespaceNewline>(\n|\r))|",
-
             // Operators
             r"(?P<Concat>\+\+)|",
             r"(?P<Add>\+)|",
@@ -287,24 +286,21 @@ impl Token {
             r"(?P<Mul>\*)|",
             r"(?P<Or>\|\|)|",
             r"(?P<Sub>-)|",
-
-            // Literals
-            r"(?P<Bool>(true|false))|",
+            // Literals (with word boundaries for bool and null)
+            r"(?P<Bool>\b(true|false)\b)|",
             r"(?P<Float>[0-9]+\.[0-9]+)|",
             r"(?P<Int>[0-9]+)|",
-            r"(?P<Null>null)|",
+            r"(?P<Null>\bnull\b)|",
             r#""(?P<DoubleString>(\\"|[^"])*)"|"#,
             r#"'(?P<SingleString>(\\'|[^'])*)'|"#,
-
             // Idents
             r"(?P<Ident>[_a-zA-Z]([_a-zA-Z]|[0-9])*)|",
-
-            // Coments
+            // Comments
             r"(?P<Comment>//(.)*\n)|",
-
             // Unexpected
             r"(.)",
-        )).unwrap()
+        ))
+        .unwrap()
     }
 
     pub fn precedence(&self) -> Precedence {
@@ -313,16 +309,9 @@ impl Token {
         match self {
             Or(..) => Precedence(1),
             And(..) => Precedence(2),
-            Eq(..) |
-            Ne(..) |
-            Lt(..) |
-            Le(..) |
-            Gt(..) |
-            Ge(..) => Precedence(3),
-            Add(..) |
-            Sub(..) | Concat(..) => Precedence(4),
-            Mul(..) |
-            Div(..) => Precedence(5),
+            Eq(..) | Ne(..) | Lt(..) | Le(..) | Gt(..) | Ge(..) => Precedence(3),
+            Add(..) | Sub(..) | Concat(..) => Precedence(4),
+            Mul(..) | Div(..) => Precedence(5),
             Dot(..) => Precedence(6),
             Ident(..) => Precedence::highest(),
             _ => Precedence::lowest(),
@@ -335,9 +324,9 @@ impl Token {
 }
 
 impl Spanned for Token {
-     fn span(&self) -> &Span {
+    fn span(&self) -> &Span {
         use Token::*;
-        
+
         match self {
             // Reserved keywords
             As(span, ..) => span,
@@ -400,7 +389,7 @@ impl Spanned for Token {
 
     fn span_mut(&mut self) -> &mut Span {
         use Token::*;
-        
+
         match self {
             // Reserved keywords
             As(span, ..) => span,
