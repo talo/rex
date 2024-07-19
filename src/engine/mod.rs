@@ -574,6 +574,29 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_let_in_map_word_boundaries() {
+        let mut parser = Parser::new(Token::tokenize(
+            "test.rex",
+            "let inext = (\\atrue -> get 0 atrue) in map (\\falsey -> let yin = (inext falsey), amapa = 1 in yin + amapa) [[1], [2], [3], [4]] ]",
+        ).unwrap());
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(
+            value,
+            Value::List(vec![
+                Value::U64(2),
+                Value::U64(3),
+                Value::U64(4),
+                Value::U64(5),
+            ])
+        );
+        println!("{}", trace);
+    }
+
+    #[tokio::test]
     async fn test_let_in_nested_map() {
         let mut parser = Parser::new(Token::tokenize(
             "test.rex",
