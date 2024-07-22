@@ -97,7 +97,12 @@ impl Engine {
         Ok(Value::I64(x))
     }
 
-    async fn eval_uint(&mut self, _trace: &mut Trace, _span: &Span, x: u64) -> Result<Value, Error> {
+    async fn eval_uint(
+        &mut self,
+        _trace: &mut Trace,
+        _span: &Span,
+        x: u64,
+    ) -> Result<Value, Error> {
         Ok(Value::U64(x))
     }
 
@@ -332,7 +337,8 @@ mod test {
         let value = result.unwrap();
         assert_eq!(value, Value::U64(2));
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", r#"(++) "hello, " "world!""#).unwrap());
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", r#"(++) "hello, " "world!""#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
@@ -340,10 +346,8 @@ mod test {
         let value = result.unwrap();
         assert_eq!(value, Value::String("hello, world!".to_string()));
 
-        let mut parser = Parser::new(Token::tokenize(
-            "test.rex",
-            r#""hello" ++ ", " ++ 'world!'"#,
-        ).unwrap());
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", r#""hello" ++ ", " ++ 'world!'"#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
@@ -363,7 +367,8 @@ mod test {
         assert_eq!(value, Value::U64(3));
         println!("{}", trace);
 
-        let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\x -> x 1) ((+) 2)"#).unwrap());
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", r#"(\x -> x 1) ((+) 2)"#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
@@ -373,6 +378,16 @@ mod test {
         println!("{}", trace);
 
         let mut parser = Parser::new(Token::tokenize("test.rex", r#"(\x -> x 1 2) (+)"#).unwrap());
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(value, Value::U64(3));
+        println!("{}", trace);
+
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", r#"(\x y -> x y 2) (+) 1"#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
@@ -426,7 +441,8 @@ mod test {
 
     #[tokio::test]
     async fn test_compose() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "((+) 1 . (+) 2 . (*) 3) 4").unwrap());
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", "((+) 1 . (+) 2 . (*) 3) 4").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
@@ -438,7 +454,8 @@ mod test {
 
     #[tokio::test]
     async fn test_let() {
-        let mut parser = Parser::new(Token::tokenize("test.rex", "let x = 1, y = 2 in x + y").unwrap());
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", "let x = 1, y = 2 in x + y").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
@@ -450,10 +467,9 @@ mod test {
 
     #[tokio::test]
     async fn test_map() {
-        let mut parser = Parser::new(Token::tokenize(
-            "test.rex",
-            "map ((+) 1 . (+) 2 . (*) 3) [1, 2, 3, 4]",
-        ).unwrap());
+        let mut parser = Parser::new(
+            Token::tokenize("test.rex", "map ((+) 1 . (+) 2 . (*) 3) [1, 2, 3, 4]").unwrap(),
+        );
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
@@ -473,10 +489,8 @@ mod test {
 
     #[tokio::test]
     async fn test_zip() {
-        let mut parser = Parser::new(Token::tokenize(
-            "test.rex",
-            "zip [1, 2, 3, 4] [4, 3, 2, 1]",
-        ).unwrap());
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", "zip [1, 2, 3, 4] [4, 3, 2, 1]").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
@@ -496,9 +510,51 @@ mod test {
 
     #[tokio::test]
     async fn test_nested_map() {
+        let mut parser = Parser::new(
+            Token::tokenize(
+                "test.rex",
+                "map (\\x -> ( (+) 1 . (+) 2 . (*) 3 ) ( get 1 x ) ) [ [1, 2, 3, 4] ]",
+            )
+            .unwrap(),
+        );
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(value, Value::List(vec![Value::U64(9),]));
+        println!("{}", trace);
+    }
+
+    #[tokio::test]
+    async fn test_nested_triple_nested_map() {
+        let mut parser = Parser::new(
+            Token::tokenize(
+                "test.rex",
+                "map (\\x -> map (\\y -> map (\\z -> z + 1) y) x) [[[1, 2], [3, 4]]]",
+            )
+            .unwrap(),
+        );
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(
+            value,
+            Value::List(vec![Value::List(vec![
+                Value::List(vec![Value::U64(2), Value::U64(3)]),
+                Value::List(vec![Value::U64(4), Value::U64(5)]),
+            ])])
+        );
+        println!("{}", trace);
+    }
+
+    #[tokio::test]
+    async fn test_let_in_map() {
         let mut parser = Parser::new(Token::tokenize(
             "test.rex",
-            "map (\\x -> ( (+) 1 . (+) 2 . (*) 3 ) ( get 1 x ) ) [ [1, 2, 3, 4] ]",
+            "let ext = (\\l -> get 0 l) in map (\\x -> let y = (ext x) in y + 1) [[1], [2], [3], [4]] ]",
         ).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
@@ -508,7 +564,54 @@ mod test {
         assert_eq!(
             value,
             Value::List(vec![
-                Value::U64(9),
+                Value::U64(2),
+                Value::U64(3),
+                Value::U64(4),
+                Value::U64(5),
+            ])
+        );
+        println!("{}", trace);
+    }
+
+    #[tokio::test]
+    async fn test_let_in_map_word_boundaries() {
+        let mut parser = Parser::new(Token::tokenize(
+            "test.rex",
+            "let inext = (\\atrue -> get 0 atrue) in map (\\falsey -> let yin = (inext falsey), amapa = 1 in yin + amapa) [[1], [2], [3], [4]] ]",
+        ).unwrap());
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(
+            value,
+            Value::List(vec![
+                Value::U64(2),
+                Value::U64(3),
+                Value::U64(4),
+                Value::U64(5),
+            ])
+        );
+        println!("{}", trace);
+    }
+
+    #[tokio::test]
+    async fn test_let_in_nested_map() {
+        let mut parser = Parser::new(Token::tokenize(
+            "test.rex",
+            "let ext = (\\l -> get 0 l) in map (\\x -> map (\\y -> let z = (ext y) in z + 1) x) [[[1], [2]], [[3], [4]]]",
+        ).unwrap());
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(
+            value,
+            Value::List(vec![
+                Value::List(vec![Value::U64(2), Value::U64(3)]),
+                Value::List(vec![Value::U64(4), Value::U64(5)]),
             ])
         );
         println!("{}", trace);
@@ -544,10 +647,13 @@ mod test {
 
     #[tokio::test]
     async fn test_map_composed_lambda() {
-        let mut parser = Parser::new(Token::tokenize(
-            "test.rex",
-            "map ((+) 1 . \\x -> x + 2) (get 1 ([[1, 2]] ++ [[3, 4]]))",
-        ).unwrap());
+        let mut parser = Parser::new(
+            Token::tokenize(
+                "test.rex",
+                "map ((+) 1 . \\x -> x + 2) (get 1 ([[1, 2]] ++ [[3, 4]]))",
+            )
+            .unwrap(),
+        );
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
