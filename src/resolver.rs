@@ -8,6 +8,7 @@ use ouroboros::Type;
 use crate::{
     parser::Expr,
     span::{Span, Spanned},
+    var::UnresolvedVar,
 };
 
 pub type Result<T> = result::Result<T, Error>;
@@ -163,12 +164,9 @@ impl Resolver {
             Expr::Float(x, span, ..) => Ok(IR::Float(x, span)),
             Expr::String(x, span, ..) => Ok(IR::String(x, span)),
             Expr::List(xs, span, ..) => self.resolve_list(xs, span),
-            Expr::Record(xs, span, ..) => self.resolve_record(xs, span),
-            Expr::Var(name, span, ..) => self.resolve_variable(name, span),
+            Expr::Var(var, ..) => self.resolve_variable(var),
             Expr::Call(base, args, span, ..) => self.resolve_call(*base, args, span),
-            Expr::Lambda(param_names, body, span, ..) => {
-                self.resolve_lambda(param_names, *body, span)
-            }
+            Expr::Lambda(params, body, span, ..) => self.resolve_lambda(params, *body, span),
         }
     }
 
@@ -180,27 +178,20 @@ impl Resolver {
         Ok(IR::List(ys, span))
     }
 
-    fn resolve_record(&mut self, xs: BTreeMap<String, Expr>, span: Span) -> Result<IR> {
-        let mut ys = BTreeMap::new();
-        for (field_name, x) in xs {
-            ys.insert(
-                field_name,
-                serde_json::to_value(self.resolve(x)?).expect("should serialize to json"),
-            );
-        }
-        Ok(IR::Record(ys, span))
-    }
-
-    fn resolve_variable(&mut self, name: String, span: Span) -> Result<IR> {
-        match self.scope.get(&name) {
+    fn resolve_variable(&mut self, var: UnresolvedVar) -> Result<IR> {
+        match self.scope.get(&var.name) {
             Some(id) => Ok(IR::Variable(Variable {
                 id: *id,
-                name,
-                span,
+                name: var.name,
+                span: var.span,
             })),
             None => {
                 let id = self.curr_id.inc();
-                Ok(IR::Variable(Variable { id, name, span }))
+                Ok(IR::Variable(Variable {
+                    id,
+                    name: var.name,
+                    span: var.span,
+                }))
             }
         }
     }
@@ -221,18 +212,23 @@ impl Resolver {
         Ok(IR::Call(call))
     }
 
-    fn resolve_lambda(&mut self, param_names: Vec<String>, body: Expr, span: Span) -> Result<IR> {
+    fn resolve_lambda(
+        &mut self,
+        param_vars: Vec<UnresolvedVar>,
+        body: Expr,
+        span: Span,
+    ) -> Result<IR> {
         // Create a new scope for the lambda that extends the current scope
-        let mut params = VecDeque::with_capacity(param_names.len());
+        let mut params = VecDeque::with_capacity(param_vars.len());
         let mut scope = self.scope.clone();
-        for param_name in param_names {
+        for UnresolvedVar { name, span } in param_vars {
             let id = self.curr_id.inc();
             params.push_back(Variable {
                 id,
-                name: param_name.clone(),
+                name: name.clone(),
                 span: span.clone(),
-            }); // FIXME: Lambda variables should have their own span
-            scope.insert(param_name, id);
+            });
+            scope.insert(name, id);
         }
 
         // Create a resolver that uses the new scope and extends the current
@@ -343,7 +339,7 @@ mod test {
                 params: vec![Variable {
                     id: Id(0),
                     name: "x".to_string(),
-                    span: Span::new("test.rex", 1, 1, 1, 9) // FIXME: Lambda variables should have their own span
+                    span: Span::new("test.rex", 1, 2, 1, 2)
                 }]
                 .into(),
                 body: Box::new(IR::Call(Call {
@@ -351,7 +347,7 @@ mod test {
                     base: Box::new(IR::Variable(Variable {
                         id: Id(1),
                         name: "f".to_string(),
-                        span: Span::new("test.rex", 1, 7, 1, 7) // FIXME: Lambda variables should have their own span
+                        span: Span::new("test.rex", 1, 7, 1, 7)
                     })),
                     args: vec![IR::Variable(Variable {
                         id: Id(0),
@@ -378,7 +374,7 @@ mod test {
                 params: vec![Variable {
                     id: Id(0),
                     name: "x".to_string(),
-                    span: Span::new("test.rex", 1, 1, 1, 17) // FIXME: Lambda variables should have their own span
+                    span: Span::new("test.rex", 1, 2, 1, 2) // FIXME: Lambda variables should have their own span
                 }]
                 .into(),
                 body: Box::new(IR::Lambda(Lambda {
@@ -386,7 +382,7 @@ mod test {
                     params: vec![Variable {
                         id: Id(1),
                         name: "y".to_string(),
-                        span: Span::new("test.rex", 1, 7, 1, 17) // FIXME: Lambda variables should have their own span
+                        span: Span::new("test.rex", 1, 8, 1, 8)
                     }]
                     .into(),
                     body: Box::new(IR::Call(Call {
@@ -430,7 +426,7 @@ mod test {
                 params: vec![Variable {
                     id: Id(0),
                     name: "x".to_string(),
-                    span: Span::new("test.rex", 1, 1, 1, 15) // FIXME: Lambda variables should have their own span
+                    span: Span::new("test.rex", 1, 2, 1, 2)
                 }]
                 .into(),
                 body: Box::new(IR::Lambda(Lambda {
@@ -438,7 +434,7 @@ mod test {
                     params: vec![Variable {
                         id: Id(1),
                         name: "x".to_string(),
-                        span: Span::new("test.rex", 1, 7, 1, 15) // FIXME: Lambda variables should have their own span
+                        span: Span::new("test.rex", 1, 8, 1, 8)
                     }]
                     .into(),
                     body: Box::new(IR::Call(Call {
