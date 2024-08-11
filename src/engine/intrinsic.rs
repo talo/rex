@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, marker::PhantomData};
 
-use ouroboros::Type;
+use ouroboros::{Type, TypeInfo, A};
 
 use crate::{
     resolver::{Call, Lambda, Variable, IR},
@@ -109,19 +109,31 @@ where
                 params: vec![Type::Unit, Type::Unit],
                 ret: Type::Unit,
             }))),
+            "get" => Ok(Some(Value::Function(Function {
+                id: var.id,
+                name: var.name.clone(),
+                params: vec![Type::Unit, Type::Unit],
+                ret: Type::Unit,
+            }))),
+            "json" => Ok(Some(Value::Function(Function {
+                id: var.id,
+                name: var.name.clone(),
+                params: vec![Type::String],
+                ret: A::t(),
+            }))),
             "map" => Ok(Some(Value::Function(Function {
                 id: var.id,
                 name: var.name.clone(),
                 params: vec![Type::Unit, Type::Unit],
                 ret: Type::Unit,
             }))),
-            "zip" => Ok(Some(Value::Function(Function {
+            "toStr" => Ok(Some(Value::Function(Function {
                 id: var.id,
                 name: var.name.clone(),
-                params: vec![Type::Unit, Type::Unit],
-                ret: Type::Unit,
+                params: vec![A::t()],
+                ret: Type::String,
             }))),
-            "get" => Ok(Some(Value::Function(Function {
+            "zip" => Ok(Some(Value::Function(Function {
                 id: var.id,
                 name: var.name.clone(),
                 params: vec![Type::Unit, Type::Unit],
@@ -259,58 +271,6 @@ where
                     span: Span::empty(),
                 }))
             }
-            "map" => {
-                let f = args.pop_front().unwrap();
-                let xs = args.pop_front().unwrap();
-                match xs {
-                    Value::List(xs) => {
-                        let mut apps = Vec::with_capacity(xs.len());
-                        for x in xs {
-                            let id = engine.curr_id.inc();
-                            apps.push(
-                                engine
-                                    .eval(
-                                        self,
-                                        ctx,
-                                        trace,
-                                        IR::Call(Call {
-                                            id,
-                                            base: Box::new(value_to_ir(f.clone(), Span::empty())),
-                                            args: vec![value_to_ir(x, Span::empty())].into(),
-                                            span: Span::empty(),
-                                        }),
-                                    )
-                                    .await?,
-                            );
-                        }
-                        trace.step(TraceNode::ListCtor, Span::empty());
-                        Ok(Value::List(apps))
-                    }
-                    xs => Err(Error::Type {
-                        expected: "List".to_string(),
-                        got: format!("{:?}", xs),
-                    }), // FIXME: only unreachable once type checking is implemented
-                        // _ => unreachable!(),
-                }
-            }
-            "zip" => {
-                let xs = args.pop_front().unwrap();
-                let ys = args.pop_front().unwrap();
-                match (xs, ys) {
-                    (Value::List(xs), Value::List(ys)) => {
-                        let mut zs = Vec::with_capacity(xs.len());
-                        for (x, y) in xs.into_iter().zip(ys.into_iter()) {
-                            zs.push(Value::List(vec![x, y]));
-                        }
-                        Ok(Value::List(zs))
-                    }
-                    (xs, ys) => Err(Error::Type {
-                        expected: "List".to_string(),
-                        got: format!("{:?} or {:?}", xs, ys),
-                    }), // FIXME: only unreachable once type checking is implemented
-                        // _ => unreachable!(),
-                }
-            }
             "get" => {
                 let n = args.pop_front().unwrap();
                 let xs = args.pop_front().unwrap();
@@ -352,6 +312,72 @@ where
                         expected: "List or Record".to_string(),
                         got: v.to_string(),
                     }),
+                }
+            }
+            "json" => {
+                let val: String = serde_json::from_value(args.pop_front().unwrap().try_into().unwrap()).map_err(|_|
+                    Error::Type { expected: "String".to_string(), got: "unknown".into() }
+                )?;
+                let val: serde_json::value::Map<String, serde_json::Value> =
+                    serde_json::from_str(&val.replace('\\', "")).map_err(|_|
+                    Error::Type { expected: "Record".to_string(), got: val }
+                    )?;
+                Ok(Value::Record(val.into_iter().collect()))
+            }
+            "map" => {
+                let f = args.pop_front().unwrap();
+                let xs = args.pop_front().unwrap();
+                match xs {
+                    Value::List(xs) => {
+                        let mut apps = Vec::with_capacity(xs.len());
+                        for x in xs {
+                            let id = engine.curr_id.inc();
+                            apps.push(
+                                engine
+                                    .eval(
+                                        self,
+                                        ctx,
+                                        trace,
+                                        IR::Call(Call {
+                                            id,
+                                            base: Box::new(value_to_ir(f.clone(), Span::empty())),
+                                            args: vec![value_to_ir(x, Span::empty())].into(),
+                                            span: Span::empty(),
+                                        }),
+                                    )
+                                    .await?,
+                            );
+                        }
+                        trace.step(TraceNode::ListCtor, Span::empty());
+                        Ok(Value::List(apps))
+                    }
+                    xs => Err(Error::Type {
+                        expected: "List".to_string(),
+                        got: format!("{:?}", xs),
+                    }), // FIXME: only unreachable once type checking is implemented
+                        // _ => unreachable!(),
+                }
+            }
+            "toStr" => {
+                let x = args.pop_front().unwrap();
+                Ok(Value::String(x.to_string()))
+            }
+            "zip" => {
+                let xs = args.pop_front().unwrap();
+                let ys = args.pop_front().unwrap();
+                match (xs, ys) {
+                    (Value::List(xs), Value::List(ys)) => {
+                        let mut zs = Vec::with_capacity(xs.len());
+                        for (x, y) in xs.into_iter().zip(ys.into_iter()) {
+                            zs.push(Value::List(vec![x, y]));
+                        }
+                        Ok(Value::List(zs))
+                    }
+                    (xs, ys) => Err(Error::Type {
+                        expected: "List".to_string(),
+                        got: format!("{:?} or {:?}", xs, ys),
+                    }), // FIXME: only unreachable once type checking is implemented
+                        // _ => unreachable!(),
                 }
             }
             _ => self.0.run(engine, ctx, trace, f, args).await,
