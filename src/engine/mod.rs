@@ -301,6 +301,8 @@ impl Engine {
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeMap;
+
     use crate::{
         engine::{Trace, TraceNode, Value},
         lexer::Token,
@@ -449,6 +451,32 @@ mod test {
         let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
         assert_eq!(value, Value::U64(15));
+        println!("{}", trace);
+    }
+
+    #[tokio::test]
+    async fn test_json() {
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", r#"json '{ "hello": "world" }' "#).unwrap());
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(value, Value::Record(BTreeMap::from([("hello".to_string(), serde_json::to_value("world").unwrap())])));
+        println!("{}", trace);
+    }
+
+    #[tokio::test]
+    async fn test_to_str() {
+        let mut parser =
+            Parser::new(Token::tokenize("test.rex", r#"json ( '{ "hello": '++ (toStr ( 1 + 2 )) ++ ' }' ) "#).unwrap());
+        let mut resolver = Resolver::new();
+        let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
+        let mut engine = Engine::new(resolver.curr_id);
+        let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
+        let value = result.unwrap();
+        assert_eq!(value, Value::Record(BTreeMap::from([("hello".to_string(), serde_json::to_value(3).unwrap())])));
         println!("{}", trace);
     }
 
