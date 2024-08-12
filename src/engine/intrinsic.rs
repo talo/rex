@@ -127,6 +127,12 @@ where
                 params: vec![Type::Unit, Type::Unit],
                 ret: Type::Unit,
             }))),
+            "toJsonStr" => Ok(Some(Value::Function(Function {
+                id: var.id,
+                name: var.name.clone(),
+                params: vec![A::t()],
+                ret: Type::String,
+            }))),
             "toStr" => Ok(Some(Value::Function(Function {
                 id: var.id,
                 name: var.name.clone(),
@@ -364,6 +370,10 @@ where
                 }
             }
             "toStr" => {
+                let x = args.pop_front().unwrap();
+                Ok(Value::String(x.to_string()))
+            }
+            "toJsonStr" => {
                 let x = args.pop_front().unwrap();
                 Ok(Value::String(
                     serde_json::to_string(&x).expect("value failed to serialize"),
