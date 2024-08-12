@@ -470,13 +470,16 @@ mod test {
     #[tokio::test]
     async fn test_to_str() {
         let mut parser =
-            Parser::new(Token::tokenize("test.rex", r#"json ( '{ "hello": '++ (toStr ( 1 + 2 )) ++ ' }' ) "#).unwrap());
+            Parser::new(Token::tokenize("test.rex", r#"json ( '{ "hello": '++ (toStr ( 1 + 2 )) ++ ', "world":' ++ ( toStr ( json '{"foo": "bar"}')) ++ ' }' ) "#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
-        assert_eq!(value, Value::Record(BTreeMap::from([("hello".to_string(), serde_json::to_value(3).unwrap())])));
+        assert_eq!(value, Value::Record(BTreeMap::from([
+            ("hello".to_string(), serde_json::json!( {"u64": 3} )),
+            ("world".to_string(), serde_json::json!({ "record": { "foo": "bar" } }))
+        ])));
         println!("{}", trace);
     }
 

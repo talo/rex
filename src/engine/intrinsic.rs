@@ -360,7 +360,7 @@ where
             }
             "toStr" => {
                 let x = args.pop_front().unwrap();
-                Ok(Value::String(x.to_string()))
+                Ok(Value::String(serde_json::to_string(&x).expect("value failed to serialize")))
             }
             "zip" => {
                 let xs = args.pop_front().unwrap();
