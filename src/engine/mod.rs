@@ -463,7 +463,13 @@ mod test {
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
-        assert_eq!(value, Value::Record(BTreeMap::from([("hello".to_string(), serde_json::to_value("world").unwrap())])));
+        assert_eq!(
+            value,
+            Value::Record(BTreeMap::from([(
+                "hello".to_string(),
+                serde_json::to_value("world").unwrap()
+            )]))
+        );
         println!("{}", trace);
     }
 
@@ -476,10 +482,16 @@ mod test {
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
-        assert_eq!(value, Value::Record(BTreeMap::from([
-            ("hello".to_string(), serde_json::json!( {"u64": 3} )),
-            ("world".to_string(), serde_json::json!({ "record": { "foo": "bar" } }))
-        ])));
+        assert_eq!(
+            value,
+            Value::Record(BTreeMap::from([
+                ("hello".to_string(), serde_json::json!( {"u64": 3} )),
+                (
+                    "world".to_string(),
+                    serde_json::json!({ "record": { "foo": "bar" } })
+                )
+            ]))
+        );
         println!("{}", trace);
     }
 
