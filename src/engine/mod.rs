@@ -488,7 +488,7 @@ mod test {
                 ("hello".to_string(), serde_json::json!(3)),
                 (
                     "world".to_string(),
-                    serde_json::json!({ "record": { "foo": "bar" } })
+                    serde_json::json!({ "foo": "bar" })
                 )
             ]))
         );

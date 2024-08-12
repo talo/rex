@@ -375,8 +375,9 @@ where
             }
             "toJsonStr" => {
                 let x = args.pop_front().unwrap();
+                let v: serde_json::Value = x.try_into().expect("value failed to serialize");
                 Ok(Value::String(
-                    serde_json::to_string(&x).expect("value failed to serialize"),
+                    serde_json::to_string(&v).expect("value failed to serialize"),
                 ))
             }
             "zip" => {
