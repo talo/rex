@@ -127,6 +127,12 @@ where
                 params: vec![Type::Unit, Type::Unit],
                 ret: Type::Unit,
             }))),
+            "toJsonStr" => Ok(Some(Value::Function(Function {
+                id: var.id,
+                name: var.name.clone(),
+                params: vec![A::t()],
+                ret: Type::String,
+            }))),
             "toStr" => Ok(Some(Value::Function(Function {
                 id: var.id,
                 name: var.name.clone(),
@@ -315,13 +321,18 @@ where
                 }
             }
             "json" => {
-                let val: String = serde_json::from_value(args.pop_front().unwrap().try_into().unwrap()).map_err(|_|
-                    Error::Type { expected: "String".to_string(), got: "unknown".into() }
-                )?;
+                let val: String = serde_json::from_value(
+                    args.pop_front().unwrap().try_into().unwrap(),
+                )
+                .map_err(|_| Error::Type {
+                    expected: "String".to_string(),
+                    got: "unknown".into(),
+                })?;
                 let val: serde_json::value::Map<String, serde_json::Value> =
-                    serde_json::from_str(&val.replace('\\', "")).map_err(|_|
-                    Error::Type { expected: "Record".to_string(), got: val }
-                    )?;
+                    serde_json::from_str(&val.replace('\\', "")).map_err(|_| Error::Type {
+                        expected: "Record".to_string(),
+                        got: val,
+                    })?;
                 Ok(Value::Record(val.into_iter().collect()))
             }
             "map" => {
@@ -361,6 +372,12 @@ where
             "toStr" => {
                 let x = args.pop_front().unwrap();
                 Ok(Value::String(x.to_string()))
+            }
+            "toJsonStr" => {
+                let x = args.pop_front().unwrap();
+                Ok(Value::String(
+                    serde_json::to_string(&x).expect("value failed to serialize"),
+                ))
             }
             "zip" => {
                 let xs = args.pop_front().unwrap();

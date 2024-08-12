@@ -463,20 +463,35 @@ mod test {
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
-        assert_eq!(value, Value::Record(BTreeMap::from([("hello".to_string(), serde_json::to_value("world").unwrap())])));
+        assert_eq!(
+            value,
+            Value::Record(BTreeMap::from([(
+                "hello".to_string(),
+                serde_json::to_value("world").unwrap()
+            )]))
+        );
         println!("{}", trace);
     }
 
     #[tokio::test]
-    async fn test_to_str() {
+    async fn test_to_strs() {
         let mut parser =
-            Parser::new(Token::tokenize("test.rex", r#"json ( '{ "hello": '++ (toStr ( 1 + 2 )) ++ ' }' ) "#).unwrap());
+            Parser::new(Token::tokenize("test.rex", r#"json ( '{ "hello": '++ (toStr ( 1 + 2 )) ++ ', "world":' ++ ( toJsonStr ( json '{"foo": "bar"}')) ++ ' }' ) "#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap()).unwrap();
         let mut engine = Engine::new(resolver.curr_id);
         let (result, trace) = engine.run(&mut IntrinsicRunner::default(), (), ir).await;
         let value = result.unwrap();
-        assert_eq!(value, Value::Record(BTreeMap::from([("hello".to_string(), serde_json::to_value(3).unwrap())])));
+        assert_eq!(
+            value,
+            Value::Record(BTreeMap::from([
+                ("hello".to_string(), serde_json::json!(3)),
+                (
+                    "world".to_string(),
+                    serde_json::json!({ "record": { "foo": "bar" } })
+                )
+            ]))
+        );
         println!("{}", trace);
     }
 
