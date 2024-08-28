@@ -14,9 +14,9 @@ use rex_ast::{
 };
 use value::{Closure, Data, DataFields, FunctionLike, NamedDataFields, UnnamedDataFields, Value};
 
-mod error;
-mod ftable;
-mod value;
+pub mod error;
+pub mod ftable;
+pub mod value;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Context {
@@ -260,7 +260,7 @@ mod test {
     use rex_resolver::resolve;
 
     use crate::{
-        error::sprint_trace_with_ident,
+        error::sprint_trace,
         eval,
         value::{Data, DataFields, NamedDataFields, Value},
         Context, Ftable,
@@ -525,11 +525,19 @@ mod test {
 
         match val {
             Ok(_) => unreachable!(),
-            Err(e) => println!(
-                "error:\n  {}\ntrace:\n{}",
-                e,
-                sprint_trace_with_ident(e.trace(), "  ")
-            ),
+            Err(e) => {
+                assert_eq!(format!("{}", e), "expected uint, got `true`");
+                assert_eq!(
+                    sprint_trace(e.trace()),
+                    r#"filter (λp → let a = x p in let b = y p in (==) ((+) ((+) a b) true) 1) [Point2D {x = 0, y = 0}, Point2D {x = 0, y = 1}, Point3D {x = 1, y = 0, z = 2}, Point3D {x = 1, y = 1, z = 2}]
+  let a = x p in let b = y p in (==) ((+) ((+) a b) true) 1
+    let b = y p in (==) ((+) ((+) a b) true) 1
+      (==) ((+) ((+) a b) true) 1
+        (==) ((+) ((+) a b) true)
+          (+) ((+) a b) true
+"#
+                );
+            }
         }
     }
 }
