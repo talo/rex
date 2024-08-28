@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::{
-    resolver::{Call, Id, Lambda, Variable, IR},
+    resolver::{Call, Lambda, LetIn, Variable, IR},
     span::{Span, Spanned as _},
+    Id,
 };
 
 pub mod error;
@@ -77,6 +78,7 @@ impl Engine {
             IR::Call(call) => self.eval_call(runner, ctx, trace, call).await,
             IR::Lambda(lam) => self.eval_lambda(trace, lam).await,
             IR::Variable(var) => self.eval_variable(runner, ctx, trace, var).await,
+            IR::LetIn(let_in) => self.eval_let_in(runner, ctx, trace, let_in).await,
         }
     }
 
@@ -268,6 +270,25 @@ impl Engine {
             .and_then(|x| x.ok_or(Error::VarNotFound { name: var.name }))
     }
 
+    async fn eval_let_in<R: Runner + Send>(
+        &mut self,
+        runner: &mut R,
+        ctx: &mut R::Ctx,
+        trace: &mut Trace,
+        let_in: LetIn,
+    ) -> Result<Value, Error>
+    where
+        R::Ctx: Send,
+    {
+        let let_in_trace = trace.step(TraceNode::LetIn, let_in.span.clone());
+
+        for (var, def) in let_in.vars.into_iter().zip(let_in.defs.into_iter()) {
+            let val = self.eval(runner, ctx, let_in_trace, def).await?;
+        }
+
+        unimplemented!()
+    }
+
     fn replace_var_in_lambda(&mut self, lam: &mut Lambda, var_id: Id, val: IR) {
         Engine::replace_var_in_ir(lam.body.as_mut(), var_id, val);
     }
@@ -305,8 +326,8 @@ mod test {
         engine::{Trace, TraceNode, Value},
         lexer::Token,
         parser::Parser,
-        resolver::{Call, Id, Lambda, Resolver, Variable, IR},
         span::Span,
+        Id,
     };
 
     use super::{Engine, IntrinsicRunner};

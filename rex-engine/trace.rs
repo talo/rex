@@ -15,6 +15,8 @@ use super::{Error, Value};
 pub enum TraceNode {
     Root,
     ListCtor,
+    LetIn,
+    Assign(String),
     Lambda(Vec<String>, Vec<Value>),
     Function(String, Vec<Value>),
     Error(Error),
@@ -28,14 +30,14 @@ impl Display for TraceNode {
                 write!(f, "((λ ",)?;
                 for (i, param) in params.iter().enumerate() {
                     param.fmt(f)?;
-                    if i < params.len() - 1 {
+                    if i + 1 < params.len() {
                         write!(f, " ")?;
                     }
                 }
                 write!(f, ") ")?;
                 for (i, arg) in args.iter().enumerate() {
                     arg.fmt(f)?;
-                    if i < args.len() - 1 {
+                    if i + 1 < args.len() {
                         write!(f, " ")?;
                     }
                 }
@@ -57,7 +59,7 @@ impl Display for TraceNode {
                 )?;
                 for (i, arg) in args.iter().enumerate() {
                     arg.fmt(f)?;
-                    if i < args.len() - 1 {
+                    if i + 1 < args.len() {
                         write!(f, " ")?;
                     }
                 }

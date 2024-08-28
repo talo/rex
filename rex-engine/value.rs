@@ -4,8 +4,9 @@ use ouroboros::Type;
 use serde::ser::Error;
 
 use crate::{
-    resolver::{Id, Lambda, Variable, IR},
+    resolver::{Lambda, Variable, IR},
     span::Span,
+    Id,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -40,7 +41,7 @@ impl Display for Value {
                 write!(f, "[")?;
                 for (i, x) in xs.iter().enumerate() {
                     x.fmt(f)?;
-                    if i < xs.len() - 1 {
+                    if i + 1 < xs.len() {
                         write!(f, ", ")?;
                     }
                 }
@@ -52,7 +53,7 @@ impl Display for Value {
                     field_name.fmt(f)?;
                     write!(f, ": ")?;
                     x.fmt(f)?;
-                    if i < xs.len() - 1 {
+                    if i + 1 < xs.len() {
                         write!(f, ", ")?;
                     }
                 }
@@ -74,7 +75,7 @@ impl Display for Value {
                 )?;
                 for (i, x) in function.params.iter().enumerate() {
                     x.fmt(f)?;
-                    if i < function.params.len() - 1 {
+                    if i + 1 < function.params.len() {
                         write!(f, " -> ")?;
                     }
                 }
@@ -84,7 +85,7 @@ impl Display for Value {
                 write!(f, "(λ: ")?;
                 for (i, x) in lam.params.iter().enumerate() {
                     x.name.fmt(f)?;
-                    if i < lam.params.len() - 1 {
+                    if i + 1 < lam.params.len() {
                         write!(f, " -> ")?;
                     }
                 }

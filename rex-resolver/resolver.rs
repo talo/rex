@@ -1,14 +1,16 @@
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{HashMap, VecDeque},
     result,
 };
 
 use ouroboros::Type;
 
 use crate::{
+    ast::{Call, Lambda, AST},
     parser::Expr,
     span::{Span, Spanned},
-    var::UnresolvedVar,
+    var::{UnresolvedVar, Var},
+    Id,
 };
 
 pub type Result<T> = result::Result<T, Error>;
@@ -17,124 +19,6 @@ pub type Result<T> = result::Result<T, Error>;
 pub enum Error {
     #[error("type mismatched, expected {expected} got {got}")]
     TypeMismatch { expected: Type, got: Type },
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
-pub struct Id(pub u64);
-
-impl Id {
-    pub fn new() -> Id {
-        Id(0)
-    }
-
-    pub fn inc(&mut self) -> Id {
-        let id = self.0;
-        self.0 += 1;
-        Id(id)
-    }
-}
-
-impl Default for Id {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
-pub enum IR {
-    Null(Span),
-    Bool(bool, Span),
-    Uint(u64, Span),
-    Int(i64, Span),
-    Float(f64, Span),
-    String(String, Span),
-    List(Vec<IR>, Span),
-    Record(BTreeMap<String, serde_json::Value>, Span),
-    Call(Call),
-    Lambda(Lambda),
-    Variable(Variable),
-}
-
-impl Spanned for IR {
-    fn span(&self) -> &Span {
-        match self {
-            IR::Null(span) => span,
-            IR::Bool(_, span) => span,
-            IR::Uint(_, span) => span,
-            IR::Int(_, span) => span,
-            IR::Float(_, span) => span,
-            IR::String(_, span) => span,
-            IR::List(_, span) => span,
-            IR::Record(_, span) => span,
-            IR::Call(call) => &call.span,
-            IR::Lambda(lam) => &lam.span,
-            IR::Variable(var) => &var.span,
-        }
-    }
-
-    fn span_mut(&mut self) -> &mut Span {
-        match self {
-            IR::Null(span) => span,
-            IR::Bool(_, span) => span,
-            IR::Uint(_, span) => span,
-            IR::Int(_, span) => span,
-            IR::Float(_, span) => span,
-            IR::String(_, span) => span,
-            IR::List(_, span) => span,
-            IR::Record(_, span) => span,
-            IR::Call(call) => &mut call.span,
-            IR::Lambda(lam) => &mut lam.span,
-            IR::Variable(var) => &mut var.span,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
-pub struct Variable {
-    pub id: Id,
-    pub name: String,
-    pub span: Span,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
-pub struct Call {
-    pub id: Id,
-    pub base: Box<IR>,
-    pub args: VecDeque<IR>,
-    pub span: Span,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
-pub struct Lambda {
-    pub id: Id,
-    pub params: VecDeque<Variable>,
-    pub body: Box<IR>,
-    pub span: Span,
 }
 
 pub struct Resolver {
@@ -156,38 +40,39 @@ impl Resolver {
         id
     }
 
-    pub fn resolve(&mut self, expr: Expr) -> Result<IR> {
+    pub fn resolve(&mut self, expr: Expr) -> Result<AST> {
         match expr {
-            Expr::Null(span, ..) => Ok(IR::Null(span)),
-            Expr::Bool(x, span, ..) => Ok(IR::Bool(x, span)),
-            Expr::Int(x, span, ..) => Ok(IR::Uint(x, span)),
-            Expr::Float(x, span, ..) => Ok(IR::Float(x, span)),
-            Expr::String(x, span, ..) => Ok(IR::String(x, span)),
+            Expr::Null(span, ..) => Ok(AST::Null(span)),
+            Expr::Bool(x, span, ..) => Ok(AST::Bool(x, span)),
+            Expr::Int(x, span, ..) => Ok(AST::Uint(x, span)),
+            Expr::Float(x, span, ..) => Ok(AST::Float(x, span)),
+            Expr::String(x, span, ..) => Ok(AST::String(x, span)),
             Expr::List(xs, span, ..) => self.resolve_list(xs, span),
             Expr::Var(var, ..) => self.resolve_variable(var),
             Expr::Call(base, args, span, ..) => self.resolve_call(*base, args, span),
             Expr::Lambda(params, body, span, ..) => self.resolve_lambda(params, *body, span),
+            Expr::LetIn(vars, defs, body, span, ..) => self.resolve_let_in(vars, defs, *body, span),
         }
     }
 
-    fn resolve_list(&mut self, xs: Vec<Expr>, span: Span) -> Result<IR> {
+    fn resolve_list(&mut self, xs: Vec<Expr>, span: Span) -> Result<AST> {
         let mut ys = Vec::with_capacity(xs.len());
         for x in xs {
             ys.push(self.resolve(x)?);
         }
-        Ok(IR::List(ys, span))
+        Ok(AST::List(ys, span))
     }
 
-    fn resolve_variable(&mut self, var: UnresolvedVar) -> Result<IR> {
+    fn resolve_variable(&mut self, var: UnresolvedVar) -> Result<AST> {
         match self.scope.get(&var.name) {
-            Some(id) => Ok(IR::Variable(Variable {
+            Some(id) => Ok(AST::Var(Var {
                 id: *id,
                 name: var.name,
                 span: var.span,
             })),
             None => {
                 let id = self.curr_id.inc();
-                Ok(IR::Variable(Variable {
+                Ok(AST::Var(Var {
                     id,
                     name: var.name,
                     span: var.span,
@@ -196,32 +81,67 @@ impl Resolver {
         }
     }
 
-    fn resolve_call(&mut self, base: Expr, args: Vec<Expr>, span: Span) -> Result<IR> {
-        let base = Box::new(self.resolve(base)?);
-        let mut xs = VecDeque::with_capacity(args.len());
-        for x in args {
-            xs.push_back(self.resolve(x)?);
-        }
-        let id = self.curr_id.inc();
-        let call = Call {
-            id,
-            base,
-            args: xs,
-            span,
-        };
-        Ok(IR::Call(call))
+    fn resolve_call(&mut self, base: Expr, args: Vec<Expr>, span: Span) -> Result<AST> {
+        args.into_iter().fold(self.resolve(base), |base, arg| {
+            base.and_then(|base| {
+                Ok(AST::Call(Call {
+                    id: self.curr_id.inc(),
+                    base: Box::new(base),
+                    arg: Box::new(self.resolve(arg)?),
+                    span: base.span().clone().merge(arg.span().clone()),
+                }))
+            })
+        })
     }
 
-    fn resolve_lambda(
+    fn resolve_lambda(&mut self, vars: Vec<UnresolvedVar>, body: Expr, span: Span) -> Result<AST> {
+        let mut scope = self.scope.clone();
+
+        let vars = vars
+            .into_iter()
+            .map(|var| {
+                let id = self.curr_id.inc();
+                scope.insert(var.name.clone(), id);
+                Var {
+                    id,
+                    name: var.name,
+                    span: var.span,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        vars.into_iter().rev().fold(
+            Resolver {
+                curr_id: self.curr_id,
+                scope,
+            }
+            .resolve(body),
+            |body, var| {
+                body.and_then(|body| {
+                    Ok(AST::Lambda(Lambda {
+                        id: self.curr_id.inc(),
+                        var: var.clone(),
+                        body: Box::new(body),
+                        span: var.span.merge(body.span().clone()),
+                    }))
+                })
+            },
+        )
+    }
+
+    fn resolve_let_in(
         &mut self,
-        param_vars: Vec<UnresolvedVar>,
+        vars: Vec<UnresolvedVar>,
+        defs: Vec<Expr>,
         body: Expr,
         span: Span,
-    ) -> Result<IR> {
-        // Create a new scope for the lambda that extends the current scope
-        let mut params = VecDeque::with_capacity(param_vars.len());
+    ) -> Result<AST> {
+        // Create a new scope for the let-in expression that extends the current
+        // scope (and will shadow it)
+        let mut params = VecDeque::with_capacity(vars.len());
+        let mut param_defs = VecDeque::with_capacity(vars.len());
         let mut scope = self.scope.clone();
-        for UnresolvedVar { name, span } in param_vars {
+        for (UnresolvedVar { name, span }, def) in vars.into_iter().zip(defs.into_iter()) {
             let id = self.curr_id.inc();
             params.push_back(Variable {
                 id,
@@ -229,24 +149,26 @@ impl Resolver {
                 span: span.clone(),
             });
             scope.insert(name, id);
+
+            // Create a resolver that uses the new scope and extends the current
+            // namespace
+            let mut resolver = Resolver {
+                curr_id: self.curr_id,
+                scope: scope.clone(),
+            };
+            param_defs.push_back(resolver.resolve(def)?);
         }
 
-        // Create a resolver that uses the new scope and extends the current
-        // namespace
         let mut resolver = Resolver {
             curr_id: self.curr_id,
             scope,
         };
         let body = Box::new(resolver.resolve(body)?);
 
-        // Keep the new IDs and new type resolutions of the inner resolver.
-        // However, the parameters declared by a lambda are only valid in the
-        // body of that lambda, so we do not keep the new scope.
-        self.curr_id = resolver.curr_id;
-
-        Ok(IR::Lambda(Lambda {
+        Ok(AST::LetIn(LetIn {
             id: self.curr_id.inc(),
-            params,
+            vars: params,
+            defs: param_defs,
             body,
             span,
         }))
@@ -264,7 +186,7 @@ mod test {
     use crate::{
         lexer::Token,
         parser::Parser,
-        resolver::{Call, Id, Lambda, Resolver, Variable, IR},
+        resolver::{Call, Id, Lambda, Resolver, Variable, AST},
         span::Span,
     };
 
@@ -273,24 +195,24 @@ mod test {
         let mut parser = Parser::new(Token::tokenize("test.rex", "true").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
-        assert_eq!(ir, Ok(IR::Bool(true, Span::new("test.rex", 1, 1, 1, 4))));
+        assert_eq!(ir, Ok(AST::Bool(true, Span::new("test.rex", 1, 1, 1, 4))));
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "42").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
-        assert_eq!(ir, Ok(IR::Uint(42, Span::new("test.rex", 1, 1, 1, 2))));
+        assert_eq!(ir, Ok(AST::Uint(42, Span::new("test.rex", 1, 1, 1, 2))));
 
         let mut parser = Parser::new(Token::tokenize("test.rex", "3.55").unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
-        assert_eq!(ir, Ok(IR::Float(3.55, Span::new("test.rex", 1, 1, 1, 4))));
+        assert_eq!(ir, Ok(AST::Float(3.55, Span::new("test.rex", 1, 1, 1, 4))));
 
         let mut parser = Parser::new(Token::tokenize("test.rex", r#""hello""#).unwrap());
         let mut resolver = Resolver::new();
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
             ir,
-            Ok(IR::String(
+            Ok(AST::String(
                 "hello".to_string(),
                 Span::new("test.rex", 1, 1, 1, 7)
             ))
@@ -301,11 +223,11 @@ mod test {
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
             ir,
-            Ok(IR::List(
+            Ok(AST::List(
                 vec![
-                    IR::Uint(0, Span::new("test.rex", 1, 2, 1, 2)),
-                    IR::Uint(1, Span::new("test.rex", 1, 5, 1, 5)),
-                    IR::Uint(42, Span::new("test.rex", 1, 8, 1, 9))
+                    AST::Uint(0, Span::new("test.rex", 1, 2, 1, 2)),
+                    AST::Uint(1, Span::new("test.rex", 1, 5, 1, 5)),
+                    AST::Uint(42, Span::new("test.rex", 1, 8, 1, 9))
                 ],
                 Span::new("test.rex", 1, 1, 1, 10)
             ))
@@ -319,7 +241,7 @@ mod test {
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
             ir,
-            Ok(IR::Variable(Variable {
+            Ok(AST::Variable(Variable {
                 id: Id(0),
                 name: "x".to_string(),
                 span: Span::new("test.rex", 1, 1, 1, 1)
@@ -334,7 +256,7 @@ mod test {
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
             ir,
-            Ok(IR::Lambda(Lambda {
+            Ok(AST::Lambda(Lambda {
                 id: Id(3),
                 params: vec![Variable {
                     id: Id(0),
@@ -342,14 +264,14 @@ mod test {
                     span: Span::new("test.rex", 1, 2, 1, 2)
                 }]
                 .into(),
-                body: Box::new(IR::Call(Call {
+                body: Box::new(AST::Call(Call {
                     id: Id(2),
-                    base: Box::new(IR::Variable(Variable {
+                    base: Box::new(AST::Variable(Variable {
                         id: Id(1),
                         name: "f".to_string(),
                         span: Span::new("test.rex", 1, 7, 1, 7)
                     })),
-                    args: vec![IR::Variable(Variable {
+                    args: vec![AST::Variable(Variable {
                         id: Id(0),
                         name: "x".to_string(),
                         span: Span::new("test.rex", 1, 9, 1, 9)
@@ -369,7 +291,7 @@ mod test {
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
             ir,
-            Ok(IR::Lambda(Lambda {
+            Ok(AST::Lambda(Lambda {
                 id: Id(5),
                 params: vec![Variable {
                     id: Id(0),
@@ -377,7 +299,7 @@ mod test {
                     span: Span::new("test.rex", 1, 2, 1, 2) // FIXME: Lambda variables should have their own span
                 }]
                 .into(),
-                body: Box::new(IR::Lambda(Lambda {
+                body: Box::new(AST::Lambda(Lambda {
                     id: Id(4),
                     params: vec![Variable {
                         id: Id(1),
@@ -385,20 +307,20 @@ mod test {
                         span: Span::new("test.rex", 1, 8, 1, 8)
                     }]
                     .into(),
-                    body: Box::new(IR::Call(Call {
+                    body: Box::new(AST::Call(Call {
                         id: Id(3),
-                        base: Box::new(IR::Variable(Variable {
+                        base: Box::new(AST::Variable(Variable {
                             id: Id(2),
                             name: "f".to_string(),
                             span: Span::new("test.rex", 1, 13, 1, 13)
                         })),
                         args: vec![
-                            IR::Variable(Variable {
+                            AST::Variable(Variable {
                                 id: Id(0),
                                 name: "x".to_string(),
                                 span: Span::new("test.rex", 1, 15, 1, 15)
                             }),
-                            IR::Variable(Variable {
+                            AST::Variable(Variable {
                                 id: Id(1),
                                 name: "y".to_string(),
                                 span: Span::new("test.rex", 1, 17, 1, 17)
@@ -421,7 +343,7 @@ mod test {
         let ir = resolver.resolve(parser.parse_expr().unwrap());
         assert_eq!(
             ir,
-            Ok(IR::Lambda(Lambda {
+            Ok(AST::Lambda(Lambda {
                 id: Id(5),
                 params: vec![Variable {
                     id: Id(0),
@@ -429,7 +351,7 @@ mod test {
                     span: Span::new("test.rex", 1, 2, 1, 2)
                 }]
                 .into(),
-                body: Box::new(IR::Lambda(Lambda {
+                body: Box::new(AST::Lambda(Lambda {
                     id: Id(4),
                     params: vec![Variable {
                         id: Id(1),
@@ -437,14 +359,14 @@ mod test {
                         span: Span::new("test.rex", 1, 8, 1, 8)
                     }]
                     .into(),
-                    body: Box::new(IR::Call(Call {
+                    body: Box::new(AST::Call(Call {
                         id: Id(3),
-                        base: Box::new(IR::Variable(Variable {
+                        base: Box::new(AST::Variable(Variable {
                             id: Id(2),
                             name: "f".to_string(),
                             span: Span::new("test.rex", 1, 13, 1, 13)
                         })),
-                        args: vec![IR::Variable(Variable {
+                        args: vec![AST::Variable(Variable {
                             id: Id(1),
                             name: "x".to_string(),
                             span: Span::new("test.rex", 1, 15, 1, 15)

@@ -1,9 +1,8 @@
 use regex;
+use rex_ast::span::{Span, Spanned};
 
-use std::fmt;
+use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
-
-use super::span::{Span, Spanned};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Precedence(u8);
@@ -35,6 +34,7 @@ pub enum Token {
     Else(Span),
     For(Span),
     If(Span),
+    Then(Span),
 
     // Operators
     Add(Span),
@@ -95,7 +95,7 @@ pub enum LexicalError {
 }
 
 impl Token {
-    pub fn tokenize(filename: &str, input: &str) -> Result<Vec<Token>, LexicalError> {
+    pub fn tokenize(input: &str) -> Result<Vec<Token>, LexicalError> {
         let mut line = 1;
         let mut column = 1;
         let mut tokens = Vec::new();
@@ -104,7 +104,7 @@ impl Token {
             let begin_line = line;
             let begin_column = column;
             column += capture[0].to_string().chars().count();
-            let span = Span::new(filename, begin_line, begin_column, line, column - 1);
+            let span = Span::new(begin_line, begin_column, line, column - 1);
             if &capture[0] == "\n" {
                 line += 1;
                 column = 1;
@@ -123,6 +123,8 @@ impl Token {
                     Token::If(span)
                 } else if capture.name("In").is_some() {
                     Token::In(span)
+                } else if capture.name("Then").is_some() {
+                    Token::Then(span)
                 }
 
                 // Symbols
@@ -249,11 +251,11 @@ impl Token {
             r"(?P<Else>\belse\b)|",
             r"(?P<For>\bfor\b)|",
             r"(?P<If>\bif\b)|",
+            r"(?P<Then>\bthen\b)|",
             // Symbols
-            r"(?P<ArrowL><-)|",
-            r"(?P<ArrowR>->)|",
-            r"(?P<Assign>=)|",
-            r"(?P<BackSlash>\\)|",
+            r"(?P<ArrowL><-|←)|",
+            r"(?P<ArrowR>->|→)|",
+            r"(?P<BackSlash>\\|λ)|",
             r"(?P<BraceL>\{)|",
             r"(?P<BraceR>\})|",
             r"(?P<BracketL>\[)|",
@@ -278,6 +280,7 @@ impl Token {
             r"(?P<Div>/)|",
             r"(?P<Dot>\.)|",
             r"(?P<Equal>==)|",
+            r"(?P<Assign>=)|", // Must come after `==`
             r"(?P<NotEqual>!=)|",
             r"(?P<LessThan><)|",
             r"(?P<LessThanEq><=)|",
@@ -333,6 +336,7 @@ impl Spanned for Token {
             Else(span, ..) => span,
             For(span, ..) => span,
             If(span, ..) => span,
+            Then(span, ..) => span,
 
             // Symbols
             ArrowL(span, ..) => span,
@@ -396,6 +400,7 @@ impl Spanned for Token {
             Else(span, ..) => span,
             For(span, ..) => span,
             If(span, ..) => span,
+            Then(span, ..) => span,
 
             // Symbols
             ArrowL(span, ..) => span,
@@ -451,8 +456,8 @@ impl Spanned for Token {
     }
 }
 
-impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         use Token::*;
 
         match self {
@@ -461,6 +466,7 @@ impl fmt::Display for Token {
             Else(..) => write!(f, "else"),
             For(..) => write!(f, "for"),
             If(..) => write!(f, "if"),
+            Then(..) => write!(f, "then"),
 
             // Symbols
             ArrowL(..) => write!(f, "<-"),
