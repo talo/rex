@@ -6,7 +6,7 @@ use std::{
 use ftable::Ftable;
 use futures::future;
 
-use error::Error;
+use error::{Error, Trace};
 use rex_ast::{
     ast::{Call, Ctor, Fields, IfThenElse, Lambda, LetIn, NamedFields, UnnamedFields, Var, AST},
     id::Id,
@@ -86,12 +86,16 @@ pub async fn apply(
                 eval(&new_ctx, ftable, *lam.body.clone()).await
             }
         },
-        got => Err(Error::ExpectedCallable { got }),
+        got => Err(Error::ExpectedCallable {
+            got,
+            trace: Default::default(),
+        }),
     }
 }
 
 #[async_recursion::async_recursion]
 pub async fn eval(ctx: &Context, ftable: &Ftable, ast: AST) -> Result<Value, Error> {
+    let trace_node = ast.clone();
     match ast {
         AST::Null(_span) => Ok(Value::Null),
         AST::Bool(_span, x) => Ok(Value::Bool(x)),
@@ -100,16 +104,16 @@ pub async fn eval(ctx: &Context, ftable: &Ftable, ast: AST) -> Result<Value, Err
         AST::Float(_span, x) => Ok(Value::Float(x)),
         AST::String(_span, x) => Ok(Value::String(x)),
 
-        AST::List(_span, list) => eval_list(ctx, ftable, list).await,
-        AST::Tuple(_span, tuple) => eval_tuple(ctx, ftable, tuple).await,
-        AST::Dict(_span, dict) => eval_dict(ctx, ftable, dict).await,
+        AST::List(_span, list) => eval_list(ctx, ftable, list).await.trace(trace_node),
+        AST::Tuple(_span, tuple) => eval_tuple(ctx, ftable, tuple).await.trace(trace_node),
+        AST::Dict(_span, dict) => eval_dict(ctx, ftable, dict).await.trace(trace_node),
 
-        AST::Var(var) => eval_var(ctx, ftable, var).await,
-        AST::Call(call) => eval_call(ctx, ftable, call).await,
-        AST::Lambda(lam) => eval_lambda(ctx, ftable, lam).await,
-        AST::LetIn(let_in) => eval_let_in(ctx, ftable, let_in).await,
-        AST::IfThenElse(ite) => eval_ite(ctx, ftable, ite).await,
-        AST::Ctor(ctor) => eval_ctor(ctx, ftable, ctor).await,
+        AST::Var(var) => eval_var(ctx, ftable, var).await.trace(trace_node),
+        AST::Call(call) => eval_call(ctx, ftable, call).await.trace(trace_node),
+        AST::Lambda(lam) => eval_lambda(ctx, ftable, lam).await.trace(trace_node),
+        AST::LetIn(let_in) => eval_let_in(ctx, ftable, let_in).await.trace(trace_node),
+        AST::IfThenElse(ite) => eval_ite(ctx, ftable, ite).await.trace(trace_node),
+        AST::Ctor(ctor) => eval_ctor(ctx, ftable, ctor).await.trace(trace_node),
     }
 }
 
@@ -190,6 +194,7 @@ async fn eval_ite(ctx: &Context, ftable: &Ftable, ite: IfThenElse) -> Result<Val
         got => Err(Error::UnexpectedType {
             expected: Type::Bool,
             got,
+            trace: Default::default(),
         }),
     }
 }
@@ -255,6 +260,7 @@ mod test {
     use rex_resolver::resolve;
 
     use crate::{
+        error::sprint_trace_with_ident,
         eval,
         value::{Data, DataFields, NamedDataFields, Value},
         Context, Ftable,
@@ -459,7 +465,7 @@ mod test {
 
     #[tokio::test]
     async fn test_ctor() {
-        let tokens = Token::tokenize("filter (λp → x p + y p == 1) [Point2D { x = 0, y = 0 }, Point2D { x = 0, y = 1 }, Point3D { x = 1, y = 0, z = 2 }, Point3D { x = 1, y = 1, z = 2 }]").unwrap();
+        let tokens = Token::tokenize("filter (λp → let a = x p, b = y p in a + b == 1) [Point2D { x = 0, y = 0 }, Point2D { x = 0, y = 1 }, Point3D { x = 1, y = 0, z = 2 }, Point3D { x = 1, y = 1, z = 2 }]").unwrap();
         let mut parser = Parser::new(tokens);
         let expr = parser.parse_expr().unwrap();
 
@@ -500,5 +506,30 @@ mod test {
                 }),
             ])
         );
+    }
+
+    #[tokio::test]
+    async fn test_bad_ctor() {
+        let tokens = Token::tokenize("filter (λp → let a = x p, b = y p in a + b + true == 1) [Point2D { x = 0, y = 0 }, Point2D { x = 0, y = 1 }, Point3D { x = 1, y = 0, z = 2 }, Point3D { x = 1, y = 1, z = 2 }]").unwrap();
+        let mut parser = Parser::new(tokens);
+        let expr = parser.parse_expr().unwrap();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = ftable_with_point_adt(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, ast).await;
+
+        match val {
+            Ok(_) => unreachable!(),
+            Err(e) => println!(
+                "error:\n  {}\ntrace:\n{}",
+                e,
+                sprint_trace_with_ident(e.trace(), "  ")
+            ),
+        }
     }
 }

@@ -238,6 +238,7 @@ impl Parser {
                 Some(Token::Ident(..)) => self.parse_ident_expr(),
                 Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
                 Some(Token::Let(..)) => self.parse_let_expr(),
+                Some(Token::If(..)) => self.parse_if_expr(),
                 Some(Token::Sub(..)) => self.parse_neg_expr(),
                 _ => break,
             }?;

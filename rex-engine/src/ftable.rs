@@ -62,6 +62,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::Uint(x)), Some(Value::Uint(y))) => Ok(Value::Uint(x + y)),
@@ -71,17 +72,23 @@ impl Ftable {
                         (Some(Value::Uint(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Uint,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Int(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Int,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Float(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Float,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         // Everything else
-                        (Some(x), _) => Err(Error::ExpectedNum { got: x.clone() }),
+                        (Some(x), _) => Err(Error::ExpectedNum {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
                     }
                 })
             }),
@@ -100,6 +107,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::Uint(x)), Some(Value::Uint(y))) => Ok(Value::Uint(x - y)),
@@ -109,17 +117,23 @@ impl Ftable {
                         (Some(Value::Uint(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Uint,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Int(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Int,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Float(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Float,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         // Everything else
-                        (Some(x), _) => Err(Error::ExpectedNum { got: x.clone() }),
+                        (Some(x), _) => Err(Error::ExpectedNum {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
                     }
                 })
             }),
@@ -138,6 +152,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::Uint(x)), Some(Value::Uint(y))) => Ok(Value::Uint(x * y)),
@@ -147,17 +162,23 @@ impl Ftable {
                         (Some(Value::Uint(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Uint,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Int(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Int,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Float(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Float,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         // Everything else
-                        (Some(x), _) => Err(Error::ExpectedNum { got: x.clone() }),
+                        (Some(x), _) => Err(Error::ExpectedNum {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
                     }
                 })
             }),
@@ -176,6 +197,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::Uint(x)), Some(Value::Uint(y))) => Ok(Value::Uint(x / y)),
@@ -185,17 +207,23 @@ impl Ftable {
                         (Some(Value::Uint(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Uint,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Int(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Int,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Float(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Float,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         // Everything else
-                        (Some(x), _) => Err(Error::ExpectedNum { got: x.clone() }),
+                        (Some(x), _) => Err(Error::ExpectedNum {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
                     }
                 })
             }),
@@ -216,6 +244,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::Uint(x)), Some(Value::Uint(y))) => Ok(Value::Bool(x >= y)),
@@ -226,21 +255,28 @@ impl Ftable {
                         (Some(Value::Uint(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Uint,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Int(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Int,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Float(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Float,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::String(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::String,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         // Everything else
-                        (Some(x), _) => Err(Error::ExpectedCmp { got: x.clone() }),
+                        (Some(x), _) => Err(Error::ExpectedCmp {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
                     }
                 })
             }),
@@ -259,6 +295,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::Uint(x)), Some(Value::Uint(y))) => Ok(Value::Bool(x > y)),
@@ -269,21 +306,28 @@ impl Ftable {
                         (Some(Value::Uint(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Uint,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Int(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Int,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Float(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Float,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::String(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::String,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         // Everything else
-                        (Some(x), _) => Err(Error::ExpectedCmp { got: x.clone() }),
+                        (Some(x), _) => Err(Error::ExpectedCmp {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
                     }
                 })
             }),
@@ -303,6 +347,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::Uint(x)), Some(Value::Uint(y))) => Ok(Value::Bool(x <= y)),
@@ -313,21 +358,28 @@ impl Ftable {
                         (Some(Value::Uint(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Uint,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Int(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Int,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Float(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Float,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::String(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::String,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         // Everything else
-                        (Some(x), _) => Err(Error::ExpectedCmp { got: x.clone() }),
+                        (Some(x), _) => Err(Error::ExpectedCmp {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
                     }
                 })
             }),
@@ -346,6 +398,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::Uint(x)), Some(Value::Uint(y))) => Ok(Value::Bool(x < y)),
@@ -356,21 +409,28 @@ impl Ftable {
                         (Some(Value::Uint(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Uint,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Int(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Int,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::Float(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::Float,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::String(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::String,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         // Everything else
-                        (Some(x), _) => Err(Error::ExpectedCmp { got: x.clone() }),
+                        (Some(x), _) => Err(Error::ExpectedCmp {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
                     }
                 })
             }),
@@ -389,6 +449,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Primitives
                         (Some(Value::Null), Some(Value::Null)) => Ok(Value::Bool(true)),
@@ -435,6 +496,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::List(xs)), Some(Value::List(ys))) => {
@@ -450,13 +512,18 @@ impl Ftable {
                         (Some(Value::List(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: list!(b!()),
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(Value::String(_)), Some(y)) => Err(Error::UnexpectedType {
                             expected: Type::String,
                             got: y.clone(),
+                            trace: Default::default(),
                         }),
                         // Everything else
-                        (Some(x), _) => Err(Error::ExpectedConcat { got: x.clone() }),
+                        (Some(x), _) => Err(Error::ExpectedConcat {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
                     }
                 })
             }),
@@ -477,6 +544,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(f), Some(Value::List(xs))) => {
@@ -490,6 +558,7 @@ impl Ftable {
                         (Some(_), Some(x)) => Err(Error::UnexpectedType {
                             expected: list!(a!()),
                             got: x.clone(),
+                            trace: Default::default(),
                         }),
                     }
                 })
@@ -510,6 +579,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(f), Some(Value::List(xs))) => {
@@ -518,7 +588,11 @@ impl Ftable {
                                 match apply(ctx, runner, f.clone(), x.clone()).await? {
                                     Value::Bool(true) => ys.push(x.clone()),
                                     Value::Bool(_) => {}
-                                    _ => Err(Error::BadType)?,
+                                    x => Err(Error::UnexpectedType {
+                                        expected: Type::Bool,
+                                        got: x.clone(),
+                                        trace: Default::default(),
+                                    })?,
                                 }
                             }
                             Ok(Value::List(ys))
@@ -527,6 +601,7 @@ impl Ftable {
                         (Some(_), Some(x)) => Err(Error::UnexpectedType {
                             expected: list!(a!()),
                             got: x.clone(),
+                            trace: Default::default(),
                         }),
                     }
                 })
@@ -547,6 +622,7 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::List(xs)), Some(Value::List(ys))) => {
@@ -560,10 +636,12 @@ impl Ftable {
                         (Some(Value::List(_)), Some(x)) => Err(Error::UnexpectedType {
                             expected: list!(b!()),
                             got: x.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(x), _) => Err(Error::UnexpectedType {
                             expected: list!(a!()),
                             got: x.clone(),
+                            trace: Default::default(),
                         }),
                     }
                 })
@@ -585,18 +663,23 @@ impl Ftable {
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
+                            trace: Default::default(),
                         }),
                         // Implementation
                         (Some(Value::Uint(i)), Some(Value::List(xs))) => {
                             match xs.get(*i as usize) {
                                 Some(x) => Ok(x.clone()),
-                                _ => Err(Error::IndexOutOfBounds),
+                                _ => Err(Error::IndexOutOfBounds {
+                                    trace: Default::default(),
+                                }),
                             }
                         }
                         (Some(Value::Uint(i)), Some(Value::Tuple(xs))) => match xs.get(*i as usize)
                         {
                             Some(x) => Ok(x.clone()),
-                            _ => Err(Error::IndexOutOfBounds),
+                            _ => Err(Error::IndexOutOfBounds {
+                                trace: Default::default(),
+                            }),
                         },
                         (Some(Value::String(k)), Some(Value::Dict(dict))) => {
                             for (k_check, v) in dict {
@@ -604,23 +687,31 @@ impl Ftable {
                                     return Ok(v.clone());
                                 }
                             }
-                            Err(Error::KeyNotFound)
+                            Err(Error::KeyNotFound {
+                                trace: Default::default(),
+                            })
                         }
                         // Bad types
                         (Some(x), Some(Value::List(_))) => Err(Error::UnexpectedType {
                             expected: Type::Uint,
                             got: x.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(x), Some(Value::Tuple(_))) => Err(Error::UnexpectedType {
                             expected: Type::Uint,
                             got: x.clone(),
+                            trace: Default::default(),
                         }),
                         (Some(x), Some(Value::Dict(_))) => Err(Error::UnexpectedType {
                             expected: Type::String,
                             got: x.clone(),
+                            trace: Default::default(),
                         }),
                         // Everything else
-                        (_, Some(x)) => Err(Error::ExpectedIndexable { got: x.clone() }),
+                        (_, Some(x)) => Err(Error::ExpectedIndexable {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
                     }
                 })
             }),
@@ -672,6 +763,7 @@ impl Ftable {
                                         None => Err(Error::ExpectedArguments {
                                             expected: 1,
                                             got: args.len(),
+                                            trace: Default::default(),
                                         }),
                                         // Implementation
                                         Some(Value::Data(data)) => {
@@ -682,6 +774,7 @@ impl Ftable {
                                                     Some(field_value) => Ok(field_value.clone()),
                                                     _ => Err(Error::FieldNotFound {
                                                         field: field_name.clone(),
+                                                        trace: Default::default(),
                                                     }),
                                                 },
                                                 // FIXME: We do not currently
@@ -694,6 +787,7 @@ impl Ftable {
                                         Some(x) => Err(Error::UnexpectedType {
                                             expected: ret.clone(),
                                             got: x.clone(),
+                                            trace: Default::default(),
                                         }),
                                     }
                                 })
@@ -727,6 +821,7 @@ impl Ftable {
                                     None => Err(Error::ExpectedArguments {
                                         expected: 1,
                                         got: args.len(),
+                                        trace: Default::default(),
                                     }),
                                     // Implementation
                                     Some(dict @ Value::Dict(fields))
@@ -749,6 +844,7 @@ impl Ftable {
                                     Some(x) => Err(Error::UnexpectedType {
                                         expected: ret.clone(),
                                         got: x.clone(),
+                                        trace: Default::default(),
                                     }),
                                 }
                             })
@@ -776,6 +872,7 @@ impl Ftable {
                                     None => Err(Error::ExpectedArguments {
                                         expected: 1,
                                         got: args.len(),
+                                        trace: Default::default(),
                                     }),
                                     // Implementation
                                     Some(tuple @ Value::Tuple(fields))
@@ -794,6 +891,7 @@ impl Ftable {
                                     Some(x) => Err(Error::UnexpectedType {
                                         expected: ret.clone(),
                                         got: x.clone(),
+                                        trace: Default::default(),
                                     }),
                                 }
                             })
@@ -812,7 +910,10 @@ impl Ftable {
         self.ftable
             .get(&var.id)
             .map(|(f, _)| Value::Function(f.clone()))
-            .ok_or(Error::VarNotFound { var: var.clone() })
+            .ok_or(Error::VarNotFound {
+                var: var.clone(),
+                trace: Default::default(),
+            })
     }
 
     pub async fn dispatch(
@@ -826,6 +927,7 @@ impl Ftable {
             Some((_f, lam)) => lam(ctx, ftable, args).await,
             None => Err(Error::FunctionNotFound {
                 function: function.clone(),
+                trace: Default::default(),
             }),
         }
     }

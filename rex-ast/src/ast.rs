@@ -152,10 +152,14 @@ impl PartialEq<Var> for Var {
 
 impl Display for Var {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.name.fmt(f)?;
-        '['.fmt(f)?;
-        self.id.fmt(f)?;
-        ']'.fmt(f)
+        match self.name.as_ref() {
+            "+" | "-" | "*" | "/" | "==" | ">=" | ">" | "<=" | "<" | "++" | "." => {
+                '('.fmt(f)?;
+                self.name.fmt(f)?;
+                ')'.fmt(f)
+            }
+            _ => self.name.fmt(f),
+        }
     }
 }
 
@@ -194,11 +198,25 @@ impl PartialEq<Call> for Call {
 
 impl Display for Call {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        '('.fmt(f)?;
         self.base.fmt(f)?;
         ' '.fmt(f)?;
-        self.arg.fmt(f)?;
-        ')'.fmt(f)
+        match self.arg.as_ref() {
+            AST::Null(..)
+            | AST::Bool(..)
+            | AST::Uint(..)
+            | AST::Int(..)
+            | AST::Float(..)
+            | AST::String(..)
+            | AST::List(..)
+            | AST::Tuple(..)
+            | AST::Dict(..)
+            | AST::Var(..) => self.arg.fmt(f),
+            _ => {
+                '('.fmt(f)?;
+                self.arg.fmt(f)?;
+                ')'.fmt(f)
+            }
+        }
     }
 }
 
