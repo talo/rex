@@ -1,5 +1,6 @@
 use std::{collections::HashMap, future::Future, pin::Pin};
 
+use futures::future;
 use rex_ast::{
     a, arrow,
     ast::Var,
@@ -550,9 +551,14 @@ impl Ftable {
                         (Some(f), Some(Value::List(xs))) => {
                             let mut ys = Vec::with_capacity(xs.len());
                             for x in xs {
-                                ys.push(apply(ctx, runner, f.clone(), x.clone()).await?);
+                                ys.push(apply(ctx, runner, f.clone(), x.clone()));
                             }
-                            Ok(Value::List(ys))
+                            Ok(Value::List(
+                                future::join_all(ys)
+                                    .await
+                                    .into_iter()
+                                    .collect::<Result<_, _>>()?,
+                            ))
                         }
                         // Everything else
                         (Some(_), Some(x)) => Err(Error::UnexpectedType {
