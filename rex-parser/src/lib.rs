@@ -209,7 +209,7 @@ impl Parser {
             Some(Token::Sub(..)) => self.parse_neg_expr(),
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("unexpected `{}`", token),
                 ));
                 return Err(Error::Parser(self.errors.clone()));
@@ -222,7 +222,7 @@ impl Parser {
                 return Err(Error::Parser(self.errors.clone()));
             }
         }?;
-        let call_base_expr_span = call_base_expr.span().clone();
+        let call_base_expr_span = *call_base_expr.span();
 
         let mut call_arg_exprs = VecDeque::new();
         loop {

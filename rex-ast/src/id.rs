@@ -1,6 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Deserialize, serde::Serialize),
@@ -13,12 +13,6 @@ impl Id {
         let id = self.0;
         self.0 += 1;
         Id(id)
-    }
-}
-
-impl Default for Id {
-    fn default() -> Self {
-        Self(0)
     }
 }
 
@@ -39,5 +33,11 @@ impl IdDispenser {
 
     pub fn next(&mut self) -> Id {
         self.id.inc()
+    }
+}
+
+impl Default for IdDispenser {
+    fn default() -> Self {
+        Self::new()
     }
 }

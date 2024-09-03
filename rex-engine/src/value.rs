@@ -159,7 +159,7 @@ impl Function {
                         .implements(b.as_ref())
                 }
             },
-            t if self.params.len() == 0 => t == &self.params[0],
+            t if self.params.is_empty() => t == &self.params[0],
             _ => false,
         }
     }
