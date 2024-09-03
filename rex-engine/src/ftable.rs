@@ -1,4 +1,8 @@
-use std::{collections::HashMap, future::Future, pin::Pin};
+use std::{
+    collections::{BTreeMap, HashMap},
+    future::Future,
+    pin::Pin,
+};
 
 use futures::future;
 use rex_ast::{
@@ -743,10 +747,20 @@ impl Ftable {
     }
 
     pub fn register_adt(&mut self, id_dispenser: &mut IdDispenser, adt: ADT) {
+        self.register_adt_with_defaults(id_dispenser, adt, Default::default());
+    }
+
+    pub fn register_adt_with_defaults(
+        &mut self,
+        id_dispenser: &mut IdDispenser,
+        adt: ADT,
+        defaults: BTreeMap<String, DataFields>,
+    ) {
         let ret = Type::ADT(adt.clone());
         for variant in adt.variants {
             match &variant.fields {
                 Some(ADTVariantFields::Named(named_fields)) => {
+                    // REGISTER GETTER FUNCTION FOR EACH FIELD
                     for (field_name, _field_type) in &named_fields.fields {
                         let ret = ret.clone();
                         let field_name = field_name.clone();
@@ -801,8 +815,10 @@ impl Ftable {
                         );
                     }
 
+                    // REGISTER TYPE CTOR FUNCTION
                     let ret = ret.clone();
                     let named_fields = named_fields.clone();
+                    let defaults = defaults.clone();
                     let function = Function {
                         id: id_dispenser.next(),
                         name: variant.name.clone(),
@@ -821,6 +837,7 @@ impl Ftable {
                             let ret = ret.clone();
                             let variant = variant.clone();
                             let named_fields = named_fields.clone();
+                            let defaults = defaults.clone();
                             Box::pin(async move {
                                 match args.get(0) {
                                     // Wrong number of arguments
@@ -830,8 +847,22 @@ impl Ftable {
                                         trace: Default::default(),
                                     }),
                                     // Implementation
-                                    Some(dict @ Value::Dict(fields))
-                                        if dict.implements(&Type::Dict(
+                                    Some(Value::Dict(fields))
+                                        if Value::Dict({
+                                            let mut d = defaults
+                                                .get(&variant.name)
+                                                .cloned()
+                                                .map(|d| match d {
+                                                    DataFields::Named(d_named_fields) => {
+                                                        d_named_fields.fields
+                                                    }
+                                                    _ => unreachable!(),
+                                                })
+                                                .unwrap_or(Default::default());
+                                            d.extend(fields.clone());
+                                            d
+                                        })
+                                        .implements(&Type::Dict(
                                             named_fields
                                                 .fields
                                                 .iter()
@@ -842,7 +873,20 @@ impl Ftable {
                                         Ok(Value::Data(Data {
                                             name: variant.name.clone(),
                                             fields: Some(DataFields::Named(NamedDataFields {
-                                                fields: fields.clone(),
+                                                fields: {
+                                                    let mut d = defaults
+                                                        .get(&variant.name)
+                                                        .cloned()
+                                                        .map(|d| match d {
+                                                            DataFields::Named(d_named_fields) => {
+                                                                d_named_fields.fields
+                                                            }
+                                                            _ => unreachable!(),
+                                                        })
+                                                        .unwrap_or(Default::default());
+                                                    d.extend(fields.clone());
+                                                    d
+                                                },
                                             })),
                                         }))
                                     }

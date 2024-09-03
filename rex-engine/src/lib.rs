@@ -268,11 +268,26 @@ mod test {
 
     fn ftable_with_point_adt(id_dispenser: &mut IdDispenser) -> Ftable {
         let mut ftable = Ftable::with_intrinsics(id_dispenser);
-        ftable.register_adt(
+        ftable.register_adt_with_defaults(
             id_dispenser,
             adt!(
-                Point = Point2D { x = Type::Uint, y = Type::Uint } | Point3D { x = Type::Uint, y = Type::Uint, z = Type::Uint }
+                Point =
+                    Point2D { x = Type::Uint, y = Type::Uint } |
+                    Point3D { x = Type::Uint, y = Type::Uint, z = Type::Uint }
             ),
+            vec![(
+                "Point2D".to_string(),
+                DataFields::Named(NamedDataFields {
+                    fields: vec![
+                        ("x".to_string(), Value::Uint(1)),
+                        ("y".to_string(), Value::Uint(1)),
+                    ]
+                    .into_iter()
+                    .collect(),
+                }),
+            )]
+            .into_iter()
+            .collect(),
         );
         ftable
     }
@@ -466,6 +481,51 @@ mod test {
     #[tokio::test]
     async fn test_ctor() {
         let tokens = Token::tokenize("filter (λp → let a = x p, b = y p in a + b == 1) [Point2D { x = 0, y = 0 }, Point2D { x = 0, y = 1 }, Point3D { x = 1, y = 0, z = 2 }, Point3D { x = 1, y = 1, z = 2 }]").unwrap();
+        let mut parser = Parser::new(tokens);
+        let expr = parser.parse_expr().unwrap();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = ftable_with_point_adt(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, ast).await.unwrap();
+
+        assert_eq!(
+            val,
+            Value::List(vec![
+                Value::Data(Data {
+                    name: "Point2D".to_string(),
+                    fields: Some(DataFields::Named(NamedDataFields {
+                        fields: vec![
+                            ("x".to_string(), Value::Uint(0)),
+                            ("y".to_string(), Value::Uint(1))
+                        ]
+                        .into_iter()
+                        .collect()
+                    }))
+                }),
+                Value::Data(Data {
+                    name: "Point3D".to_string(),
+                    fields: Some(DataFields::Named(NamedDataFields {
+                        fields: vec![
+                            ("x".to_string(), Value::Uint(1)),
+                            ("y".to_string(), Value::Uint(0)),
+                            ("z".to_string(), Value::Uint(2))
+                        ]
+                        .into_iter()
+                        .collect()
+                    }))
+                }),
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ctor_with_defaults() {
+        let tokens = Token::tokenize("filter (λp → let a = x p, b = y p in a + b == 1) [Point2D { x = 0, y = 0 }, Point2D { x = 0 }, Point3D { x = let a = 1, b = 1 in a * b, y = 0, z = let a = 1, b = 1 in a + b }, Point3D { x = 1, y = 1, z = 2 }]").unwrap();
         let mut parser = Parser::new(tokens);
         let expr = parser.parse_expr().unwrap();
 
