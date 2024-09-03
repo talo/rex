@@ -23,6 +23,12 @@ pub struct Context {
     pub vars: HashMap<Id, Value>,
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Context {
     pub fn new() -> Self {
         Self {

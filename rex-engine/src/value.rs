@@ -247,7 +247,7 @@ impl Data {
     }
 
     pub fn implements(&self, adt: &ADT) -> bool {
-        if adt.generics.len() != 0 {
+        if !adt.generics.is_empty() {
             // FIXME: We do not currently support generic ADTs
             return false;
         }
@@ -292,7 +292,7 @@ impl Data {
                 _ => continue,
             }
         }
-        return false;
+        false
     }
 }
 

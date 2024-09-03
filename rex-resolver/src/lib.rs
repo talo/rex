@@ -17,6 +17,12 @@ pub struct Scope {
     pub vars: HashMap<String, Id>,
 }
 
+impl Default for Scope {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scope {
     pub fn new() -> Self {
         Self {
