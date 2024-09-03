@@ -525,7 +525,7 @@ mod test {
 
     #[tokio::test]
     async fn test_ctor_with_defaults() {
-        let tokens = Token::tokenize("filter (λp → let a = x p, b = y p in a + b == 1) [Point2D { x = 0, y = 0 }, Point2D { x = 0 }, Point3D { x = let a = 1, b = 1 in a * b, y = 0, z = let a = 1, b = 1 in a + b }, Point3D { x = 1, y = 1, z = 2 }]").unwrap();
+        let tokens = Token::tokenize("filter (λp → let a = x p, b = y p in a + b == 1) [Point2D { x = 0, y = 0 }, Point2D { x = 0 }, Point2D {}, Point3D { x = let a = 1, b = 1 in a * b, y = 0, z = let a = 1, b = 1 in a + b }, Point3D { x = 1, y = 1, z = 2 }]").unwrap();
         let mut parser = Parser::new(tokens);
         let expr = parser.parse_expr().unwrap();
 
