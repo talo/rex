@@ -279,10 +279,22 @@ mod test {
             adt!(
                 Point =
                     Point2D { x = Type::Uint, y = Type::Uint } |
-                    Point3D { x = Type::Uint, y = Type::Uint, z = Type::Uint }
+                    Point3D { x = Type::Uint, y = Type::Uint, z = Type::Uint } |
+                    PointI3D { i = Type::Option(Box::new(Type::Uint)), x = Type::Uint, y = Type::Uint, z = Type::Uint }
             ),
             vec![(
                 "Point2D".to_string(),
+                DataFields::Named(NamedDataFields {
+                    fields: vec![
+                        ("x".to_string(), Value::Uint(1)),
+                        ("y".to_string(), Value::Uint(1)),
+                    ]
+                    .into_iter()
+                    .collect(),
+                }),
+            ),
+            (
+                "PointI3D".to_string(),
                 DataFields::Named(NamedDataFields {
                     fields: vec![
                         ("x".to_string(), Value::Uint(1)),
@@ -486,7 +498,16 @@ mod test {
 
     #[tokio::test]
     async fn test_ctor() {
-        let tokens = Token::tokenize("filter (λp → let a = x p, b = y p in a + b == 1) [Point2D { x = 0, y = 0 }, Point2D { x = 0, y = 1 }, Point3D { x = 1, y = 0, z = 2 }, Point3D { x = 1, y = 1, z = 2 }]").unwrap();
+        let tokens = Token::tokenize(
+            "filter (λp → let a = x p, b = y p in a + b == 1)
+ [Point2D { x = 0, y = 0 },
+  Point2D { x = 0, y = 1 },
+  Point3D { x = 1, y = 0, z = 2 },
+  Point3D { x = 1, y = 1, z = 2 },
+  PointI3D { i = none, x = 1, y = 0, z = 2 }
+]",
+        )
+        .unwrap();
         let mut parser = Parser::new(tokens);
         let expr = parser.parse_expr().unwrap();
 
@@ -517,6 +538,19 @@ mod test {
                     name: "Point3D".to_string(),
                     fields: Some(DataFields::Named(NamedDataFields {
                         fields: vec![
+                            ("x".to_string(), Value::Uint(1)),
+                            ("y".to_string(), Value::Uint(0)),
+                            ("z".to_string(), Value::Uint(2))
+                        ]
+                        .into_iter()
+                        .collect()
+                    }))
+                }),
+                Value::Data(Data {
+                    name: "PointI3D".to_string(),
+                    fields: Some(DataFields::Named(NamedDataFields {
+                        fields: vec![
+                            ("x".to_string(), Value::Option(None)),
                             ("x".to_string(), Value::Uint(1)),
                             ("y".to_string(), Value::Uint(0)),
                             ("z".to_string(), Value::Uint(2))

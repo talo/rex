@@ -28,6 +28,8 @@ pub enum Value {
     List(Vec<Value>),
     Tuple(Vec<Value>),
     Dict(BTreeMap<String, Value>),
+    Option(Option<Box<Value>>),
+    Result(Result<Box<Value>, Box<Value>>),
 
     // Vars
     Id(Id),
@@ -59,6 +61,9 @@ impl Value {
                         .iter()
                         .all(|(k, v)| ts.get(k).map_or(false, |t| v.implements(t)))
             }
+            (Self::Option(Some(x)), Type::Option(t)) => x.implements(t),
+            (Self::Option(None), Type::Option(_)) => true,
+            (Self::Option(None), Type::Null) => true,
 
             // FIXE: Until type inference is implemented, we cannot know if a
             // value is compatible with a generic type. For now, we just assume
@@ -115,6 +120,22 @@ impl Display for Value {
                 }
                 '}'.fmt(f)
             }
+            Self::Option(Some(x)) => {
+                "Some(".fmt(f)?;
+                x.fmt(f)?;
+                ')'.fmt(f)
+            }
+            Self::Option(None) => "None".fmt(f),
+            Self::Result(Ok(x)) => {
+                "Ok(".fmt(f)?;
+                x.fmt(f)?;
+                ')'.fmt(f)
+            }
+            Self::Result(Err(x)) => {
+                "Err(".fmt(f)?;
+                x.fmt(f)?;
+                ')'.fmt(f)
+            }
 
             // Vars
             Self::Id(id) => id.fmt(f),
@@ -159,7 +180,7 @@ impl Function {
                         .implements(b.as_ref())
                 }
             },
-            t if self.params.is_empty() => t == &self.params[0],
+            t if self.params.is_empty() => false,
             _ => false,
         }
     }

@@ -663,6 +663,103 @@ impl Ftable {
                 })
             }),
         );
+        // Option
+        // `some`
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "some".to_string(),
+                params: vec![a!()],
+                ret: Type::Option(Box::new(a!())),
+            },
+            Box::new(|_ctx, _runner, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: 0,
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        Some(x) => Ok(Value::Option(Some(Box::new(x.clone())))),
+                    }
+                })
+            }),
+        );
+
+        // 'none'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "none".to_string(),
+                params: vec![],
+                ret: Type::Option(Box::new(a!())),
+            },
+            Box::new(|_ctx, _runner, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Ok(Value::Option(None)),
+                        // Everything else
+                        Some(x) => Err(Error::UnexpectedType {
+                            expected: Type::Option(Box::new(a!())),
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
+        // Result
+        // `ok`
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "ok".to_string(),
+                params: vec![a!()],
+                ret: Type::Result(Box::new(a!()), Box::new(b!())),
+            },
+            Box::new(|_ctx, _runner, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: 0,
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        Some(x) => Ok(Value::Result(Ok(Box::new(x.clone())))),
+                    }
+                })
+            }),
+        );
+
+        // 'err'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "err".to_string(),
+                params: vec![b!()],
+                ret: Type::Result(Box::new(a!()), Box::new(b!())),
+            },
+            Box::new(|_ctx, _runner, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: 0,
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        Some(x) => Ok(Value::Result(Err(Box::new(x.clone())))),
+                    }
+                })
+            }),
+        );
 
         // 'get'
         this.register_function(
