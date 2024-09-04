@@ -98,6 +98,8 @@ pub enum Type {
     Int,
     Float,
     String,
+    Option(Box<Type>),
+    Result(Box<Type>, Box<Type>),
     Tuple(Vec<Type>),
     Dict(BTreeMap<String, Type>),
     Arrow(Box<Type>, Box<Type>),
@@ -115,6 +117,18 @@ impl Display for Type {
             Type::Int => "int".fmt(f),
             Type::Float => "float".fmt(f),
             Type::String => "string".fmt(f),
+            Type::Option(x) => {
+                "Option<".fmt(f)?;
+                x.fmt(f)?;
+                '>'.fmt(f)
+            }
+            Type::Result(a, b) => {
+                "Result<".fmt(f)?;
+                a.fmt(f)?;
+                ", ".fmt(f)?;
+                b.fmt(f)?;
+                '>'.fmt(f)
+            }
             Type::Tuple(xs) => {
                 '('.fmt(f)?;
                 for (i, x) in xs.iter().enumerate() {

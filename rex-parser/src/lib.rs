@@ -209,7 +209,7 @@ impl Parser {
             Some(Token::Sub(..)) => self.parse_neg_expr(),
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("unexpected `{}`", token),
                 ));
                 return Err(Error::Parser(self.errors.clone()));
@@ -222,7 +222,7 @@ impl Parser {
                 return Err(Error::Parser(self.errors.clone()));
             }
         }?;
-        let call_base_expr_span = call_base_expr.span().clone();
+        let call_base_expr_span = *call_base_expr.span();
 
         let mut call_arg_exprs = VecDeque::new();
         loop {
@@ -267,7 +267,7 @@ impl Parser {
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected '(' got {}", token),
                 ));
                 return Err(Error::Parser(self.errors.clone()));
@@ -362,11 +362,11 @@ impl Parser {
         let span_begin = match token {
             Some(Token::BracketL(span, ..)) => {
                 self.next_token();
-                span.begin.clone()
+                span.begin
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `[` got {}", token),
                 ));
                 return Err(self.errors.clone().into());
@@ -382,7 +382,7 @@ impl Parser {
         if let Some(Token::BracketR(span, ..)) = token {
             self.next_token();
             return Ok(AST::List(
-                Span::from_begin_end(span_begin.clone(), span.end.clone()),
+                Span::from_begin_end(span_begin, span.end),
                 vec![],
             ));
         }
@@ -391,7 +391,7 @@ impl Parser {
         loop {
             // Parse the next expression.
             let expr = self.parse_expr()?;
-            let span_expr = expr.span().clone();
+            let span_expr = *expr.span();
             exprs.push(expr);
             // Eat the comma.
             let token = self.current_token();
@@ -399,7 +399,7 @@ impl Parser {
                 Some(Token::Comma(..)) => self.next_token(),
                 None => {
                     self.errors.push(ParserErr::new(
-                        Span::from_begin_end(span_begin.clone(), span_expr.end.clone()),
+                        Span::from_begin_end(span_begin, span_expr.end),
                         "expected `,` or `]`".to_string(),
                     ));
                     break;
@@ -415,11 +415,11 @@ impl Parser {
         let span_end = match token {
             Some(Token::BracketR(span, ..)) => {
                 self.next_token();
-                span.end.clone()
+                span.end
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `]` got {}", token),
                 ));
 
@@ -450,7 +450,7 @@ impl Parser {
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `[` got {}", token),
                 ));
                 return Err(self.errors.clone().into());
@@ -466,7 +466,7 @@ impl Parser {
         if let Some(Token::BraceR(span, ..)) = token {
             self.next_token();
             return Ok(AST::Dict(
-                Span::from_begin_end(span_begin.clone(), span.end.clone()),
+                Span::from_begin_end(span_begin, span.end),
                 vec![],
             ));
         }
@@ -485,7 +485,7 @@ impl Parser {
                 Some(Token::Assign(..)) => self.next_token(),
                 _ => {
                     self.errors.push(ParserErr::new(
-                        Span::from_begin_end(span_begin.clone(), span_var.end.clone()),
+                        Span::from_begin_end(span_begin, span_var.end),
                         "expected `=`".to_string(),
                     ));
                     break;
@@ -493,7 +493,7 @@ impl Parser {
             };
             // Parse the expression.
             let expr = self.parse_expr()?;
-            let span_expr = expr.span().clone();
+            let span_expr = *expr.span();
             kvs.push((var, expr));
             // Eat the comma.
             let token = self.current_token();
@@ -501,7 +501,7 @@ impl Parser {
                 Some(Token::Comma(..)) => self.next_token(),
                 None => {
                     self.errors.push(ParserErr::new(
-                        Span::from_begin_end(span_begin.clone(), span_expr.end.clone()),
+                        Span::from_begin_end(span_begin, span_expr.end),
                         "expected `,` or `}}`".to_string(),
                     ));
                     break;
@@ -517,11 +517,11 @@ impl Parser {
         let span_end = match token {
             Some(Token::BraceR(span, ..)) => {
                 self.next_token();
-                span.end.clone()
+                span.end
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `}}` got {}", token),
                 ));
 
@@ -552,7 +552,7 @@ impl Parser {
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `-` got {}", token),
                 ));
                 return Err(self.errors.clone().into());
@@ -620,7 +620,7 @@ impl Parser {
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `->` got {}", token),
                 ));
                 return Err(self.errors.clone().into());
@@ -654,11 +654,11 @@ impl Parser {
         let span_begin = match token {
             Some(Token::Let(span, ..)) => {
                 self.next_token();
-                span.begin.clone()
+                span.begin
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `let` got {}", token),
                 ));
                 return Err(self.errors.clone().into());
@@ -689,7 +689,7 @@ impl Parser {
                 }
                 Some(token) => {
                     self.errors.push(ParserErr::new(
-                        token.span().clone(),
+                        *token.span(),
                         format!("expected `=` got {}", token),
                     ));
                     return Err(self.errors.clone().into());
@@ -711,7 +711,7 @@ impl Parser {
                 Some(Token::In(..)) => break,
                 Some(token) => {
                     self.errors.push(ParserErr::new(
-                        token.span().clone(),
+                        *token.span(),
                         format!("expected `,` or `in` got {}", token),
                     ));
                     return Err(self.errors.clone().into());
@@ -732,7 +732,7 @@ impl Parser {
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `in` got {}", token),
                 ));
                 return Err(self.errors.clone().into());
@@ -769,11 +769,11 @@ impl Parser {
         let span_begin = match token {
             Some(Token::If(span, ..)) => {
                 self.next_token();
-                span.begin.clone()
+                span.begin
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `if` got {}", token),
                 ));
                 return Err(self.errors.clone().into());
@@ -796,7 +796,7 @@ impl Parser {
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `then` got {}", token),
                 ));
                 return Err(self.errors.clone().into());
@@ -819,7 +819,7 @@ impl Parser {
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `else` got {}", token),
                 ));
                 return Err(self.errors.clone().into());
@@ -850,7 +850,7 @@ impl Parser {
             Some(Token::Bool(val, span, ..)) => Ok(AST::Bool(span, val)),
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `bool` got {}", token),
                 ));
                 Err(self.errors.clone().into())
@@ -870,7 +870,7 @@ impl Parser {
             Some(Token::Float(val, span, ..)) => Ok(AST::Float(span, val)),
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `float` got {}", token),
                 ));
                 Err(self.errors.clone().into())
@@ -890,7 +890,7 @@ impl Parser {
             Some(Token::Int(val, span, ..)) => Ok(AST::Uint(span, val)),
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `int` got {}", token),
                 ));
                 Err(self.errors.clone().into())
@@ -923,7 +923,7 @@ impl Parser {
             Some(Token::String(val, span, ..)) => Ok(AST::String(span, val)),
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `str` got {}", token),
                 ));
                 Err(self.errors.clone().into())
@@ -945,7 +945,7 @@ impl Parser {
             }
             Some(token) => {
                 self.errors.push(ParserErr::new(
-                    token.span().clone(),
+                    *token.span(),
                     format!("expected `ident` got {}", token),
                 ));
                 Err(self.errors.clone().into())

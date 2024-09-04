@@ -40,6 +40,12 @@ pub struct Ftable {
     >,
 }
 
+impl Default for Ftable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ftable {
     pub fn new() -> Self {
         Self {
@@ -62,7 +68,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -107,7 +113,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -152,7 +158,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -197,7 +203,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -244,7 +250,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -295,7 +301,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -347,7 +353,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -398,7 +404,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -449,7 +455,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -496,7 +502,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -544,7 +550,7 @@ impl Ftable {
             },
             Box::new(|ctx, runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -584,7 +590,7 @@ impl Ftable {
             },
             Box::new(|ctx, runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -627,7 +633,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -657,6 +663,103 @@ impl Ftable {
                 })
             }),
         );
+        // Option
+        // `some`
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "some".to_string(),
+                params: vec![a!()],
+                ret: Type::Option(Box::new(a!())),
+            },
+            Box::new(|_ctx, _runner, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: 0,
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        Some(x) => Ok(Value::Option(Some(Box::new(x.clone())))),
+                    }
+                })
+            }),
+        );
+
+        // 'none'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "none".to_string(),
+                params: vec![],
+                ret: Type::Option(Box::new(a!())),
+            },
+            Box::new(|_ctx, _runner, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Ok(Value::Option(None)),
+                        // Everything else
+                        Some(x) => Err(Error::UnexpectedType {
+                            expected: Type::Option(Box::new(a!())),
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
+        // Result
+        // `ok`
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "ok".to_string(),
+                params: vec![a!()],
+                ret: Type::Result(Box::new(a!()), Box::new(b!())),
+            },
+            Box::new(|_ctx, _runner, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: 0,
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        Some(x) => Ok(Value::Result(Ok(Box::new(x.clone())))),
+                    }
+                })
+            }),
+        );
+
+        // 'err'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "err".to_string(),
+                params: vec![b!()],
+                ret: Type::Result(Box::new(a!()), Box::new(b!())),
+            },
+            Box::new(|_ctx, _runner, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: 0,
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        Some(x) => Ok(Value::Result(Err(Box::new(x.clone())))),
+                    }
+                })
+            }),
+        );
 
         // 'get'
         this.register_function(
@@ -668,7 +771,7 @@ impl Ftable {
             },
             Box::new(|_ctx, _runner, args| {
                 Box::pin(async move {
-                    match (args.get(0), args.get(1)) {
+                    match (args.first(), args.get(1)) {
                         // Wrong number of arguments
                         (_, None) | (None, _) => Err(Error::ExpectedArguments {
                             expected: 2,
@@ -778,7 +881,7 @@ impl Ftable {
                                 let ret = ret.clone();
                                 let field_name = field_name.clone();
                                 Box::pin(async move {
-                                    match args.get(0) {
+                                    match args.first() {
                                         // Wrong number of arguments
                                         None => Err(Error::ExpectedArguments {
                                             expected: 1,
@@ -839,7 +942,7 @@ impl Ftable {
                             let named_fields = named_fields.clone();
                             let defaults = defaults.clone();
                             Box::pin(async move {
-                                match args.get(0) {
+                                match args.first() {
                                     // Wrong number of arguments
                                     None => Err(Error::ExpectedArguments {
                                         expected: 1,
@@ -917,7 +1020,7 @@ impl Ftable {
                             let unnamed_fields = unnamed_fields.clone();
                             let variant = variant.clone();
                             Box::pin(async move {
-                                match args.get(0) {
+                                match args.first() {
                                     // Wrong number of arguments
                                     None => Err(Error::ExpectedArguments {
                                         expected: 1,
