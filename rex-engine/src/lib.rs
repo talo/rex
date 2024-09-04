@@ -166,7 +166,14 @@ async fn eval_dict(ctx: &Context, ftable: &Ftable, dict: Vec<(Var, AST)>) -> Res
 async fn eval_var(ctx: &Context, ftable: &Ftable, var: Var) -> Result<Value, Error> {
     match ctx.vars.get(&var.id) {
         Some(value) => Ok(value.clone()),
-        _ => ftable.lookup(ctx, &var).await,
+        _ => match ftable.lookup(ctx, &var).await {
+            Ok(Value::Function(function)) if function.params.len() == 0 => {
+                // This is a nullary function
+                ftable.dispatch(ctx, ftable, &function, &vec![]).await
+            }
+            Ok(v) => Ok(v),
+            Err(e) => Err(e),
+        },
     }
 }
 
@@ -550,7 +557,7 @@ mod test {
                     name: "PointI3D".to_string(),
                     fields: Some(DataFields::Named(NamedDataFields {
                         fields: vec![
-                            ("x".to_string(), Value::Option(None)),
+                            ("i".to_string(), Value::Option(None)),
                             ("x".to_string(), Value::Uint(1)),
                             ("y".to_string(), Value::Uint(0)),
                             ("z".to_string(), Value::Uint(2))

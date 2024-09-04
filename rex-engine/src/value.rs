@@ -180,7 +180,7 @@ impl Function {
                         .implements(b.as_ref())
                 }
             },
-            t if self.params.is_empty() => false,
+            t if self.params.is_empty() => *t == self.ret,
             _ => false,
         }
     }
