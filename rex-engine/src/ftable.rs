@@ -22,7 +22,7 @@ use crate::{
     Context,
 };
 
-pub struct Ftable {
+pub struct Ftable<S: Send + Sync + 'static> {
     pub ftable: HashMap<
         Id,
         (
@@ -30,7 +30,8 @@ pub struct Ftable {
             Box<
                 dyn for<'r> Fn(
                         &'r Context,
-                        &'r Ftable,
+                        &'r Ftable<S>,
+                        &'r S,
                         &'r Vec<Value>,
                     )
                         -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
@@ -40,13 +41,16 @@ pub struct Ftable {
     >,
 }
 
-impl Default for Ftable {
+impl<S> Default for Ftable<S>
+where
+    S: Send + Sync + 'static,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Ftable {
+impl<S: Send + Sync + 'static> Ftable<S> {
     pub fn new() -> Self {
         Self {
             ftable: HashMap::new(),
@@ -66,7 +70,7 @@ impl Ftable {
                 params: vec![a!(), a!()],
                 ret: a!(),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -111,7 +115,7 @@ impl Ftable {
                 params: vec![a!(), a!()],
                 ret: a!(),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -156,7 +160,7 @@ impl Ftable {
                 params: vec![a!(), a!()],
                 ret: a!(),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -201,7 +205,7 @@ impl Ftable {
                 params: vec![a!(), a!()],
                 ret: a!(),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -248,7 +252,7 @@ impl Ftable {
                 params: vec![a!(), a!()],
                 ret: Type::Bool,
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -299,7 +303,7 @@ impl Ftable {
                 params: vec![a!(), a!()],
                 ret: Type::Bool,
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -351,7 +355,7 @@ impl Ftable {
                 params: vec![a!(), a!()],
                 ret: Type::Bool,
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -402,7 +406,7 @@ impl Ftable {
                 params: vec![a!(), a!()],
                 ret: Type::Bool,
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -453,7 +457,7 @@ impl Ftable {
                 params: vec![a!(), a!()],
                 ret: Type::Bool,
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -500,7 +504,7 @@ impl Ftable {
                 params: vec![a!(), a!()],
                 ret: a!(),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -548,7 +552,7 @@ impl Ftable {
                 params: vec![arrow!(a!() => b!()), list!(a!())],
                 ret: list!(b!()),
             },
-            Box::new(|ctx, runner, args| {
+            Box::new(|ctx, runner, state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -561,7 +565,7 @@ impl Ftable {
                         (Some(f), Some(Value::List(xs))) => {
                             let mut ys = Vec::with_capacity(xs.len());
                             for x in xs {
-                                ys.push(apply(ctx, runner, f.clone(), x.clone()));
+                                ys.push(apply(ctx, runner, state, f.clone(), x.clone()));
                             }
                             Ok(Value::List(
                                 future::join_all(ys)
@@ -588,7 +592,7 @@ impl Ftable {
                 params: vec![arrow!(a!() => Type::Bool), list!(a!())],
                 ret: list!(a!()),
             },
-            Box::new(|ctx, runner, args| {
+            Box::new(|ctx, runner, state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -601,7 +605,7 @@ impl Ftable {
                         (Some(f), Some(Value::List(xs))) => {
                             let mut ys = Vec::with_capacity(xs.len());
                             for x in xs {
-                                match apply(ctx, runner, f.clone(), x.clone()).await? {
+                                match apply(ctx, runner, state, f.clone(), x.clone()).await? {
                                     Value::Bool(true) => ys.push(x.clone()),
                                     Value::Bool(_) => {}
                                     x => Err(Error::UnexpectedType {
@@ -631,7 +635,7 @@ impl Ftable {
                 params: vec![list!(a!()), list!(b!())],
                 ret: list!(tuple!(a!(), b!())),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -672,7 +676,7 @@ impl Ftable {
                 params: vec![a!()],
                 ret: Type::Option(Box::new(a!())),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match args.first() {
                         // Wrong number of arguments
@@ -696,7 +700,7 @@ impl Ftable {
                 params: vec![],
                 ret: Type::Option(Box::new(a!())),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match args.first() {
                         // Wrong number of arguments
@@ -721,7 +725,7 @@ impl Ftable {
                 params: vec![a!()],
                 ret: Type::Result(Box::new(a!()), Box::new(b!())),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match args.first() {
                         // Wrong number of arguments
@@ -745,7 +749,7 @@ impl Ftable {
                 params: vec![b!()],
                 ret: Type::Result(Box::new(a!()), Box::new(b!())),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match args.first() {
                         // Wrong number of arguments
@@ -769,7 +773,7 @@ impl Ftable {
                 params: vec![Type::Uint, a!()],
                 ret: b!(),
             },
-            Box::new(|_ctx, _runner, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -839,7 +843,8 @@ impl Ftable {
         lam: Box<
             dyn for<'r> Fn(
                     &'r Context,
-                    &'r Ftable,
+                    &'r Ftable<S>,
+                    &'r S,
                     &'r Vec<Value>,
                 )
                     -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
@@ -877,7 +882,7 @@ impl Ftable {
                         };
                         self.register_function(
                             function,
-                            Box::new(move |_ctx, _runner, args| {
+                            Box::new(move |_ctx, _runner, _state, args| {
                                 let ret = ret.clone();
                                 let field_name = field_name.clone();
                                 Box::pin(async move {
@@ -936,7 +941,7 @@ impl Ftable {
                     };
                     self.register_function(
                         function,
-                        Box::new(move |_ctx, _runner, args| {
+                        Box::new(move |_ctx, _runner, _state, args| {
                             let ret = ret.clone();
                             let variant = variant.clone();
                             let named_fields = named_fields.clone();
@@ -1015,7 +1020,7 @@ impl Ftable {
                     };
                     self.register_function(
                         function,
-                        Box::new(move |_ctx, _runner, args| {
+                        Box::new(move |_ctx, _runner, _state, args| {
                             let ret = ret.clone();
                             let unnamed_fields = unnamed_fields.clone();
                             let variant = variant.clone();
@@ -1072,12 +1077,13 @@ impl Ftable {
     pub async fn dispatch(
         &self,
         ctx: &Context,
-        ftable: &Ftable,
+        ftable: &Ftable<S>,
+        state: &S,
         function: &Function,
         args: &Vec<Value>,
     ) -> Result<Value, Error> {
         match self.ftable.get(&function.id) {
-            Some((_f, lam)) => lam(ctx, ftable, args).await,
+            Some((_f, lam)) => lam(ctx, ftable, state, args).await,
             None => Err(Error::FunctionNotFound {
                 function: function.clone(),
                 trace: Default::default(),
