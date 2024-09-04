@@ -22,6 +22,7 @@ impl Display for Id {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IdDispenser {
     id: Id,
 }
