@@ -91,6 +91,11 @@ macro_rules! arrow {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum Type {
     Null,
     Bool,
@@ -168,6 +173,11 @@ impl Display for Type {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct Generic {
     pub name: String,
 }
@@ -179,6 +189,11 @@ impl Display for Generic {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct ADT {
     pub name: String,
     pub generics: Vec<Generic>,
@@ -209,6 +224,11 @@ impl Display for ADT {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct ADTVariant {
     pub name: String,
     pub fields: Option<ADTVariantFields>,
@@ -252,17 +272,32 @@ impl Display for ADTVariant {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum ADTVariantFields {
     Named(ADTVariantNamedFields),
     Unnamed(ADTVariantUnnamedFields),
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct ADTVariantNamedFields {
     pub fields: BTreeMap<String, Type>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct ADTVariantUnnamedFields {
     pub fields: Vec<Type>,
 }

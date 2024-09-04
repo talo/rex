@@ -19,6 +19,11 @@ pub mod ftable;
 pub mod value;
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
 pub struct Context {
     pub vars: HashMap<Id, Value>,
 }

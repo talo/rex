@@ -14,3 +14,9 @@ rex-parser = { path = "../rex-parser" }
 rex-resolver = { path = "../rex-resolver" }
 thiserror = { version = "1.0" }
 tokio = { version = "1.27.0", features = ["macros", "rt"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde_json", "dep:serde"]
