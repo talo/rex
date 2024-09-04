@@ -55,16 +55,19 @@ impl Display for Context {
     }
 }
 
-pub async fn apply(
+pub async fn apply<S: Send + Sync + 'static>(
     ctx: &Context,
-    ftable: &Ftable,
+    ftable: &Ftable<S>,
+    state: &S,
     base: Value,
     arg: Value,
 ) -> Result<Value, Error> {
     match base {
         Value::Function(function) => {
             if function.params.len() == 1 {
-                ftable.dispatch(ctx, ftable, &function, &vec![arg]).await
+                ftable
+                    .dispatch(ctx, ftable, state, &function, &vec![arg])
+                    .await
             } else {
                 Ok(Value::Closure(Closure {
                     captured_ctx: Context::new(), // Fresh context, because functions don't close over anything
@@ -79,7 +82,7 @@ pub async fn apply(
                 closure.captured_args.push(arg.clone());
                 if function.params.len() == closure.captured_args.len() {
                     ftable
-                        .dispatch(ctx, ftable, function, &closure.captured_args)
+                        .dispatch(ctx, ftable, state, function, &closure.captured_args)
                         .await
                 } else {
                     Ok(Value::Closure(closure))
@@ -89,7 +92,7 @@ pub async fn apply(
                 let mut new_ctx = ctx.clone();
                 new_ctx.vars.insert(lam.var.id, arg);
                 new_ctx.extend(closure.captured_ctx);
-                eval(&new_ctx, ftable, *lam.body.clone()).await
+                eval(&new_ctx, ftable, state, *lam.body.clone()).await
             }
         },
         got => Err(Error::ExpectedCallable {
@@ -100,7 +103,12 @@ pub async fn apply(
 }
 
 #[async_recursion::async_recursion]
-pub async fn eval(ctx: &Context, ftable: &Ftable, ast: AST) -> Result<Value, Error> {
+pub async fn eval<S: Send + Sync + 'static>(
+    ctx: &Context,
+    ftable: &Ftable<S>,
+    state: &S,
+    ast: AST,
+) -> Result<Value, Error> {
     let trace_node = ast.clone();
     match ast {
         AST::Null(_span) => Ok(Value::Null),
@@ -110,23 +118,32 @@ pub async fn eval(ctx: &Context, ftable: &Ftable, ast: AST) -> Result<Value, Err
         AST::Float(_span, x) => Ok(Value::Float(x)),
         AST::String(_span, x) => Ok(Value::String(x)),
 
-        AST::List(_span, list) => eval_list(ctx, ftable, list).await.trace(trace_node),
-        AST::Tuple(_span, tuple) => eval_tuple(ctx, ftable, tuple).await.trace(trace_node),
-        AST::Dict(_span, dict) => eval_dict(ctx, ftable, dict).await.trace(trace_node),
+        AST::List(_span, list) => eval_list(ctx, ftable, state, list).await.trace(trace_node),
+        AST::Tuple(_span, tuple) => eval_tuple(ctx, ftable, state, tuple)
+            .await
+            .trace(trace_node),
+        AST::Dict(_span, dict) => eval_dict(ctx, ftable, state, dict).await.trace(trace_node),
 
-        AST::Var(var) => eval_var(ctx, ftable, var).await.trace(trace_node),
-        AST::Call(call) => eval_call(ctx, ftable, call).await.trace(trace_node),
+        AST::Var(var) => eval_var(ctx, ftable, state, var).await.trace(trace_node),
+        AST::Call(call) => eval_call(ctx, ftable, state, call).await.trace(trace_node),
         AST::Lambda(lam) => eval_lambda(ctx, ftable, lam).await.trace(trace_node),
-        AST::LetIn(let_in) => eval_let_in(ctx, ftable, let_in).await.trace(trace_node),
-        AST::IfThenElse(ite) => eval_ite(ctx, ftable, ite).await.trace(trace_node),
-        AST::Ctor(ctor) => eval_ctor(ctx, ftable, ctor).await.trace(trace_node),
+        AST::LetIn(let_in) => eval_let_in(ctx, ftable, state, let_in)
+            .await
+            .trace(trace_node),
+        AST::IfThenElse(ite) => eval_ite(ctx, ftable, state, ite).await.trace(trace_node),
+        AST::Ctor(ctor) => eval_ctor(ctx, ftable, state, ctor).await.trace(trace_node),
     }
 }
 
-async fn eval_list(ctx: &Context, ftable: &Ftable, list: Vec<AST>) -> Result<Value, Error> {
+async fn eval_list<S: Send + Sync + 'static>(
+    ctx: &Context,
+    ftable: &Ftable<S>,
+    state: &S,
+    list: Vec<AST>,
+) -> Result<Value, Error> {
     let mut result = Vec::with_capacity(list.len());
     for v in list {
-        result.push(eval(ctx, ftable, v));
+        result.push(eval(ctx, ftable, state, v));
     }
     Ok(Value::List(
         future::join_all(result)
@@ -136,10 +153,15 @@ async fn eval_list(ctx: &Context, ftable: &Ftable, list: Vec<AST>) -> Result<Val
     ))
 }
 
-async fn eval_tuple(ctx: &Context, ftable: &Ftable, tuple: Vec<AST>) -> Result<Value, Error> {
+async fn eval_tuple<S: Send + Sync + 'static>(
+    ctx: &Context,
+    ftable: &Ftable<S>,
+    state: &S,
+    tuple: Vec<AST>,
+) -> Result<Value, Error> {
     let mut result = Vec::with_capacity(tuple.len());
     for v in tuple {
-        result.push(eval(ctx, ftable, v));
+        result.push(eval(ctx, ftable, state, v));
     }
     Ok(Value::Tuple(
         future::join_all(result)
@@ -149,13 +171,18 @@ async fn eval_tuple(ctx: &Context, ftable: &Ftable, tuple: Vec<AST>) -> Result<V
     ))
 }
 
-async fn eval_dict(ctx: &Context, ftable: &Ftable, dict: Vec<(Var, AST)>) -> Result<Value, Error> {
+async fn eval_dict<S: Send + Sync + 'static>(
+    ctx: &Context,
+    ftable: &Ftable<S>,
+    state: &S,
+    dict: Vec<(Var, AST)>,
+) -> Result<Value, Error> {
     let mut result = BTreeMap::new();
     let mut keys = Vec::with_capacity(dict.len());
     let mut vals = Vec::with_capacity(dict.len());
     for (k, v) in dict {
         keys.push(k.name);
-        vals.push(eval(ctx, ftable, v));
+        vals.push(eval(ctx, ftable, state, v));
     }
     for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
         result.insert(k, v?);
@@ -163,13 +190,20 @@ async fn eval_dict(ctx: &Context, ftable: &Ftable, dict: Vec<(Var, AST)>) -> Res
     Ok(Value::Dict(result))
 }
 
-async fn eval_var(ctx: &Context, ftable: &Ftable, var: Var) -> Result<Value, Error> {
+async fn eval_var<S: Send + Sync + 'static>(
+    ctx: &Context,
+    ftable: &Ftable<S>,
+    state: &S,
+    var: Var,
+) -> Result<Value, Error> {
     match ctx.vars.get(&var.id) {
         Some(value) => Ok(value.clone()),
         _ => match ftable.lookup(ctx, &var).await {
             Ok(Value::Function(function)) if function.params.len() == 0 => {
                 // This is a nullary function
-                ftable.dispatch(ctx, ftable, &function, &vec![]).await
+                ftable
+                    .dispatch(ctx, ftable, state, &function, &vec![])
+                    .await
             }
             Ok(v) => Ok(v),
             Err(e) => Err(e),
@@ -177,13 +211,25 @@ async fn eval_var(ctx: &Context, ftable: &Ftable, var: Var) -> Result<Value, Err
     }
 }
 
-async fn eval_call(ctx: &Context, ftable: &Ftable, call: Call) -> Result<Value, Error> {
-    let (base, arg) =
-        future::join(eval(ctx, ftable, *call.base), eval(ctx, ftable, *call.arg)).await;
-    apply(ctx, ftable, base?, arg?).await
+async fn eval_call<S: Send + Sync + 'static>(
+    ctx: &Context,
+    ftable: &Ftable<S>,
+    state: &S,
+    call: Call,
+) -> Result<Value, Error> {
+    let (base, arg) = future::join(
+        eval(ctx, ftable, state, *call.base),
+        eval(ctx, ftable, state, *call.arg),
+    )
+    .await;
+    apply(ctx, ftable, state, base?, arg?).await
 }
 
-async fn eval_lambda(ctx: &Context, _ftable: &Ftable, lam: Lambda) -> Result<Value, Error> {
+async fn eval_lambda<S: Send + Sync + 'static>(
+    ctx: &Context,
+    _ftable: &Ftable<S>,
+    lam: Lambda,
+) -> Result<Value, Error> {
     Ok(Value::Closure(Closure {
         captured_ctx: ctx.clone(),
         captured_args: vec![],
@@ -191,19 +237,29 @@ async fn eval_lambda(ctx: &Context, _ftable: &Ftable, lam: Lambda) -> Result<Val
     }))
 }
 
-async fn eval_let_in(ctx: &Context, ftable: &Ftable, let_in: LetIn) -> Result<Value, Error> {
+async fn eval_let_in<S: Send + Sync + 'static>(
+    ctx: &Context,
+    ftable: &Ftable<S>,
+    state: &S,
+    let_in: LetIn,
+) -> Result<Value, Error> {
     let mut new_ctx = ctx.clone();
     new_ctx
         .vars
-        .insert(let_in.var.id, eval(ctx, ftable, *let_in.def).await?);
-    eval(&new_ctx, ftable, *let_in.body).await
+        .insert(let_in.var.id, eval(ctx, ftable, state, *let_in.def).await?);
+    eval(&new_ctx, ftable, state, *let_in.body).await
 }
 
-async fn eval_ite(ctx: &Context, ftable: &Ftable, ite: IfThenElse) -> Result<Value, Error> {
-    let cond = eval(ctx, ftable, *ite.cond).await?;
+async fn eval_ite<S: Send + Sync + 'static>(
+    ctx: &Context,
+    ftable: &Ftable<S>,
+    state: &S,
+    ite: IfThenElse,
+) -> Result<Value, Error> {
+    let cond = eval(ctx, ftable, state, *ite.cond).await?;
     match cond {
-        Value::Bool(true) => eval(ctx, ftable, *ite.then).await,
-        Value::Bool(false) => eval(ctx, ftable, *ite.r#else).await,
+        Value::Bool(true) => eval(ctx, ftable, state, *ite.then).await,
+        Value::Bool(false) => eval(ctx, ftable, state, *ite.r#else).await,
         got => Err(Error::UnexpectedType {
             expected: Type::Bool,
             got,
@@ -212,27 +268,38 @@ async fn eval_ite(ctx: &Context, ftable: &Ftable, ite: IfThenElse) -> Result<Val
     }
 }
 
-async fn eval_ctor(ctx: &Context, ftable: &Ftable, ctor: Ctor) -> Result<Value, Error> {
+async fn eval_ctor<S: Send + Sync + 'static>(
+    ctx: &Context,
+    ftable: &Ftable<S>,
+    state: &S,
+    ctor: Ctor,
+) -> Result<Value, Error> {
     Ok(Value::Data(Data {
         name: ctor.name,
-        fields: Some(eval_fields(ctx, ftable, ctor.fields).await?),
+        fields: Some(eval_fields(ctx, ftable, state, ctor.fields).await?),
     }))
 }
 
-async fn eval_fields(ctx: &Context, ftable: &Ftable, fields: Fields) -> Result<DataFields, Error> {
+async fn eval_fields<S: Send + Sync + 'static>(
+    ctx: &Context,
+    ftable: &Ftable<S>,
+    state: &S,
+    fields: Fields,
+) -> Result<DataFields, Error> {
     match fields {
         Fields::Named(named_fields) => Ok(DataFields::Named(
-            eval_named_fields(ctx, ftable, named_fields).await?,
+            eval_named_fields(ctx, ftable, state, named_fields).await?,
         )),
         Fields::Unnamed(unnamed_fields) => Ok(DataFields::Unnamed(
-            eval_unnamed_fields(ctx, ftable, unnamed_fields).await?,
+            eval_unnamed_fields(ctx, ftable, state, unnamed_fields).await?,
         )),
     }
 }
 
-async fn eval_named_fields(
+async fn eval_named_fields<S: Send + Sync + 'static>(
     ctx: &Context,
-    ftable: &Ftable,
+    ftable: &Ftable<S>,
+    state: &S,
     named_fields: NamedFields,
 ) -> Result<NamedDataFields, Error> {
     let mut result = BTreeMap::new();
@@ -240,7 +307,7 @@ async fn eval_named_fields(
     let mut vals = Vec::with_capacity(named_fields.fields.len());
     for (k, v) in named_fields.fields {
         keys.push(k.name);
-        vals.push(eval(ctx, ftable, v));
+        vals.push(eval(ctx, ftable, state, v));
     }
     for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
         result.insert(k, v?);
@@ -248,14 +315,15 @@ async fn eval_named_fields(
     Ok(NamedDataFields { fields: result })
 }
 
-async fn eval_unnamed_fields(
+async fn eval_unnamed_fields<S: Send + Sync + 'static>(
     ctx: &Context,
-    ftable: &Ftable,
+    ftable: &Ftable<S>,
+    state: &S,
     unnamed_fields: UnnamedFields,
 ) -> Result<UnnamedDataFields, Error> {
     let mut result = Vec::with_capacity(unnamed_fields.fields.len());
     for v in unnamed_fields.fields {
-        result.push(eval(ctx, ftable, v));
+        result.push(eval(ctx, ftable, state, v));
     }
     Ok(UnnamedDataFields {
         fields: future::join_all(result)
@@ -275,11 +343,13 @@ mod test {
     use crate::{
         error::sprint_trace,
         eval,
-        value::{Data, DataFields, NamedDataFields, Value},
+        value::{Data, DataFields, Function, NamedDataFields, Value},
         Context, Ftable,
     };
 
-    fn ftable_with_point_adt(id_dispenser: &mut IdDispenser) -> Ftable {
+    fn ftable_with_point_adt<S: Send + Sync + 'static>(
+        id_dispenser: &mut IdDispenser,
+    ) -> Ftable<S> {
         let mut ftable = Ftable::with_intrinsics(id_dispenser);
         ftable.register_adt_with_defaults(
             id_dispenser,
@@ -317,10 +387,41 @@ mod test {
         ftable
     }
 
+    struct State {
+        pub foo: u64,
+    }
+
+    #[tokio::test]
+    async fn state() {
+        let mut parser = Parser::new(Token::tokenize("getx").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        let state = State { foo: 1 };
+
+        let mut id_dispenser = parser.id_dispenser;
+        let mut ftable: Ftable<State> = Ftable::with_intrinsics(&mut id_dispenser);
+        ftable.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "getx".to_string(),
+                params: vec![],
+                ret: Type::Uint,
+            },
+            Box::new(|_, _, state: &State, _| Box::pin(async move { Ok(Value::Uint(state.foo)) })),
+        );
+
+        let mut scope = ftable.scope();
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
+
+        assert_eq!(val, Value::Uint(1))
+    }
+
     #[tokio::test]
     async fn math() {
         let mut parser = Parser::new(Token::tokenize("1 + 2").unwrap());
         let expr = parser.parse_expr().unwrap();
+        let state = ();
 
         let mut id_dispenser = parser.id_dispenser;
         let ftable = Ftable::with_intrinsics(&mut id_dispenser);
@@ -328,7 +429,7 @@ mod test {
         let mut scope = ftable.scope();
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
 
         assert_eq!(val, Value::Uint(3))
     }
@@ -337,6 +438,7 @@ mod test {
     async fn math_with_precedence() {
         let mut parser = Parser::new(Token::tokenize("1 + 2 * 3").unwrap());
         let expr = parser.parse_expr().unwrap();
+        let state = ();
 
         let mut id_dispenser = parser.id_dispenser;
         let ftable = Ftable::with_intrinsics(&mut id_dispenser);
@@ -344,7 +446,7 @@ mod test {
         let mut scope = ftable.scope();
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
 
         assert_eq!(val, Value::Uint(7));
     }
@@ -353,6 +455,7 @@ mod test {
     async fn lambda_1() {
         let mut parser = Parser::new(Token::tokenize("(\\x -> x) 1").unwrap());
         let expr = parser.parse_expr().unwrap();
+        let state = ();
 
         let mut id_dispenser = parser.id_dispenser;
         let ftable = Ftable::with_intrinsics(&mut id_dispenser);
@@ -361,7 +464,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
 
         assert_eq!(val, Value::Uint(1));
     }
@@ -378,7 +481,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
 
         assert_eq!(val, Value::Uint(3));
     }
@@ -395,7 +498,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
 
         assert_eq!(val, Value::Uint(7));
     }
@@ -412,7 +515,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
 
         assert_eq!(val, Value::Uint(9));
     }
@@ -430,7 +533,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
 
         assert_eq!(val, Value::Uint(20));
     }
@@ -448,7 +551,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
 
         assert_eq!(
             val,
@@ -473,7 +576,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
 
         assert_eq!(
             val,
@@ -498,7 +601,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
 
         assert_eq!(val, Value::List(vec![Value::Uint(4), Value::Uint(3)]));
     }
@@ -525,7 +628,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
 
         assert_eq!(
             val,
@@ -583,7 +686,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await.unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
 
         assert_eq!(
             val,
@@ -628,7 +731,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, ast).await;
+        let val = eval(&ctx, &ftable, &(), ast).await;
 
         match val {
             Ok(_) => unreachable!(),
