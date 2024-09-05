@@ -28,18 +28,13 @@ type FtableFn<S> = Box<
             &'r Ftable<S>,
             &'r S,
             &'r Vec<Value>,
-        )
-            -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
-        + Sync>;
+        ) -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
+        + Sync,
+>;
 
 pub struct Ftable<S: Send + Sync + 'static> {
-    pub ftable: HashMap<
-        Id,
-        (
-            Function,
-            FtableFn<S>
-        ),
-    >,
+    pub ftable: HashMap<Id, (Function, FtableFn<S>)>,
+    pub fallback: Option<FtableFn<S>>,
 }
 
 impl<S> Default for Ftable<S>
@@ -55,12 +50,18 @@ impl<S: Send + Sync + 'static> Ftable<S> {
     pub fn new() -> Self {
         Self {
             ftable: HashMap::new(),
+            fallback: None,
         }
+    }
+
+    pub fn set_fallback(&mut self, fallback: FtableFn<S>) {
+        self.fallback = Some(fallback);
     }
 
     pub fn with_intrinsics(id_dispenser: &mut IdDispenser) -> Self {
         let mut this = Self {
             ftable: HashMap::new(),
+            fallback: None,
         };
 
         // arithmetic
@@ -838,11 +839,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
         this
     }
 
-    pub fn register_function(
-        &mut self,
-        function: Function,
-        lam: FtableFn<S>,
-    ) {
+    pub fn register_function(&mut self, function: Function, lam: FtableFn<S>) {
         self.ftable.insert(function.id, (function, lam));
     }
 
@@ -1058,13 +1055,25 @@ impl<S: Send + Sync + 'static> Ftable<S> {
     }
 
     pub async fn lookup(&self, _ctx: &Context, var: &Var) -> Result<Value, Error> {
-        self.ftable
-            .get(&var.id)
-            .map(|(f, _)| Value::Function(f.clone()))
-            .ok_or(Error::VarNotFound {
-                var: var.clone(),
-                trace: Default::default(),
-            })
+        match self.ftable.get(&var.id) {
+            Some((f, _)) => Ok(Value::Function(f.clone())),
+            None => match &self.fallback {
+                Some(_) => {
+                    // Create a dummy function for the fallback
+                    let dummy_function = Function {
+                        id: var.id,
+                        name: var.name.clone(),
+                        params: vec![], // Assuming no parameters for fallback
+                        ret: a!(),      // Assuming any return type
+                    };
+                    Ok(Value::Function(dummy_function))
+                }
+                None => Err(Error::VarNotFound {
+                    var: var.clone(),
+                    trace: Default::default(),
+                }),
+            },
+        }
     }
 
     pub async fn dispatch(
@@ -1077,10 +1086,13 @@ impl<S: Send + Sync + 'static> Ftable<S> {
     ) -> Result<Value, Error> {
         match self.ftable.get(&function.id) {
             Some((_f, lam)) => lam(ctx, ftable, state, args).await,
-            None => Err(Error::FunctionNotFound {
-                function: function.clone(),
-                trace: Default::default(),
-            }),
+            None => match &self.fallback {
+                Some(fallback) => fallback(ctx, ftable, state, args).await,
+                None => Err(Error::FunctionNotFound {
+                    function: function.clone(),
+                    trace: Default::default(),
+                }),
+            },
         }
     }
 

@@ -423,6 +423,27 @@ mod test {
     }
 
     #[tokio::test]
+    async fn fallback() {
+        let mut parser = Parser::new(Token::tokenize("getx").unwrap());
+
+        let expr = parser.parse_expr().unwrap();
+        let state = State { foo: 1 };
+
+        let mut id_dispenser = parser.id_dispenser;
+        let mut ftable: Ftable<State> = Ftable::with_intrinsics(&mut id_dispenser);
+        ftable.set_fallback(Box::new(|_, _, state: &State, _| {
+            Box::pin(async move { Ok(Value::Uint(state.foo)) })
+        }));
+
+        let mut scope = ftable.scope();
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
+
+        assert_eq!(val, Value::Uint(1))
+    }
+
+    #[tokio::test]
     async fn math() {
         let mut parser = Parser::new(Token::tokenize("1 + 2").unwrap());
         let expr = parser.parse_expr().unwrap();
