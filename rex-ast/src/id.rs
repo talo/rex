@@ -32,6 +32,7 @@ impl IdDispenser {
         IdDispenser { id: Id::default() }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Id {
         self.id.inc()
     }
