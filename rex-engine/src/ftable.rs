@@ -30,6 +30,7 @@ pub trait F<'r, S: Send + Sync + 'static>:
         &'r Vec<Value>,
     ) -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
     + Sync
+    + Send
 {
     fn clone_box(&self) -> FtableFn<S>;
 }
@@ -44,6 +45,7 @@ where
             &'q Vec<Value>,
         ) -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'q>>
         + Sync
+        + Send
         + Clone
         + 'r + 'q,
 {
