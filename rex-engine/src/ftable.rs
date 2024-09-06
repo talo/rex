@@ -22,24 +22,50 @@ use crate::{
     Context,
 };
 
-type FtableFn<S> = Box<
-    dyn for<'r> Fn(
-            &'r Context,
-            &'r Ftable<S>,
-            &'r S,
-            &'r Vec<Value>,
-        )
-            -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
-        + Sync>;
+pub trait F<'r, S: Send + Sync + 'static>:
+    Fn(
+        &'r Context,
+        &'r Ftable<S>,
+        &'r S,
+        &'r Vec<Value>,
+    ) -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
+    + Sync
+{
+    fn clone_box(&self) -> FtableFn<S>;
+}
 
+impl<'r, G, S> F<'r, S> for G
+where
+    S: Send + Sync + 'static,
+    for<'q> G: Fn(
+            &'q Context,
+            &'q Ftable<S>,
+            &'q S,
+            &'q Vec<Value>,
+        ) -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'q>>
+        + Sync
+        + Clone
+        + 'r + 'q,
+{
+    fn clone_box(&self) -> FtableFn<S> {
+        Box::new(self.clone())
+    }
+}
+
+type FtableFn<S> = Box<dyn for<'r> F<'r, S>>;
+
+#[derive(Clone)]
 pub struct Ftable<S: Send + Sync + 'static> {
-    pub ftable: HashMap<
-        Id,
-        (
-            Function,
-            FtableFn<S>
-        ),
-    >,
+    pub ftable: HashMap<Id, (Function, FtableFn<S>)>,
+}
+
+impl<S> Clone for Box<dyn for<'r> F<'r, S>>
+where
+    S: Send + Sync + 'static,
+{
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
 }
 
 impl<S> Default for Ftable<S>
@@ -838,11 +864,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
         this
     }
 
-    pub fn register_function(
-        &mut self,
-        function: Function,
-        lam: FtableFn<S>,
-    ) {
+    pub fn register_function(&mut self, function: Function, lam: FtableFn<S>) {
         self.ftable.insert(function.id, (function, lam));
     }
 
