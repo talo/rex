@@ -601,6 +601,7 @@ mod test {
 
         let mut id_dispenser = parser.id_dispenser;
         let ftable = Ftable::with_intrinsics(&mut id_dispenser);
+        let ftable = ftable.clone();
 
         let mut scope = ftable.scope();
 

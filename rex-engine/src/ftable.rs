@@ -50,11 +50,11 @@ where
         + 'r + 'q,
 {
     fn clone_box(&self) -> FtableFn<S> {
-        Box::new(self.clone())
+        Box::new((*self).clone())
     }
 }
 
-type FtableFn<S> = Box<dyn for<'r> F<'r, S>>;
+pub type FtableFn<S> = Box<dyn for<'r> F<'r, S>>;
 
 #[derive(Clone)]
 pub struct Ftable<S: Send + Sync + 'static> {
@@ -66,7 +66,7 @@ where
     S: Send + Sync + 'static,
 {
     fn clone(&self) -> Self {
-        self.clone_box()
+        (**self).clone_box()
     }
 }
 
