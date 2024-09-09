@@ -204,7 +204,7 @@ async fn eval_var<S: Send + Sync + 'static>(
     match ctx.vars.get(&var.id) {
         Some(value) => Ok(value.clone()),
         _ => match ftable.lookup(ctx, &var).await {
-            Ok(Value::Function(function)) if function.params.len() == 0 => {
+            Ok(Value::Function(function)) if function.params.is_empty() => {
                 // This is a nullary function
                 ftable
                     .dispatch(ctx, ftable, state, &function, &vec![])

@@ -110,6 +110,13 @@ impl<T> Trace for Result<T, Error> {
                     trace
                 },
             }),
+            Err(Error::Custom { error, mut trace }) => Err(Error::Custom {
+                error,
+                trace: {
+                    trace.push_front(node);
+                    trace
+                },
+            }),
         }
     }
 }
@@ -162,6 +169,9 @@ pub enum Error {
 
     #[error("key not found")]
     KeyNotFound { trace: VecDeque<AST> },
+
+    #[error("{error}")]
+    Custom { error: String, trace: VecDeque<AST> },
 }
 
 impl Error {
@@ -179,6 +189,7 @@ impl Error {
             Self::FunctionNotFound { trace, .. } => trace,
             Self::IndexOutOfBounds { trace, .. } => trace,
             Self::KeyNotFound { trace, .. } => trace,
+            Self::Custom { trace, .. } => trace,
         }
     }
 }

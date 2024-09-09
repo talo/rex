@@ -22,21 +22,22 @@ use crate::{
     Context,
 };
 
+type FtableFn<S> = Box<
+    dyn for<'r> Fn(
+            &'r Context,
+            &'r Ftable<S>,
+            &'r S,
+            &'r Vec<Value>,
+        )
+            -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
+        + Sync>;
+
 pub struct Ftable<S: Send + Sync + 'static> {
     pub ftable: HashMap<
         Id,
         (
             Function,
-            Box<
-                dyn for<'r> Fn(
-                        &'r Context,
-                        &'r Ftable<S>,
-                        &'r S,
-                        &'r Vec<Value>,
-                    )
-                        -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
-                    + Sync,
-            >,
+            FtableFn<S>
         ),
     >,
 }
@@ -840,16 +841,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
     pub fn register_function(
         &mut self,
         function: Function,
-        lam: Box<
-            dyn for<'r> Fn(
-                    &'r Context,
-                    &'r Ftable<S>,
-                    &'r S,
-                    &'r Vec<Value>,
-                )
-                    -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
-                + Sync,
-        >,
+        lam: FtableFn<S>,
     ) {
         self.ftable.insert(function.id, (function, lam));
     }
@@ -869,7 +861,8 @@ impl<S: Send + Sync + 'static> Ftable<S> {
             match &variant.fields {
                 Some(ADTVariantFields::Named(named_fields)) => {
                     // REGISTER GETTER FUNCTION FOR EACH FIELD
-                    for (field_name, _field_type) in &named_fields.fields {
+                    //for (field_name, _field_type) in &named_fields.fields {
+                    for field_name in named_fields.fields.keys() {
                         let ret = ret.clone();
                         let field_name = field_name.clone();
                         let function = Function {
