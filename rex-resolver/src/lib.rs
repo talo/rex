@@ -6,11 +6,9 @@ use rex_ast::{
     span::Span,
 };
 
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("use of undefined variable {0}")]
-    UseOfUndefined(Var),
-}
+use crate::error::Error;
+
+pub mod error;
 
 #[derive(Clone, Debug)]
 pub struct Scope {

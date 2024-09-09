@@ -1,5 +1,6 @@
 resolver = 2
 workspace = { members = [
+    "rex",
     "rex-ast",
     "rex-engine",
     "rex-parser",
