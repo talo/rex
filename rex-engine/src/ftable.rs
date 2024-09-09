@@ -14,7 +14,7 @@ use rex_ast::{
 use rex_resolver::Scope;
 
 use crate::{
-    apply,
+    apply::{self, apply0},
     error::Error,
     value::{Data, DataFields, Function, NamedDataFields, UnnamedDataFields, Value},
     Context,
@@ -957,12 +957,37 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                     };
                     self.register_function(
                         function,
-                        Box::new(move |_ctx, _runner, _state, args| {
+                        Box::new(move |ctx, ftable, state, args| {
                             let ret = ret.clone();
                             let variant = variant.clone();
                             let named_fields = named_fields.clone();
                             let defaults = defaults.clone();
+
                             Box::pin(async move {
+                                // If there are defaults that match this type
+                                // ctor then we need to evaluate all of their
+                                // sub-values
+                                let defaults = match defaults.get(&variant.name) {
+                                    Some(data_fields) => match apply0(
+                                        ctx,
+                                        ftable,
+                                        state,
+                                        Value::Data(Data {
+                                            name: variant.name.clone(),
+                                            fields: Some(data_fields.clone()),
+                                        }),
+                                    )
+                                    .await?
+                                    {
+                                        Value::Data(Data {
+                                            fields: Some(DataFields::Named(named_fields)),
+                                            ..
+                                        }) => named_fields.fields,
+                                        _ => Default::default(),
+                                    },
+                                    _ => Default::default(),
+                                };
+
                                 match args.first() {
                                     // Wrong number of arguments
                                     None => Err(Error::ExpectedArguments {
@@ -973,16 +998,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                                     // Implementation
                                     Some(Value::Dict(fields))
                                         if Value::Dict({
-                                            let mut d = defaults
-                                                .get(&variant.name)
-                                                .cloned()
-                                                .map(|d| match d {
-                                                    DataFields::Named(d_named_fields) => {
-                                                        d_named_fields.fields
-                                                    }
-                                                    _ => unreachable!(),
-                                                })
-                                                .unwrap_or(Default::default());
+                                            let mut d = defaults.clone();
                                             d.extend(fields.clone());
                                             d
                                         })
@@ -998,16 +1014,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                                             name: variant.name.clone(),
                                             fields: Some(DataFields::Named(NamedDataFields {
                                                 fields: {
-                                                    let mut d = defaults
-                                                        .get(&variant.name)
-                                                        .cloned()
-                                                        .map(|d| match d {
-                                                            DataFields::Named(d_named_fields) => {
-                                                                d_named_fields.fields
-                                                            }
-                                                            _ => unreachable!(),
-                                                        })
-                                                        .unwrap_or(Default::default());
+                                                    let mut d = defaults.clone();
                                                     d.extend(fields.clone());
                                                     d
                                                 },
