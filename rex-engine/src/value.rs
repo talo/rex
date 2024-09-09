@@ -440,10 +440,10 @@ impl From<serde_json::Value> for Value {
             serde_json::Value::Null => Value::Null,
             serde_json::Value::Bool(x) => Value::Bool(x),
             serde_json::Value::Number(x) => {
-                if x.is_i64() {
-                    Value::Int(x.as_i64().unwrap())
-                } else if x.is_u64() {
+                if x.is_u64() {
                     Value::Uint(x.as_u64().unwrap())
+                } else if x.is_i64() {
+                    Value::Int(x.as_i64().unwrap())
                 } else {
                     Value::Float(x.as_f64().unwrap())
                 }
@@ -468,7 +468,8 @@ impl TryFrom<Value> for serde_json::Value {
             Value::Uint(x) => Ok(serde_json::Value::Number(serde_json::Number::from(x))),
             Value::Int(x) => Ok(serde_json::Value::Number(serde_json::Number::from(x))),
             Value::Float(x) => Ok(serde_json::Value::Number(
-                serde_json::Number::from_f64(x).unwrap(),
+                serde_json::Number::from_f64(x)
+                    .ok_or(serde_json::Error::custom("failed to serialize float"))?,
             )),
             Value::String(x) => Ok(serde_json::Value::String(x)),
             Value::List(xs) => Ok(serde_json::Value::Array(
