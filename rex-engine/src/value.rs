@@ -495,8 +495,18 @@ impl TryFrom<Value> for serde_json::Value {
             },
 
             Value::Data(xs) => Ok(match xs.fields {
-                Some(DataFields::Named(n)) => serde_json::to_value(n.fields)?,
-                Some(DataFields::Unnamed(u)) => serde_json::to_value(u.fields)?,
+                Some(DataFields::Named(n)) => serde_json::Value::Object(
+                    n.fields
+                        .into_iter()
+                        .map(|(k, v)| Ok((k, serde_json::Value::try_from(v)?)))
+                        .collect::<Result<_, _>>()?,
+                ),
+                Some(DataFields::Unnamed(u)) => serde_json::Value::Array(
+                    u.fields
+                        .into_iter()
+                        .map(|x| serde_json::Value::try_from(x))
+                        .collect::<Result<_, _>>()?,
+                ),
                 None => serde_json::Value::Null,
             }),
             Value::Id(_) => Err(serde_json::Error::custom("cannot serialize id to JSON")),
