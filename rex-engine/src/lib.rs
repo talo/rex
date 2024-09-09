@@ -312,6 +312,17 @@ mod test {
         id_dispenser: &mut IdDispenser,
     ) -> Ftable<S> {
         let mut ftable = Ftable::with_intrinsics(id_dispenser);
+        // register a trivial function that returns 1
+        let one_id = id_dispenser.next();
+        ftable.register_function(
+            Function {
+                id: one_id.clone(),
+                name: "one".to_string(),
+                params: vec![],
+                ret: Type::Uint,
+            },
+            Box::new(|_, _, _state: &S, _| Box::pin(async move { Ok(Value::Uint(1)) })),
+        );
         ftable.register_adt_with_defaults(
             id_dispenser,
             adt!(
@@ -324,7 +335,7 @@ mod test {
                 "Point2D".to_string(),
                 DataFields::Named(NamedDataFields {
                     fields: vec![
-                        ("x".to_string(), Value::Uint(1)),
+                        ("x".to_string(), Value::Id(one_id.clone())),
                         ("y".to_string(), Value::Uint(1)),
                     ]
                     .into_iter()
