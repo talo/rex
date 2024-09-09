@@ -6,9 +6,7 @@ use std::{
 
 use futures::future;
 use rex_ast::{
-    a, arrow,
-    ast::Var,
-    b,
+    a, arrow, b,
     id::{Id, IdDispenser},
     list, tuple,
     types::{ADTVariantFields, Type, ADT},
@@ -594,7 +592,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                         (Some(f), Some(Value::List(xs))) => {
                             let mut ys = Vec::with_capacity(xs.len());
                             for x in xs {
-                                ys.push(apply(ctx, runner, state, f.clone(), x.clone()));
+                                ys.push(apply::apply(ctx, runner, state, f.clone(), x.clone()));
                             }
                             Ok(Value::List(
                                 future::join_all(ys)
@@ -634,7 +632,8 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                         (Some(f), Some(Value::List(xs))) => {
                             let mut ys = Vec::with_capacity(xs.len());
                             for x in xs {
-                                match apply(ctx, runner, state, f.clone(), x.clone()).await? {
+                                match apply::apply(ctx, runner, state, f.clone(), x.clone()).await?
+                                {
                                     Value::Bool(true) => ys.push(x.clone()),
                                     Value::Bool(_) => {}
                                     x => Err(Error::UnexpectedType {
@@ -1081,12 +1080,12 @@ impl<S: Send + Sync + 'static> Ftable<S> {
         }
     }
 
-    pub async fn lookup(&self, _ctx: &Context, var: &Var) -> Result<Value, Error> {
+    pub async fn lookup(&self, _ctx: &Context, id: &Id) -> Result<Value, Error> {
         self.ftable
-            .get(&var.id)
+            .get(id)
             .map(|(f, _)| Value::Function(f.clone()))
-            .ok_or(Error::VarNotFound {
-                var: var.clone(),
+            .ok_or(Error::IdNotFound {
+                id: *id,
                 trace: Default::default(),
             })
     }

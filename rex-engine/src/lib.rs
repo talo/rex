@@ -3,17 +3,20 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
-use ftable::Ftable;
 use futures::future;
-
-use error::{Error, Trace};
 use rex_ast::{
     ast::{Call, Ctor, Fields, IfThenElse, Lambda, LetIn, NamedFields, UnnamedFields, Var, AST},
     id::Id,
     types::Type,
 };
-use value::{Closure, Data, DataFields, FunctionLike, NamedDataFields, UnnamedDataFields, Value};
 
+use crate::{
+    error::{Error, Trace},
+    ftable::Ftable,
+    value::{Closure, Data, DataFields, FunctionLike, NamedDataFields, UnnamedDataFields, Value},
+};
+
+pub mod apply;
 pub mod error;
 pub mod ftable;
 pub mod value;
@@ -57,53 +60,6 @@ impl Display for Context {
             }
         }
         Ok(())
-    }
-}
-
-pub async fn apply<S: Send + Sync + 'static>(
-    ctx: &Context,
-    ftable: &Ftable<S>,
-    state: &S,
-    base: Value,
-    arg: Value,
-) -> Result<Value, Error> {
-    match base {
-        Value::Function(function) => {
-            if function.params.len() == 1 {
-                ftable
-                    .dispatch(ctx, ftable, state, &function, &vec![arg])
-                    .await
-            } else {
-                Ok(Value::Closure(Closure {
-                    captured_ctx: Context::new(), // Fresh context, because functions don't close over anything
-                    captured_args: vec![arg.clone()],
-                    body: FunctionLike::Function(function.clone()),
-                }))
-            }
-        }
-        Value::Closure(closure) => match &closure.body {
-            FunctionLike::Function(function) => {
-                let mut closure = closure.clone();
-                closure.captured_args.push(arg.clone());
-                if function.params.len() == closure.captured_args.len() {
-                    ftable
-                        .dispatch(ctx, ftable, state, function, &closure.captured_args)
-                        .await
-                } else {
-                    Ok(Value::Closure(closure))
-                }
-            }
-            FunctionLike::Lambda(lam) => {
-                let mut new_ctx = ctx.clone();
-                new_ctx.vars.insert(lam.var.id, arg);
-                new_ctx.extend(closure.captured_ctx);
-                eval(&new_ctx, ftable, state, *lam.body.clone()).await
-            }
-        },
-        got => Err(Error::ExpectedCallable {
-            got,
-            trace: Default::default(),
-        }),
     }
 }
 
@@ -203,7 +159,7 @@ async fn eval_var<S: Send + Sync + 'static>(
 ) -> Result<Value, Error> {
     match ctx.vars.get(&var.id) {
         Some(value) => Ok(value.clone()),
-        _ => match ftable.lookup(ctx, &var).await {
+        _ => match ftable.lookup(ctx, &var.id).await {
             Ok(Value::Function(function)) if function.params.is_empty() => {
                 // This is a nullary function
                 ftable
@@ -227,7 +183,7 @@ async fn eval_call<S: Send + Sync + 'static>(
         eval(ctx, ftable, state, *call.arg),
     )
     .await;
-    apply(ctx, ftable, state, base?, arg?).await
+    apply::apply(ctx, ftable, state, base?, arg?).await
 }
 
 async fn eval_lambda<S: Send + Sync + 'static>(
@@ -509,23 +465,6 @@ mod test {
     }
 
     #[tokio::test]
-    async fn parser_with_dispenser() {
-        let mut dispenser = IdDispenser::new();
-        let ftable = Ftable::with_intrinsics(&mut dispenser);
-        let mut parser = Parser::with_dispenser(dispenser, Token::tokenize("let x = 1 + 2, y = 3 in x * y").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
-        assert_eq!(val, Value::Uint(9));
-    }
-
-    #[tokio::test]
     async fn let_in() {
         let mut parser = Parser::new(Token::tokenize("let x = 1 + 2, y = 3 in x * y").unwrap());
         let expr = parser.parse_expr().unwrap();
@@ -618,7 +557,6 @@ mod test {
 
         let mut id_dispenser = parser.id_dispenser;
         let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-        let ftable = ftable.clone();
 
         let mut scope = ftable.scope();
 

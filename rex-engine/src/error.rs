@@ -1,9 +1,6 @@
 use std::collections::VecDeque;
 
-use rex_ast::{
-    ast::{Var, AST},
-    types::Type,
-};
+use rex_ast::{ast::AST, id::Id, types::Type};
 
 use crate::value::{Function, Value};
 
@@ -74,8 +71,8 @@ impl<T> Trace for Result<T, Error> {
                     trace
                 },
             }),
-            Err(Error::VarNotFound { var, mut trace }) => Err(Error::VarNotFound {
-                var,
+            Err(Error::IdNotFound { id, mut trace }) => Err(Error::IdNotFound {
+                id,
                 trace: {
                     trace.push_front(node);
                     trace
@@ -152,8 +149,8 @@ pub enum Error {
         trace: VecDeque<AST>,
     },
 
-    #[error("var not found `{var}`")]
-    VarNotFound { var: Var, trace: VecDeque<AST> },
+    #[error("id not found `{id}`")]
+    IdNotFound { id: Id, trace: VecDeque<AST> },
 
     #[error("field not found `{field}`")]
     FieldNotFound { field: String, trace: VecDeque<AST> },
@@ -184,7 +181,7 @@ impl Error {
             Self::ExpectedIndexable { trace, .. } => trace,
             Self::ExpectedArguments { trace, .. } => trace,
             Self::UnexpectedType { trace, .. } => trace,
-            Self::VarNotFound { trace, .. } => trace,
+            Self::IdNotFound { trace, .. } => trace,
             Self::FieldNotFound { trace, .. } => trace,
             Self::FunctionNotFound { trace, .. } => trace,
             Self::IndexOutOfBounds { trace, .. } => trace,
