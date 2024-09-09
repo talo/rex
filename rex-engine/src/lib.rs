@@ -509,6 +509,23 @@ mod test {
     }
 
     #[tokio::test]
+    async fn parser_with_dispenser() {
+        let mut dispenser = IdDispenser::new();
+        let ftable = Ftable::with_intrinsics(&mut dispenser);
+        let mut parser = Parser::with_dispenser(dispenser, Token::tokenize("let x = 1 + 2, y = 3 in x * y").unwrap());
+        let expr = parser.parse_expr().unwrap();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let mut scope = ftable.scope();
+
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
+
+        assert_eq!(val, Value::Uint(9));
+    }
+
+    #[tokio::test]
     async fn let_in() {
         let mut parser = Parser::new(Token::tokenize("let x = 1 + 2, y = 3 in x * y").unwrap());
         let expr = parser.parse_expr().unwrap();
