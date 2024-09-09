@@ -85,6 +85,21 @@ impl Parser {
         }
     }
 
+    pub fn with_dispenser(id_dispenser: IdDispenser, tokens: Tokens) -> Parser {
+        Parser {
+            id_dispenser,
+            token_cursor: 0,
+            tokens: tokens
+                .into_iter()
+                .filter_map(|token| match token {
+                    Token::Whitespace(..) | Token::WhitespaceNewline(..) => None,
+                    token => Some(token),
+                })
+                .collect(),
+            errors: Vec::new(),
+        }
+    }
+
     pub fn current_token(&self) -> Option<Token> {
         if self.token_cursor < self.tokens.len() {
             Some(self.tokens[self.token_cursor].clone())

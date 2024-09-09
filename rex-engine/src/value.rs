@@ -8,6 +8,10 @@ use rex_ast::{
     id::Id,
     types::{ADTVariantFields, Type, ADT},
 };
+#[cfg(feature = "serde")]
+use serde::ser::Error;
+#[cfg(feature = "serde")]
+use serde_json::json;
 
 use crate::Context;
 
@@ -426,5 +430,80 @@ impl Display for UnnamedDataFields {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl From<serde_json::Value> for Value {
+    fn from(value: serde_json::Value) -> Self {
+        match value {
+            serde_json::Value::Null => Value::Null,
+            serde_json::Value::Bool(x) => Value::Bool(x),
+            serde_json::Value::Number(x) => {
+                if x.is_u64() {
+                    Value::Uint(x.as_u64().unwrap())
+                } else if x.is_i64() {
+                    Value::Int(x.as_i64().unwrap())
+                } else {
+                    Value::Float(x.as_f64().unwrap())
+                }
+            }
+            serde_json::Value::String(x) => Value::String(x),
+            serde_json::Value::Array(xs) => Value::List(xs.into_iter().map(Value::from).collect()),
+            serde_json::Value::Object(xs) => {
+                Value::Dict(xs.into_iter().map(|(k, v)| (k, Value::from(v))).collect())
+            }
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<Value> for serde_json::Value {
+    type Error = serde_json::Error;
+
+    fn try_from(value: Value) -> Result<serde_json::Value, Self::Error> {
+        match value {
+            Value::Null => Ok(serde_json::Value::Null),
+            Value::Bool(x) => Ok(serde_json::Value::Bool(x)),
+            Value::Uint(x) => Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+            Value::Int(x) => Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+            Value::Float(x) => Ok(serde_json::Value::Number(
+                serde_json::Number::from_f64(x)
+                    .ok_or(serde_json::Error::custom("failed to serialize float"))?,
+            )),
+            Value::String(x) => Ok(serde_json::Value::String(x)),
+            Value::List(xs) => Ok(serde_json::Value::Array(
+                xs.into_iter()
+                    .map(serde_json::Value::try_from)
+                    .collect::<Result<_, _>>()?,
+            )),
+            Value::Dict(xs) => Ok(serde_json::Value::Object(
+                xs.into_iter()
+                    .map(|(k, v)| Ok((k, serde_json::Value::try_from(v)?)))
+                    .collect::<Result<_, _>>()?,
+            )),
+
+            Value::Tuple(xs) => Ok(serde_json::Value::Array(
+                xs.into_iter()
+                    .map(|x| x.try_into())
+                    .collect::<Result<_, _>>()?,
+            )),
+            Value::Option(x) => x.map_or(Ok(serde_json::Value::Null), |x| (*x).try_into()),
+            Value::Result(x) => match x {
+                Ok(x) => Ok(json!({ "ok": serde_json::Value::try_from(*x)? })),
+                Err(e) => Ok(json!({ "err": e })),
+            },
+
+            Value::Data(xs) => Ok(match xs.fields {
+                Some(DataFields::Named(n)) => serde_json::to_value(n.fields)?,
+                Some(DataFields::Unnamed(u)) => serde_json::to_value(u.fields)?,
+                None => serde_json::Value::Null,
+            }),
+            Value::Id(_) => Err(serde_json::Error::custom("cannot serialize id to JSON")),
+            Value::Function(_) => Err(serde_json::Error::custom(
+                "cannot serialize function to JSON",
+            )),
+            Value::Closure(_) => Err(serde_json::Error::custom("cannot serialize lambda to JSON")),
+        }
     }
 }
