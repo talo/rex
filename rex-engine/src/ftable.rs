@@ -16,7 +16,7 @@ use rex_resolver::Scope;
 use crate::{
     apply::{self, apply0},
     error::Error,
-    value::{Data, DataFields, Function, NamedDataFields, UnnamedDataFields, Value},
+    value::{Data, DataFields, Function, Value},
     Context,
 };
 
@@ -885,7 +885,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 Some(ADTVariantFields::Named(named_fields)) => {
                     // REGISTER GETTER FUNCTION FOR EACH FIELD
                     //for (field_name, _field_type) in &named_fields.fields {
-                    for field_name in named_fields.fields.keys() {
+                    for field_name in named_fields.keys() {
                         let ret = ret.clone();
                         let field_name = field_name.clone();
                         let function = Function {
@@ -912,9 +912,9 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                                         // Implementation
                                         Some(Value::Data(data)) => {
                                             match &data.fields {
-                                                Some(DataFields::Named(NamedDataFields {
-                                                    fields,
-                                                })) => match fields.get(&field_name) {
+                                                Some(DataFields::Named(fields)) => match fields
+                                                    .get(&field_name)
+                                                {
                                                     Some(field_value) => Ok(field_value.clone()),
                                                     _ => Err(Error::FieldNotFound {
                                                         field: field_name.clone(),
@@ -948,7 +948,6 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                         name: variant.name.clone(),
                         params: vec![Type::Dict(
                             named_fields
-                                .fields
                                 .iter()
                                 .map(|(n, t)| (n.clone(), t.clone()))
                                 .collect(),
@@ -982,7 +981,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                                         Value::Data(Data {
                                             fields: Some(DataFields::Named(named_fields)),
                                             ..
-                                        }) => named_fields.fields,
+                                        }) => named_fields,
                                         _ => Default::default(),
                                     },
                                     _ => Default::default(),
@@ -1004,7 +1003,6 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                                         })
                                         .implements(&Type::Dict(
                                             named_fields
-                                                .fields
                                                 .iter()
                                                 .map(|(n, t)| (n.clone(), t.clone()))
                                                 .collect(),
@@ -1012,12 +1010,10 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                                     {
                                         Ok(Value::Data(Data {
                                             name: variant.name.clone(),
-                                            fields: Some(DataFields::Named(NamedDataFields {
-                                                fields: {
-                                                    let mut d = defaults.clone();
-                                                    d.extend(fields.clone());
-                                                    d
-                                                },
+                                            fields: Some(DataFields::Named({
+                                                let mut d = defaults.clone();
+                                                d.extend(fields.clone());
+                                                d
                                             })),
                                         }))
                                     }
@@ -1038,7 +1034,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                     let function = Function {
                         id: id_dispenser.next(),
                         name: variant.name.clone(),
-                        params: vec![Type::Tuple(unnamed_fields.fields.clone())],
+                        params: vec![Type::Tuple(unnamed_fields.clone())],
                         ret: ret.clone(),
                     };
                     self.register_function(
@@ -1057,15 +1053,12 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                                     }),
                                     // Implementation
                                     Some(tuple @ Value::Tuple(fields))
-                                        if tuple.implements(&Type::Tuple(
-                                            unnamed_fields.fields.clone(),
-                                        )) =>
+                                        if tuple
+                                            .implements(&Type::Tuple(unnamed_fields.clone())) =>
                                     {
                                         Ok(Value::Data(Data {
                                             name: variant.name.clone(),
-                                            fields: Some(DataFields::Unnamed(UnnamedDataFields {
-                                                fields: fields.clone(),
-                                            })),
+                                            fields: Some(DataFields::Unnamed(fields.clone())),
                                         }))
                                     }
                                     // Bad type

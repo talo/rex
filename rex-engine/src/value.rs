@@ -286,13 +286,12 @@ impl Data {
                     Some(DataFields::Named(named_fields)),
                     Some(ADTVariantFields::Named(named_variant_fields)),
                 ) => {
-                    if named_fields.fields.len() != named_variant_fields.fields.len() {
+                    if named_fields.len() != named_variant_fields.len() {
                         continue;
                     }
                     if named_fields
-                        .fields
                         .iter()
-                        .zip(named_variant_fields.fields.iter())
+                        .zip(named_variant_fields.iter())
                         .all(|((k1, v), (k2, t))| k1 == k2 && v.implements(t))
                     {
                         return true;
@@ -302,13 +301,12 @@ impl Data {
                     Some(DataFields::Unnamed(unnamed_fields)),
                     Some(ADTVariantFields::Unnamed(unnamed_variant_fields)),
                 ) => {
-                    if unnamed_fields.fields.len() != unnamed_variant_fields.fields.len() {
+                    if unnamed_fields.len() != unnamed_variant_fields.len() {
                         continue;
                     }
                     if unnamed_fields
-                        .fields
                         .iter()
-                        .zip(unnamed_variant_fields.fields.iter())
+                        .zip(unnamed_variant_fields.iter())
                         .all(|(v, t)| v.implements(t))
                     {
                         return true;
@@ -345,91 +343,35 @@ impl Display for Data {
     serde(rename_all = "lowercase")
 )]
 pub enum DataFields {
-    Named(NamedDataFields),
-    Unnamed(UnnamedDataFields),
-}
-
-impl From<NamedDataFields> for DataFields {
-    fn from(fields: NamedDataFields) -> Self {
-        DataFields::Named(fields)
-    }
-}
-
-impl From<UnnamedDataFields> for DataFields {
-    fn from(fields: UnnamedDataFields) -> Self {
-        DataFields::Unnamed(fields)
-    }
+    Named(BTreeMap<String, Value>),
+    Unnamed(Vec<Value>),
 }
 
 impl Display for DataFields {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Named(named_fields) => named_fields.fmt(f),
-            Self::Unnamed(unnamed_fields) => unnamed_fields.fmt(f),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
-pub struct NamedDataFields {
-    pub fields: BTreeMap<String, Value>,
-}
-
-impl NamedDataFields {
-    pub fn new(fields: impl Into<BTreeMap<String, Value>>) -> Self {
-        Self {
-            fields: fields.into(),
-        }
-    }
-}
-
-impl Display for NamedDataFields {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        "{ ".fmt(f)?;
-        for (i, (k, v)) in self.fields.iter().enumerate() {
-            k.fmt(f)?;
-            " = ".fmt(f)?;
-            v.fmt(f)?;
-            if i + 1 < self.fields.len() {
-                ", ".fmt(f)?;
+            Self::Named(named_fields) => {
+                "{ ".fmt(f)?;
+                for (i, (k, v)) in named_fields.iter().enumerate() {
+                    k.fmt(f)?;
+                    " = ".fmt(f)?;
+                    v.fmt(f)?;
+                    if i + 1 < named_fields.len() {
+                        ", ".fmt(f)?;
+                    }
+                }
+                '}'.fmt(f)
+            }
+            Self::Unnamed(unnamed_fields) => {
+                for (i, v) in unnamed_fields.iter().enumerate() {
+                    v.fmt(f)?;
+                    if i + 1 < unnamed_fields.len() {
+                        ' '.fmt(f)?;
+                    }
+                }
+                Ok(())
             }
         }
-        '}'.fmt(f)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
-pub struct UnnamedDataFields {
-    pub fields: Vec<Value>,
-}
-
-impl UnnamedDataFields {
-    pub fn new(fields: impl Into<Vec<Value>>) -> Self {
-        Self {
-            fields: fields.into(),
-        }
-    }
-}
-
-impl Display for UnnamedDataFields {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for (i, v) in self.fields.iter().enumerate() {
-            v.fmt(f)?;
-            if i + 1 < self.fields.len() {
-                ' '.fmt(f)?;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -495,8 +437,8 @@ impl TryFrom<Value> for serde_json::Value {
             },
 
             Value::Data(xs) => Ok(match xs.fields {
-                Some(DataFields::Named(n)) => serde_json::to_value(n.fields)?,
-                Some(DataFields::Unnamed(u)) => serde_json::to_value(u.fields)?,
+                Some(DataFields::Named(fields)) => serde_json::to_value(fields)?,
+                Some(DataFields::Unnamed(fields)) => serde_json::to_value(fields)?,
                 None => serde_json::Value::Null,
             }),
             Value::Id(_) => Err(serde_json::Error::custom("cannot serialize id to JSON")),

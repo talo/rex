@@ -6,7 +6,7 @@ use crate::{
     error::Error,
     eval,
     ftable::Ftable,
-    value::{Closure, Data, DataFields, FunctionLike, NamedDataFields, UnnamedDataFields, Value},
+    value::{Closure, Data, DataFields, FunctionLike, Value},
     Context,
 };
 
@@ -162,19 +162,17 @@ pub async fn apply0<S: Send + Sync + 'static>(
             match data.fields {
                 Some(DataFields::Named(named_fields)) => {
                     let mut new_fields = BTreeMap::new();
-                    for (k, v) in named_fields.fields {
+                    for (k, v) in named_fields {
                         new_fields.insert(k, apply0(ctx, ftable, state, v).await?);
                     }
-                    result.fields = Some(DataFields::Named(NamedDataFields { fields: new_fields }));
+                    result.fields = Some(DataFields::Named(new_fields));
                 }
                 Some(DataFields::Unnamed(unnamed_fields)) => {
                     let mut new_fields = Vec::new();
-                    for v in unnamed_fields.fields {
+                    for v in unnamed_fields {
                         new_fields.push(apply0(ctx, ftable, state, v).await?);
                     }
-                    result.fields = Some(DataFields::Unnamed(UnnamedDataFields {
-                        fields: new_fields,
-                    }));
+                    result.fields = Some(DataFields::Unnamed(new_fields));
                 }
                 None => {}
             }

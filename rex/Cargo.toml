@@ -3,10 +3,9 @@ name = "rex"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 rex-ast = { path = "../rex-ast" }
 rex-engine = { path = "../rex-engine" }
+rex-macros = { path = "../rex-macros" }
 rex-parser = { path = "../rex-parser" }
 rex-resolver = { path = "../rex-resolver" }

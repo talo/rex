@@ -13,7 +13,7 @@ use rex_ast::{
 use crate::{
     error::{Error, Trace},
     ftable::Ftable,
-    value::{Closure, Data, DataFields, FunctionLike, NamedDataFields, UnnamedDataFields, Value},
+    value::{Closure, Data, DataFields, FunctionLike, Value},
 };
 
 pub mod apply;
@@ -262,7 +262,7 @@ async fn eval_named_fields<S: Send + Sync + 'static>(
     ftable: &Ftable<S>,
     state: &S,
     named_fields: NamedFields,
-) -> Result<NamedDataFields, Error> {
+) -> Result<BTreeMap<String, Value>, Error> {
     let mut result = BTreeMap::new();
     let mut keys = Vec::with_capacity(named_fields.fields.len());
     let mut vals = Vec::with_capacity(named_fields.fields.len());
@@ -273,7 +273,7 @@ async fn eval_named_fields<S: Send + Sync + 'static>(
     for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
         result.insert(k, v?);
     }
-    Ok(NamedDataFields { fields: result })
+    Ok(result)
 }
 
 async fn eval_unnamed_fields<S: Send + Sync + 'static>(
@@ -281,17 +281,15 @@ async fn eval_unnamed_fields<S: Send + Sync + 'static>(
     ftable: &Ftable<S>,
     state: &S,
     unnamed_fields: UnnamedFields,
-) -> Result<UnnamedDataFields, Error> {
+) -> Result<Vec<Value>, Error> {
     let mut result = Vec::with_capacity(unnamed_fields.fields.len());
     for v in unnamed_fields.fields {
         result.push(eval(ctx, ftable, state, v));
     }
-    Ok(UnnamedDataFields {
-        fields: future::join_all(result)
-            .await
-            .into_iter()
-            .collect::<Result<_, _>>()?,
-    })
+    future::join_all(result)
+        .await
+        .into_iter()
+        .collect::<Result<_, _>>()
 }
 
 #[cfg(test)]
@@ -304,7 +302,7 @@ mod test {
     use crate::{
         error::sprint_trace,
         eval,
-        value::{Data, DataFields, Function, NamedDataFields, Value},
+        value::{Data, DataFields, Function, Value},
         Context, Ftable,
     };
 
@@ -333,25 +331,25 @@ mod test {
             ),
             vec![(
                 "Point2D".to_string(),
-                DataFields::Named(NamedDataFields {
-                    fields: vec![
+                DataFields::Named(
+                    vec![
                         ("x".to_string(), Value::Id(one_id.clone())),
                         ("y".to_string(), Value::Uint(1)),
                     ]
                     .into_iter()
                     .collect(),
-                }),
+                ),
             ),
             (
                 "PointI3D".to_string(),
-                DataFields::Named(NamedDataFields {
-                    fields: vec![
+                DataFields::Named(
+                    vec![
                         ("x".to_string(), Value::Uint(1)),
                         ("y".to_string(), Value::Uint(1)),
                     ]
                     .into_iter()
                     .collect(),
-                }),
+                ),
             )]
             .into_iter()
             .collect(),
@@ -607,31 +605,31 @@ mod test {
             Value::List(vec![
                 Value::Data(Data {
                     name: "Point2D".to_string(),
-                    fields: Some(DataFields::Named(NamedDataFields {
-                        fields: vec![
+                    fields: Some(DataFields::Named(
+                        vec![
                             ("x".to_string(), Value::Uint(0)),
                             ("y".to_string(), Value::Uint(1))
                         ]
                         .into_iter()
                         .collect()
-                    }))
+                    ))
                 }),
                 Value::Data(Data {
                     name: "Point3D".to_string(),
-                    fields: Some(DataFields::Named(NamedDataFields {
-                        fields: vec![
+                    fields: Some(DataFields::Named(
+                        vec![
                             ("x".to_string(), Value::Uint(1)),
                             ("y".to_string(), Value::Uint(0)),
                             ("z".to_string(), Value::Uint(2))
                         ]
                         .into_iter()
                         .collect()
-                    }))
+                    ))
                 }),
                 Value::Data(Data {
                     name: "PointI3D".to_string(),
-                    fields: Some(DataFields::Named(NamedDataFields {
-                        fields: vec![
+                    fields: Some(DataFields::Named(
+                        vec![
                             ("i".to_string(), Value::Option(None)),
                             ("x".to_string(), Value::Uint(1)),
                             ("y".to_string(), Value::Uint(0)),
@@ -639,7 +637,7 @@ mod test {
                         ]
                         .into_iter()
                         .collect()
-                    }))
+                    ))
                 }),
             ])
         );
@@ -665,26 +663,26 @@ mod test {
             Value::List(vec![
                 Value::Data(Data {
                     name: "Point2D".to_string(),
-                    fields: Some(DataFields::Named(NamedDataFields {
-                        fields: vec![
+                    fields: Some(DataFields::Named(
+                        vec![
                             ("x".to_string(), Value::Uint(0)),
                             ("y".to_string(), Value::Uint(1))
                         ]
                         .into_iter()
                         .collect()
-                    }))
+                    ))
                 }),
                 Value::Data(Data {
                     name: "Point3D".to_string(),
-                    fields: Some(DataFields::Named(NamedDataFields {
-                        fields: vec![
+                    fields: Some(DataFields::Named(
+                        vec![
                             ("x".to_string(), Value::Uint(1)),
                             ("y".to_string(), Value::Uint(0)),
                             ("z".to_string(), Value::Uint(2))
                         ]
                         .into_iter()
                         .collect()
-                    }))
+                    ))
                 }),
             ])
         );

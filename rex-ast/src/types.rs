@@ -62,9 +62,7 @@ macro_rules! adt_variant_with_named_fields {
         $(fields.insert(stringify!($key).to_string(), $value);)*
         $crate::types::ADTVariant {
             name: stringify!($name).to_string(),
-            fields: Some($crate::types::ADTVariantFields::Named($crate::types::ADTVariantNamedFields {
-                fields,
-            })),
+            fields: Some($crate::types::ADTVariantFields::Named(fields)),
         }
     }};
 }
@@ -88,6 +86,142 @@ macro_rules! arrow {
     ($a:expr => $b:expr) => {
         $crate::types::Type::Arrow(Box::new($a), Box::new($b))
     };
+}
+
+pub trait TypeInfo {
+    fn t() -> Type;
+}
+
+impl TypeInfo for () {
+    fn t() -> Type {
+        Type::Null
+    }
+}
+
+impl TypeInfo for bool {
+    fn t() -> Type {
+        Type::Bool
+    }
+}
+
+impl TypeInfo for u8 {
+    fn t() -> Type {
+        Type::Uint
+    }
+}
+
+impl TypeInfo for u16 {
+    fn t() -> Type {
+        Type::Uint
+    }
+}
+
+impl TypeInfo for u32 {
+    fn t() -> Type {
+        Type::Uint
+    }
+}
+
+impl TypeInfo for u64 {
+    fn t() -> Type {
+        Type::Uint
+    }
+}
+
+impl TypeInfo for i8 {
+    fn t() -> Type {
+        Type::Int
+    }
+}
+
+impl TypeInfo for i16 {
+    fn t() -> Type {
+        Type::Int
+    }
+}
+
+impl TypeInfo for i32 {
+    fn t() -> Type {
+        Type::Int
+    }
+}
+
+impl TypeInfo for i64 {
+    fn t() -> Type {
+        Type::Int
+    }
+}
+
+impl TypeInfo for f32 {
+    fn t() -> Type {
+        Type::Float
+    }
+}
+
+impl TypeInfo for f64 {
+    fn t() -> Type {
+        Type::Float
+    }
+}
+
+impl TypeInfo for String {
+    fn t() -> Type {
+        Type::String
+    }
+}
+
+impl<T: TypeInfo> TypeInfo for Option<T> {
+    fn t() -> Type {
+        Type::Option(Box::new(T::t()))
+    }
+}
+
+impl<T: TypeInfo, E: TypeInfo> TypeInfo for Result<T, E> {
+    fn t() -> Type {
+        Type::Result(Box::new(T::t()), Box::new(E::t()))
+    }
+}
+
+impl<T0: TypeInfo> TypeInfo for (T0,) {
+    fn t() -> Type {
+        Type::Tuple(vec![T0::t()])
+    }
+}
+
+impl<T0: TypeInfo, T1: TypeInfo> TypeInfo for (T0, T1) {
+    fn t() -> Type {
+        Type::Tuple(vec![T0::t(), T1::t()])
+    }
+}
+
+impl<T0: TypeInfo, T1: TypeInfo, T2: TypeInfo> TypeInfo for (T0, T1, T2) {
+    fn t() -> Type {
+        Type::Tuple(vec![T0::t(), T1::t(), T2::t()])
+    }
+}
+
+impl<T0: TypeInfo, T1: TypeInfo, T2: TypeInfo, T3: TypeInfo> TypeInfo for (T0, T1, T2, T3) {
+    fn t() -> Type {
+        Type::Tuple(vec![T0::t(), T1::t(), T2::t(), T3::t()])
+    }
+}
+
+impl<T: TypeInfo, const N: usize> TypeInfo for [T; N] {
+    fn t() -> Type {
+        Type::List(Box::new(T::t()))
+    }
+}
+
+impl<T: TypeInfo> TypeInfo for &[T] {
+    fn t() -> Type {
+        Type::List(Box::new(T::t()))
+    }
+}
+
+impl<T: TypeInfo> TypeInfo for Vec<T> {
+    fn t() -> Type {
+        Type::List(Box::new(T::t()))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -242,11 +376,11 @@ impl Display for ADTVariant {
                 ADTVariantFields::Named(fields) => {
                     ' '.fmt(f)?;
                     '{'.fmt(f)?;
-                    for (i, (k, v)) in fields.fields.iter().enumerate() {
+                    for (i, (k, v)) in fields.iter().enumerate() {
                         k.fmt(f)?;
                         " = ".fmt(f)?;
                         v.fmt(f)?;
-                        if i + 1 < fields.fields.len() {
+                        if i + 1 < fields.len() {
                             ", ".fmt(f)?;
                         }
                     }
@@ -254,11 +388,11 @@ impl Display for ADTVariant {
                 }
                 ADTVariantFields::Unnamed(fields) => {
                     ' '.fmt(f)?;
-                    for (i, x) in fields.fields.iter().enumerate() {
+                    for (i, x) in fields.iter().enumerate() {
                         '('.fmt(f)?;
                         x.fmt(f)?;
                         ')'.fmt(f)?;
-                        if i + 1 < fields.fields.len() {
+                        if i + 1 < fields.len() {
                             ' '.fmt(f)?;
                         }
                     }
@@ -278,26 +412,6 @@ impl Display for ADTVariant {
     serde(rename_all = "lowercase")
 )]
 pub enum ADTVariantFields {
-    Named(ADTVariantNamedFields),
-    Unnamed(ADTVariantUnnamedFields),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
-pub struct ADTVariantNamedFields {
-    pub fields: BTreeMap<String, Type>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
-pub struct ADTVariantUnnamedFields {
-    pub fields: Vec<Type>,
+    Named(BTreeMap<String, Type>),
+    Unnamed(Vec<Type>),
 }

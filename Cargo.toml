@@ -1,3 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["rex", "rex-ast", "rex-engine", "rex-parser", "rex-resolver"]
+members = [
+    "rex",
+    "rex-ast",
+    "rex-engine",
+    "rex-macros",
+    "rex-parser",
+    "rex-resolver",
+]
