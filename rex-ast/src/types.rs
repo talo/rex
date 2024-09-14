@@ -76,7 +76,17 @@ macro_rules! adt {
         $crate::types::ADT {
             name: stringify!($name).to_string(),
             generics: vec![],
-            variants: vec![$(adt_variant_with_named_fields!{ $v $vs }),*],
+            variants: vec![$($crate::adt_variant_with_named_fields!{ $v $vs }),*],
+        }
+    }};
+    ($name:ident = | $($v:ident)|*) => {{
+        adt!{ $name = $($v)|* }
+    }};
+    ($name:ident = $($v:ident)|*) => {{
+        $crate::types::ADT {
+            name: stringify!($name).to_string(),
+            generics: vec![],
+            variants: vec![$($crate::types::ADTVariant{ name: stringify!($v).to_string(), fields: None }),*],
         }
     }};
 }
@@ -237,6 +247,7 @@ pub enum Type {
     Int,
     Float,
     String,
+    Ptr(Box<Type>),
     Option(Box<Type>),
     Result(Box<Type>, Box<Type>),
     Tuple(Vec<Type>),
@@ -244,6 +255,8 @@ pub enum Type {
     Arrow(Box<Type>, Box<Type>),
     Generic(Generic),
     List(Box<Type>),
+    Symbol(String),
+    Alias(Alias),
     ADT(ADT),
 }
 
@@ -256,6 +269,11 @@ impl Display for Type {
             Type::Int => "int".fmt(f),
             Type::Float => "float".fmt(f),
             Type::String => "string".fmt(f),
+            Type::Ptr(t) => {
+                "Ptr<".fmt(f)?;
+                t.fmt(f)?;
+                '>'.fmt(f)
+            }
             Type::Option(x) => {
                 "Option<".fmt(f)?;
                 x.fmt(f)?;
@@ -301,8 +319,31 @@ impl Display for Type {
                 x.fmt(f)?;
                 ']'.fmt(f)
             }
+            Type::Symbol(x) => {
+                '$'.fmt(f)?;
+                x.fmt(f)
+            }
+            Type::Alias(x) => x.fmt(f),
             Type::ADT(x) => x.fmt(f),
         }
+    }
+}
+
+impl From<Generic> for Type {
+    fn from(x: Generic) -> Self {
+        Type::Generic(x)
+    }
+}
+
+impl From<Alias> for Type {
+    fn from(x: Alias) -> Self {
+        Type::Alias(x)
+    }
+}
+
+impl From<ADT> for Type {
+    fn from(x: ADT) -> Self {
+        Type::ADT(x)
     }
 }
 
@@ -319,6 +360,35 @@ pub struct Generic {
 impl Display for Generic {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.name.fmt(f)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize, serde::Serialize),
+    serde(rename_all = "lowercase")
+)]
+pub struct Alias {
+    pub name: String,
+    pub t: Box<Type>,
+}
+
+impl Alias {
+    pub fn new(name: impl ToString, t: impl Into<Box<Type>>) -> Self {
+        Self {
+            name: name.to_string(),
+            t: t.into(),
+        }
+    }
+}
+
+impl Display for Alias {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.name.fmt(f)?;
+        '('.fmt(f)?;
+        self.t.fmt(f)?;
+        ')'.fmt(f)
     }
 }
 

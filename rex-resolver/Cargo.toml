@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 rex-ast = { path = "../rex-ast" }
-thiserror = { version = "1.0" }
+thiserror = { workspace = true }

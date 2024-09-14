@@ -295,7 +295,7 @@ async fn eval_unnamed_fields<S: Send + Sync + 'static>(
 #[cfg(test)]
 mod test {
 
-    use rex_ast::{adt, adt_variant_with_named_fields, id::IdDispenser, types::Type};
+    use rex_ast::{adt, id::IdDispenser, types::Type};
     use rex_parser::{lexer::Token, Parser};
     use rex_resolver::resolve;
 

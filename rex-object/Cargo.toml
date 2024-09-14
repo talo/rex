@@ -1,0 +1,24 @@
+[package]
+name = "rex-object"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-graphql = { workspace = true, features = [
+    "chrono",
+    "url",
+    "uuid",
+], optional = true }
+rex-ast = { path = "../rex-ast" }
+rex-engine = { path = "../rex-engine" }
+rex-macros = { path = "../rex-macros" }
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, optional = true }
+tempfile = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+
+[features]
+default = ["graphql", "serde"]
+graphql = ["dep:async-graphql"]
+lsor = []
+serde = ["dep:serde", "dep:serde_json"]

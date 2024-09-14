@@ -19,8 +19,8 @@ pub fn derive_adt(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let expanded = quote! {
-        impl  #impl_generics ::rex_ast::TypeInfo for #ident #ty_generics #where_clause {
-            fn t() -> ::ouroboros::Type {
+        impl  #impl_generics ::rex::types::TypeInfo for #ident #ty_generics #where_clause {
+            fn t() -> ::rex::types::Type {
                 #t
             }
         }
@@ -52,12 +52,12 @@ fn expand_derive_adt_for_record_struct(
     quote! {
         let mut fields = ::std::collections::BTreeMap::new();
         #(#field_decls;)*
-        ::rex_ast::Type::ADT(::rex_ast::ADT {
+        ::rex::types::Type::ADT(::rex::types::ADT {
             name: stringify!(#ident).to_string(),
             generics: vec![],
-            variants: vec![::rex_ast::ADTVariant {
+            variants: vec![::rex::types::ADTVariant {
                 name: stringify!(#ident).to_string(),
-                fields: Some(::rex_ast::ADTVariantFields::Named(fields)),
+                fields: Some(::rex::types::ADTVariantFields::Named(fields)),
             }],
         })
     }
@@ -75,12 +75,12 @@ fn expand_derive_adt_for_tuple_struct(
         }
     });
     quote! {
-        ::rex_ast::Type::ADT(::rex_ast::ADT {
+        ::rex::types::Type::ADT(::rex::types::ADT {
             name: stringify!(#ident).to_string(),
             generics: vec![],
-            variants: vec![::rex_ast::ADTVariant {
+            variants: vec![::rex::types::ADTVariant {
                 name: stringify!(#ident).to_string(),
-                fields: Some(::rex_ast::ADTVariantFields::Unnamed(vec![#(#fields,)*])),
+                fields: Some(::rex::types::ADTVariantFields::Unnamed(vec![#(#fields,)*])),
             }],
         })
     }
@@ -89,10 +89,10 @@ fn expand_derive_adt_for_tuple_struct(
 fn expand_derive_adt_for_unit_struct(ast: &DeriveInput) -> proc_macro2::TokenStream {
     let ident = &ast.ident;
     quote! {
-        ::rex_ast::Type::ADT(::rex_ast::ADT {
+        ::rex::types::Type::ADT(::rex::types::ADT {
             name: stringify!(#ident).to_string(),
             generics: vec![],
-            variants: vec![::rex_ast::ADTVariant {
+            variants: vec![::rex::types::ADTVariant {
                 name: stringify!(#ident).to_string(),
                 fields: None,
             }],
@@ -118,9 +118,9 @@ fn expand_derive_adt_for_enum(ast: &DeriveInput, data: &DataEnum) -> proc_macro2
                 quote! {
                     let mut fields = ::std::collections::BTreeMap::new();
                     #(#field_decls;)*
-                    ::rex_ast::ADTVariant {
+                    ::rex::types::ADTVariant {
                         name: #variant_name.to_string(),
-                        fields: Some(::rex_ast::ADTVariantFields::Named(fields)),
+                        fields: Some(::rex::types::ADTVariantFields::Named(fields)),
                     }
                 }
             }
@@ -132,14 +132,14 @@ fn expand_derive_adt_for_enum(ast: &DeriveInput, data: &DataEnum) -> proc_macro2
                     }
                 });
                 quote! {
-                    ::rex_ast::ADTVariant {
+                    ::rex::types::ADTVariant {
                         name: #variant_name.to_string(),
-                        fields: Some(::rex_ast::ADTVariantFields::Unnamed(vec![#(#fields,)*])),
+                        fields: Some(::rex::types::ADTVariantFields::Unnamed(vec![#(#fields,)*])),
                     }
                 }
             }
             Fields::Unit => quote! {
-                ::rex_ast::ADTVariant {
+                ::rex::types::ADTVariant {
                     name: #variant_name.to_string(),
                     fields: None,
                 }
@@ -147,7 +147,7 @@ fn expand_derive_adt_for_enum(ast: &DeriveInput, data: &DataEnum) -> proc_macro2
         }
     });
     quote! {
-        ::rex_ast::Type::ADT(::rex_ast::ADT {
+        ::rex::types::Type::ADT(::rex::types::ADT {
             name: stringify!(#ident).to_string(),
             generics: vec![],
             variants: vec![#(#variants,)*],
@@ -160,11 +160,11 @@ fn expand_t(ty: &Type) -> proc_macro2::TokenStream {
         Type::Path(type_path) if type_path.qself.is_none() => {
             let ident = &type_path.path.segments.last().unwrap().ident;
             let inner_types = &type_path.path.segments.last().unwrap().arguments;
-            quote!(<#ident #inner_types as ::rex_ast::TypeInfo>::t())
+            quote!(<#ident #inner_types as ::rex::types::TypeInfo>::t())
         }
         Type::Tuple(tuple) => {
             let inner_types = tuple.elems.iter().map(expand_t);
-            quote! { ::rex_ast::Type::Tuple(vec![#(#inner_types,)*]) }
+            quote! { ::rex::types::Type::Tuple(vec![#(#inner_types,)*]) }
         }
         _ => panic!("Unsupported type"),
     }
