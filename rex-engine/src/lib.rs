@@ -691,6 +691,45 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_10k_ctor_with_defaults() {
+        // create an expression that builds 1000 points, maps them, and then filters them
+        let mut expr = "filter (λp → let a = x p, b = y p in a + b == 1) map (λi → i)  [".to_string();
+        for i in 0..10000 {
+            expr +=  &format!(
+                "Point2D {{ x = {}, y = {} }}",
+                i % 10,
+                i / 10 % 10
+            );
+            if i + 1 < 10000 {
+                expr += ", ";
+            }
+        }
+
+        expr += "]";
+
+        let mut parser = Parser::new(Token::tokenize(&expr).unwrap());
+        let expr = parser.parse_expr().unwrap();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = ftable_with_point_adt(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
+
+        if let Value::List(val) = val {
+            assert_eq!(
+                val.len(),
+                20
+            );
+        } else {
+          panic!("expected Value::List, got {:?}", val);
+        }
+    }
+
+    #[tokio::test]
     async fn test_bad_ctor() {
         let tokens = Token::tokenize("filter (λp → let a = x p, b = y p in a + b + true == 1) [Point2D { x = 0, y = 0 }, Point2D { x = 0, y = 1 }, Point3D { x = 1, y = 0, z = 2 }, Point3D { x = 1, y = 1, z = 2 }]").unwrap();
         let mut parser = Parser::new(tokens);
