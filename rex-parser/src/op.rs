@@ -1,6 +1,5 @@
 use std::fmt::{self, Display, Formatter};
 
-
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Operator {
     Add,

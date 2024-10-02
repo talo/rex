@@ -504,7 +504,7 @@ impl TryFrom<Value> for serde_json::Value {
                 Some(DataFields::Unnamed(u)) => serde_json::Value::Array(
                     u.fields
                         .into_iter()
-                        .map(|x| serde_json::Value::try_from(x))
+                        .map(serde_json::Value::try_from)
                         .collect::<Result<_, _>>()?,
                 ),
                 None => serde_json::Value::Null,

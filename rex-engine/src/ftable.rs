@@ -1,10 +1,11 @@
 use std::{
     collections::{BTreeMap, HashMap},
     future::Future,
+    num::NonZeroUsize,
     pin::Pin,
 };
 
-use futures::future;
+use futures::{stream, StreamExt, TryStreamExt};
 use rex_ast::{
     a, arrow, b,
     id::{Id, IdDispenser},
@@ -594,12 +595,13 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                             for x in xs {
                                 ys.push(apply::apply(ctx, runner, state, f.clone(), x.clone()));
                             }
-                            Ok(Value::List(
-                                future::join_all(ys)
-                                    .await
-                                    .into_iter()
-                                    .collect::<Result<_, _>>()?,
-                            ))
+                            let nthreads = std::thread::available_parallelism()
+                                .unwrap_or(NonZeroUsize::new(1).unwrap())
+                                .get()
+                                * 2;
+                            let s = stream::iter(ys).buffered(nthreads).try_collect().await?;
+
+                            Ok(Value::List(s))
                         }
                         // Everything else
                         (Some(_), Some(x)) => Err(Error::UnexpectedType {
