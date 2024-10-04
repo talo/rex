@@ -316,7 +316,7 @@ mod test {
         let one_id = id_dispenser.next();
         ftable.register_function(
             Function {
-                id: one_id.clone(),
+                id: one_id,
                 name: "one".to_string(),
                 params: vec![],
                 ret: Type::Uint,
@@ -335,7 +335,7 @@ mod test {
                 "Point2D".to_string(),
                 DataFields::Named(NamedDataFields {
                     fields: vec![
-                        ("x".to_string(), Value::Id(one_id.clone())),
+                        ("x".to_string(), Value::Id(one_id)),
                         ("y".to_string(), Value::Uint(1)),
                     ]
                     .into_iter()
@@ -688,6 +688,46 @@ mod test {
                 }),
             ])
         );
+    }
+
+    #[tokio::test]
+    async fn test_10k_ctor_with_defaults() {
+        // create an expression that builds 1000 points, maps them, and then filters them
+        let mut expr =
+            "filter (λp → let a = x p, b = y p in a + b == 1) (map (λi → i)  [".to_string();
+        for i in 0..10_000 {
+            expr += &format!("Point2D {{ x = {}, y = {} }}", i % 10, i / 10 % 10);
+            if i + 1 < 10_000 {
+                expr += ", ";
+            }
+        }
+
+        expr += "])";
+
+        let mut parser = Parser::new(Token::tokenize(&expr).unwrap());
+        let expr = parser.parse_expr().unwrap();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = ftable_with_point_adt(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await;
+        match val {
+            Ok(val) => {
+                if let Value::List(val) = val {
+                    assert_eq!(val.len(), 200);
+                } else {
+                    panic!("expected Value::List, got {:?}", val);
+                }
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                panic!("{}", sprint_trace(e.trace()));
+            }
+        }
     }
 
     #[tokio::test]

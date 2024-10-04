@@ -27,12 +27,8 @@ impl Position {
     ///
     /// # Return
     /// A new Position.
-    pub fn new(line: usize, column: usize) -> Position
-    {
-        Position {
-            line,
-            column,
-        }
+    pub fn new(line: usize, column: usize) -> Position {
+        Position { line, column }
     }
 
     /// # Return
@@ -83,13 +79,7 @@ impl Span {
     ///
     /// # Return
     /// A new Span, with new beginning and ending Positions.
-    pub fn new(
-        begin_line: usize,
-        begin_column: usize,
-        end_line: usize,
-        end_column: usize,
-    ) -> Self
-    {
+    pub fn new(begin_line: usize, begin_column: usize, end_line: usize, end_column: usize) -> Self {
         Self {
             begin: Position::new(begin_line, begin_column),
             end: Position::new(end_line, end_column),
