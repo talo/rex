@@ -655,6 +655,42 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 })
             }),
         );
+        // 'take'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "take".to_string(),
+                params: vec![Type::Uint, list!(a!())],
+                ret: list!(a!()),
+            },
+            Box::new(|ctx, runner, state, args| {
+                Box::pin(async move {
+                    match (args.first(), args.get(1)) {
+                        // Wrong number of arguments
+                        (_, None) | (None, _) => Err(Error::ExpectedArguments {
+                            expected: 2,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        (Some(Value::Uint(n)), Some(Value::List(xs))) => {
+                            Ok(Value::List(xs.iter().take(*n as usize).cloned().collect()))
+                        }
+                        // Bad types
+                        (Some(Value::Uint(_)), Some(x)) => Err(Error::UnexpectedType {
+                            expected: list!(a!()),
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                        (Some(n), _) => Err(Error::UnexpectedType {
+                            expected: Type::Uint,
+                            got: n.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
         // 'zip'
         this.register_function(
             Function {
