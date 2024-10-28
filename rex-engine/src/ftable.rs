@@ -665,7 +665,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 params: vec![Type::Uint, list!(a!())],
                 ret: list!(a!()),
             },
-            Box::new(|ctx, runner, state, args| {
+            Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
@@ -892,6 +892,43 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                         }),
                         // Everything else
                         (_, Some(x)) => Err(Error::ExpectedIndexable {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
+        // 'has'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "has".to_string(),
+                params: vec![Type::String, a!()],
+                ret: Type::Bool,
+            },
+            Box::new(|_ctx, _runner, _state, args| {
+                Box::pin(async move {
+                    match (args.first(), args.get(1)) {
+                        // Wrong number of arguments
+                        (_, None) | (None, _) => Err(Error::ExpectedArguments {
+                            expected: 2,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        (Some(Value::String(key)), Some(Value::Dict(xs))) => {
+                            Ok(Value::Bool(xs.contains_key(key.as_str())))
+                        }
+                        // Bad types
+                        (Some(x), Some(Value::Dict(_))) => Err(Error::UnexpectedType {
+                            expected: Type::String,
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                        // Everything else
+                        (_, Some(x)) => Err(Error::ExpectedKeyable {
                             got: x.clone(),
                             trace: Default::default(),
                         }),
