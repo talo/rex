@@ -899,6 +899,72 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 })
             }),
         );
+        // 'len'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "len".to_string(),
+                // FIXME: needs trait with length
+                params: vec![a!()], //vec![list!(a!())],
+                ret: Type::Uint,
+            },
+            Box::new(|_ctx, _runner, _state, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        Some(Value::List(xs)) => Ok(Value::Uint(xs.len() as u64)),
+                        Some(Value::Tuple(xs)) => Ok(Value::Uint(xs.len() as u64)),
+                        Some(Value::String(xs)) => Ok(Value::Uint(xs.len() as u64)),
+                        Some(_) => Err(Error::UnexpectedType {
+                            expected: Type::List(Box::new(a!())),
+                            got: args.first().unwrap().clone(),
+                            trace: Default::default(),
+                        }),
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: 0,
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
+        // 'has'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "has".to_string(),
+                params: vec![Type::String, a!()],
+                ret: Type::Bool,
+            },
+            Box::new(|_ctx, _runner, _state, args| {
+                Box::pin(async move {
+                    match (args.first(), args.get(1)) {
+                        // Wrong number of arguments
+                        (_, None) | (None, _) => Err(Error::ExpectedArguments {
+                            expected: 2,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        (Some(Value::String(key)), Some(Value::Dict(xs))) => {
+                            Ok(Value::Bool(xs.contains_key(key.as_str())))
+                        }
+                        // Bad types
+                        (Some(x), Some(Value::Dict(_))) => Err(Error::UnexpectedType {
+                            expected: Type::String,
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                        // Everything else
+                        (_, Some(x)) => Err(Error::ExpectedKeyable {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
 
         // 'has'
         this.register_function(
