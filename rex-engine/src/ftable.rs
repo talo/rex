@@ -899,6 +899,32 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 })
             }),
         );
+        // 'len'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "len".to_string(),
+                params: vec![list!(a!())],
+                ret: Type::Uint,
+            },
+            Box::new(|_ctx, _runner, _state, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        Some(Value::List(xs)) => Ok(Value::Uint(xs.len() as u64)),
+                        Some(_) => Err(Error::UnexpectedType {
+                            expected: Type::List(Box::new(a!())),
+                            got: args.first().unwrap().clone(),
+                            trace: Default::default(),
+                        }),
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: 0,
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
 
         // 'has'
         this.register_function(
