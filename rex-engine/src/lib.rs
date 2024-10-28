@@ -493,6 +493,40 @@ mod test {
     }
 
     #[tokio::test]
+    async fn len() {
+        let mut parser = Parser::new(Token::tokenize("len [1, 2, 3, 4]").unwrap());
+        let expr = parser.parse_expr().unwrap();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
+
+        assert_eq!(val, Value::Uint(4));
+    }
+
+    #[tokio::test]
+    async fn has() {
+        let mut parser = Parser::new(Token::tokenize("has 'foo' ({ foo = 1 })").unwrap());
+        let expr = parser.parse_expr().unwrap();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
+
+        assert_eq!(val, Value::Bool(true));
+    }
+
+    #[tokio::test]
     async fn if_then_else_max() {
         let mut parser =
             Parser::new(Token::tokenize("(\\x y -> if x > y then x else y) 4 20").unwrap());
