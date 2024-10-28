@@ -913,6 +913,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                     match args.first() {
                         Some(Value::List(xs)) => Ok(Value::Uint(xs.len() as u64)),
                         Some(Value::Tuple(xs)) => Ok(Value::Uint(xs.len() as u64)),
+                        Some(Value::String(xs)) => Ok(Value::Uint(xs.len() as u64)),
                         Some(_) => Err(Error::UnexpectedType {
                             expected: Type::List(Box::new(a!())),
                             got: args.first().unwrap().clone(),

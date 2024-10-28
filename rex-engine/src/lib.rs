@@ -527,6 +527,23 @@ mod test {
     }
 
     #[tokio::test]
+    async fn len_str() {
+        let mut parser = Parser::new(Token::tokenize("len 'asd'").unwrap());
+        let expr = parser.parse_expr().unwrap();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
+
+        assert_eq!(val, Value::Uint(3));
+    }
+
+    #[tokio::test]
     async fn has() {
         let mut parser = Parser::new(Token::tokenize("has 'foo' ({ foo = 1 })").unwrap());
         let expr = parser.parse_expr().unwrap();
