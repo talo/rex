@@ -310,9 +310,9 @@ impl Parser {
                 self.next_token();
                 span
             }
-            Some(_) => {
+            Some(Token::Comma(..)) => {
                 // parse inner expressions
-                return Ok(expr);
+                return self.parse_tuple(span_begin, expr);
             }
             _ => {
                 self.errors.push("expected `)`".into());
@@ -323,6 +323,25 @@ impl Parser {
         expr.set_span_begin(span_begin.begin);
         expr.set_span_end(span_end.end);
         Ok(expr)
+    }
+
+    pub fn parse_tuple(&mut self, span_begin: Span, first_item: AST) -> Result<AST, Error> {
+        let mut items = vec![first_item];
+        loop {
+            // eat the comma
+            let token = self.current_token();
+            match token {
+                Some(Token::Comma(..)) => self.next_token(),
+                Some(Token::ParenR(end_span)) => {
+                    self.next_token();
+                    return Ok(AST::Tuple(
+                        Span::from_begin_end(span_begin.begin, end_span.end),
+                        items,
+                    ));
+                }
+                _ => items.push(self.parse_expr()?),
+            }
+        }
     }
 
     pub fn parse_bracket_expr(&mut self) -> Result<AST, Error> {
@@ -974,6 +993,20 @@ mod tests {
         let mut parser = Parser::new(Token::tokenize("3.54").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(expr, AST::Float(Span::new(1, 1, 1, 4), 3.54));
+
+        let mut parser = Parser::new(Token::tokenize("(3.54, 42, false)").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        assert_eq!(
+            expr,
+            AST::Tuple(
+                Span::new(1, 1, 1, 17),
+                vec![
+                    AST::Float(Span::new(1, 2, 1, 5), 3.54),
+                    AST::Uint(Span::new(1, 8, 1, 9), 42),
+                    AST::Bool(Span::new(1, 12, 1, 16), false),
+                ]
+            )
+        );
     }
 
     #[test]
