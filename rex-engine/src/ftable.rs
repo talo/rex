@@ -904,13 +904,15 @@ impl<S: Send + Sync + 'static> Ftable<S> {
             Function {
                 id: id_dispenser.next(),
                 name: "len".to_string(),
-                params: vec![list!(a!())],
+                // FIXME: needs trait with length
+                params: vec![a!()], //vec![list!(a!())],
                 ret: Type::Uint,
             },
             Box::new(|_ctx, _runner, _state, args| {
                 Box::pin(async move {
                     match args.first() {
                         Some(Value::List(xs)) => Ok(Value::Uint(xs.len() as u64)),
+                        Some(Value::Tuple(xs)) => Ok(Value::Uint(xs.len() as u64)),
                         Some(_) => Err(Error::UnexpectedType {
                             expected: Type::List(Box::new(a!())),
                             got: args.first().unwrap().clone(),
