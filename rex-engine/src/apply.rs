@@ -129,7 +129,7 @@ where
         // Id
         Value::Id(id) => {
             match ctx.get(&id) {
-                Some(Value::Id(id)) => Ok(Value::Id(id)), // We do not want to recurse infinitely
+                Some(Value::Id(id)) => Ok(Value::Id(*id)), // We do not want to recurse infinitely
                 _ => match ftable.lookup(ctx, &id).await {
                     Ok(v) => Ok(apply0(ctx, ftable, state, v).await?),
                     Err(e) => Err(e),

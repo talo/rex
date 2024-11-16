@@ -34,8 +34,8 @@ impl Context {
         }
     }
 
-    pub fn get(&self, k: &Id) -> Option<Value> {
-        self.vars.get(k).cloned()
+    pub fn get(&self, k: &Id) -> Option<&Value> {
+        self.vars.get(k)
     }
 }
 
