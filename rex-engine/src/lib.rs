@@ -407,6 +407,23 @@ mod test {
     }
 
     #[tokio::test]
+    async fn negate() {
+        let mut parser = Parser::new(Token::tokenize("-42").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        let state = ();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
+
+        assert_eq!(val, Value::Int(-42))
+    }
+
+    #[tokio::test]
     async fn math_with_precedence() {
         let mut parser = Parser::new(Token::tokenize("1 + 2 * 3").unwrap());
         let expr = parser.parse_expr().unwrap();

@@ -559,7 +559,7 @@ impl Parser {
         Ok(AST::Call(Call::new(
             Span::from_begin_end(span_token.begin, expr.span().end),
             self.id_dispenser.next(),
-            Var::new(span_token, id_neg, "-"),
+            Var::new(span_token, id_neg, "negate"),
             expr,
         )))
     }
