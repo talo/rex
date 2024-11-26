@@ -64,12 +64,10 @@ impl Display for Context {
 }
 
 #[async_recursion::async_recursion]
-pub async fn eval<S: Send + Sync + 'static>(
-    ctx: &Context,
-    ftable: &Ftable<S>,
-    state: &S,
-    ast: AST,
-) -> Result<Value, Error> {
+pub async fn eval<S>(ctx: &Context, ftable: &Ftable<S>, state: &S, ast: AST) -> Result<Value, Error>
+where
+    S: Send + Sync + 'static,
+{
     let trace_node = ast.clone();
     match ast {
         AST::Null(_span) => Ok(Value::Null),
