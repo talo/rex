@@ -64,12 +64,10 @@ impl Display for Context {
 }
 
 #[async_recursion::async_recursion]
-pub async fn eval<S: Send + Sync + 'static>(
-    ctx: &Context,
-    ftable: &Ftable<S>,
-    state: &S,
-    ast: AST,
-) -> Result<Value, Error> {
+pub async fn eval<S>(ctx: &Context, ftable: &Ftable<S>, state: &S, ast: AST) -> Result<Value, Error>
+where
+    S: Send + Sync + 'static,
+{
     let trace_node = ast.clone();
     match ast {
         AST::Null(_span) => Ok(Value::Null),
@@ -404,6 +402,23 @@ mod test {
         let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
 
         assert_eq!(val, Value::Uint(3))
+    }
+
+    #[tokio::test]
+    async fn negate() {
+        let mut parser = Parser::new(Token::tokenize("-42").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        let state = ();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
+
+        assert_eq!(val, Value::Int(-42))
     }
 
     #[tokio::test]

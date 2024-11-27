@@ -58,12 +58,15 @@ pub async fn apply<S: Send + Sync + 'static>(
 }
 
 #[async_recursion::async_recursion]
-pub async fn apply0<S: Send + Sync + 'static>(
+pub async fn apply0<S>(
     ctx: &Context,
     ftable: &Ftable<S>,
     state: &S,
     base: Value,
-) -> Result<Value, Error> {
+) -> Result<Value, Error>
+where
+    S: Send + Sync + 'static,
+{
     match base {
         // Basics
         Value::Null => Ok(Value::Null),

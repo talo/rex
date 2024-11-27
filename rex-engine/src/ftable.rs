@@ -139,6 +139,36 @@ impl<S: Send + Sync + 'static> Ftable<S> {
         this.register_function(
             Function {
                 id: id_dispenser.next(),
+                name: "negate".to_string(),
+                params: vec![a!()],
+                ret: a!(),
+            },
+            Box::new(|_ctx, _runner, _state, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        Some(Value::Uint(x)) => Ok(Value::Int(-(*x as i64))),
+                        Some(Value::Int(x)) => Ok(Value::Int(-x)),
+                        Some(Value::Float(x)) => Ok(Value::Float(-x)),
+                        // Bad types
+                        Some(y) => Err(Error::UnexpectedType {
+                            expected: Type::Uint,
+                            got: y.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
                 name: "-".to_string(),
                 params: vec![a!(), a!()],
                 ret: a!(),
@@ -147,7 +177,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
-                        (_, None) | (None, _) => Err(Error::ExpectedArguments {
+                        (None, None) | (None, _) | (_, None) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
                             trace: Default::default(),
