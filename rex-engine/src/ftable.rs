@@ -177,15 +177,12 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 Box::pin(async move {
                     match (args.first(), args.get(1)) {
                         // Wrong number of arguments
-                        (None, None) | (None, _) => Err(Error::ExpectedArguments {
+                        (None, None) | (None, _) | (_, None) => Err(Error::ExpectedArguments {
                             expected: 2,
                             got: args.len(),
                             trace: Default::default(),
                         }),
                         // Implementation
-                        (Some(Value::Uint(x)), None) => Ok(Value::Int(-(*x as i64))),
-                        (Some(Value::Int(x)), None) => Ok(Value::Int(-x)),
-                        (Some(Value::Float(x)), None) => Ok(Value::Float(-x)),
                         (Some(Value::Uint(x)), Some(Value::Uint(y))) => Ok(Value::Uint(x - y)),
                         (Some(Value::Int(x)), Some(Value::Int(y))) => Ok(Value::Int(x - y)),
                         (Some(Value::Float(x)), Some(Value::Float(y))) => Ok(Value::Float(x - y)),
