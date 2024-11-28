@@ -296,7 +296,8 @@ async fn eval_unnamed_fields<S: Send + Sync + 'static>(
 mod test {
 
     use rex_ast::{adt, adt_variant_with_named_fields, id::IdDispenser, types::Type};
-    use rex_parser::{lexer::Token, Parser};
+    use rex_lexer::Token;
+    use rex_parser::Parser;
     use rex_resolver::resolve;
 
     use crate::{
@@ -579,6 +580,24 @@ mod test {
     async fn if_then_else_max() {
         let mut parser =
             Parser::new(Token::tokenize("(\\x y -> if x > y then x else y) 4 20").unwrap());
+        let expr = parser.parse_expr().unwrap();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
+
+        assert_eq!(val, Value::Uint(20));
+    }
+
+    #[tokio::test]
+    async fn if_then_else_max_with_comment() {
+        let mut parser =
+            Parser::new(Token::tokenize("(\\ {- this is the max function -} x y -> if {- check which is bigger -} x > y then x {- x bigger -} else y {- y bigger -} ) 4 20").unwrap());
         let expr = parser.parse_expr().unwrap();
 
         let mut id_dispenser = parser.id_dispenser;

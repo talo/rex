@@ -1,8 +1,11 @@
 use regex;
-use rex_ast::span::{Span, Spanned};
 
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
+
+use span::{Span, Spanned};
+
+pub mod span;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Precedence(u8);
@@ -27,7 +30,8 @@ impl Precedence {
 
 /// A Token represents a lexical token in the Arvo programming language. It
 /// includes the values of literals, identifiers, and comments.
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Token {
     // Reserved keywords
     As(Span),
@@ -63,7 +67,10 @@ pub enum Token {
     BracketR(Span),
     Colon(Span),
     Comma(Span),
+    CommentL(Span),
+    CommentR(Span),
     DotDot(Span),
+    HashTag(Span),
     In(Span),
     Let(Span),
     ParenL(Span),
@@ -83,9 +90,6 @@ pub enum Token {
 
     // Idents
     Ident(String, Span),
-
-    // Comments
-    Comment(String, Span),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -134,6 +138,10 @@ impl Token {
                     Token::ArrowR(span)
                 } else if capture.name("BackSlash").is_some() {
                     Token::BackSlash(span)
+                } else if capture.name("CommentL").is_some() {
+                    Token::CommentL(span)
+                } else if capture.name("CommentR").is_some() {
+                    Token::CommentR(span)
                 } else if capture.name("BraceL").is_some() {
                     Token::BraceL(span)
                 } else if capture.name("BraceR").is_some() {
@@ -148,6 +156,8 @@ impl Token {
                     Token::Comma(span)
                 } else if capture.name("DotDot").is_some() {
                     Token::DotDot(span)
+                } else if capture.name("HashTag").is_some() {
+                    Token::HashTag(span)
                 } else if capture.name("In").is_some() {
                     Token::In(span)
                 } else if capture.name("Let").is_some() {
@@ -221,10 +231,6 @@ impl Token {
                     Token::Ident(capture.name("Ident").unwrap().as_str().to_string(), span)
                 }
 
-                // Comments
-                else if capture.name("Comment").is_some() {
-                    Token::Comment(capture.name("Comment").unwrap().as_str().to_string(), span)
-                }
                 // Other
                 else {
                     return Err(LexicalError::UnexpectedToken(span));
@@ -256,6 +262,8 @@ impl Token {
             r"(?P<ArrowL><-|←)|",
             r"(?P<ArrowR>->|→)|",
             r"(?P<BackSlash>\\|λ)|",
+            r"(?P<CommentL>\{-)|",
+            r"(?P<CommentR>-\})|",
             r"(?P<BraceL>\{)|",
             r"(?P<BraceR>\})|",
             r"(?P<BracketL>\[)|",
@@ -263,6 +271,7 @@ impl Token {
             r"(?P<Colon>:)|",
             r"(?P<Comma>,)|",
             r"(?P<DotDot>\.\.)|",
+            r"(?P<HashTag>\#)|",
             r"(?P<In>\bin\b)|",   // Added word boundaries
             r"(?P<Let>\blet\b)|", // Added word boundaries
             r"(?P<LambdaR>->)|",
@@ -298,8 +307,6 @@ impl Token {
             r#"'(?P<SingleString>(\\'|[^'])*)'|"#,
             // Idents
             r"(?P<Ident>[_a-zA-Z]([_a-zA-Z]|[0-9])*)|",
-            // Comments
-            r"(?P<Comment>//(.)*\n)|",
             // Unexpected
             r"(.)",
         ))
@@ -349,8 +356,11 @@ impl Spanned for Token {
             BracketR(span, ..) => span,
             Colon(span, ..) => span,
             Comma(span, ..) => span,
+            CommentL(span, ..) => span,
+            CommentR(span, ..) => span,
             Dot(span, ..) => span,
             DotDot(span, ..) => span,
+            HashTag(span, ..) => span,
             In(span, ..) => span,
             Let(span, ..) => span,
             ParenL(span, ..) => span,
@@ -385,9 +395,6 @@ impl Spanned for Token {
 
             // Idents
             Ident(_, span, ..) => span,
-
-            // Comments
-            Comment(_, span, ..) => span,
         }
     }
 
@@ -413,8 +420,11 @@ impl Spanned for Token {
             BracketR(span, ..) => span,
             Colon(span, ..) => span,
             Comma(span, ..) => span,
+            CommentL(span, ..) => span,
+            CommentR(span, ..) => span,
             Dot(span, ..) => span,
             DotDot(span, ..) => span,
+            HashTag(span, ..) => span,
             In(span, ..) => span,
             Let(span, ..) => span,
             ParenL(span, ..) => span,
@@ -449,9 +459,6 @@ impl Spanned for Token {
 
             // Idents
             Ident(_, span, ..) => span,
-
-            // Comments
-            Comment(_, span, ..) => span,
         }
     }
 }
@@ -479,8 +486,11 @@ impl Display for Token {
             BracketR(..) => write!(f, "]"),
             Colon(..) => write!(f, ":"),
             Comma(..) => write!(f, ","),
+            CommentL(..) => write!(f, "{{-"),
+            CommentR(..) => write!(f, "-}}"),
             Dot(..) => write!(f, "."),
             DotDot(..) => write!(f, ".."),
+            HashTag(..) => write!(f, "#"),
             In(..) => write!(f, "in"),
             Let(..) => write!(f, "let"),
             ParenL(..) => write!(f, "("),
@@ -515,9 +525,6 @@ impl Display for Token {
 
             // Idents
             Ident(ident, ..) => write!(f, "{}", ident),
-
-            // Comments
-            Comment(comment, ..) => write!(f, "//{}", comment),
         }
     }
 }

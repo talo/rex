@@ -1,11 +1,19 @@
 use std::fmt::{self, Display, Formatter};
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    serde::Deserialize,
+    serde::Serialize,
 )]
+#[serde(rename_all = "lowercase")]
 pub struct Id(pub u64);
 
 impl Id {
