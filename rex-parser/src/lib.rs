@@ -323,7 +323,21 @@ impl Parser {
             }
             Some(Token::Sub(span, ..)) => {
                 self.next_token();
-                AST::Var(Var::new(span, self.id_dispenser.next(), "-"))
+                if let Some(Token::ParenR(..)) = self.current_token() {
+                    // In the case of the `-` operator we need to explicitly
+                    // check for the closing right parenthesis, because it is
+                    // valid to have an expressions like `(- 69)`. This is
+                    // different from other operators, because it is not valid
+                    // to have an expression like `(+ 69)`` or `(>= 3)``.
+                    //
+                    // It would not be a crazy idea to explicitly check for the
+                    // closing right parenthesis in other operators. Although we
+                    // do not want to allow expressions like `(+ 420)` the
+                    // explicit check will allow for better error messages.
+                    AST::Var(Var::new(span, self.id_dispenser.next(), "-"))
+                } else {
+                    self.parse_expr()?
+                }
             }
             _ => self.parse_expr()?,
         };
