@@ -234,7 +234,6 @@ impl Parser {
                 Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
                 Some(Token::Let(..)) => self.parse_let_expr(),
                 Some(Token::If(..)) => self.parse_if_expr(),
-                Some(Token::Sub(..)) => self.parse_neg_expr(),
                 _ => break,
             }?;
             call_arg_exprs.push_back(call_arg_expr);
