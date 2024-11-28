@@ -26,7 +26,7 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(tokens: Tokens) -> Parser {
-        Parser {
+        let mut parser = Parser {
             id_dispenser: IdDispenser::new(),
             token_cursor: 0,
             tokens: tokens
@@ -37,7 +37,9 @@ impl Parser {
                 })
                 .collect(),
             errors: Vec::new(),
-        }
+        };
+        parser.strip_comments();
+        parser
     }
 
     pub fn with_dispenser(id_dispenser: IdDispenser, tokens: Tokens) -> Parser {
@@ -65,6 +67,29 @@ impl Parser {
 
     pub fn next_token(&mut self) {
         self.token_cursor += 1;
+    }
+
+    pub fn strip_comments(&mut self) {
+        let mut cursor = 0;
+
+        while cursor < self.tokens.len() {
+            match self.tokens[cursor] {
+                Token::CommentL(..) => {
+                    self.tokens.remove(cursor);
+                    while cursor < self.tokens.len() {
+                        if let Token::CommentR(..) = self.tokens[cursor] {
+                            self.tokens.remove(cursor);
+                            break;
+                        }
+                        self.tokens.remove(cursor);
+                    }
+                }
+                _ => {
+                    cursor += 1;
+                    continue;
+                }
+            }
+        }
     }
 
     pub fn parse_expr(&mut self) -> Result<AST, Error> {
@@ -164,7 +189,6 @@ impl Parser {
 
     pub fn parse_unary_expr(&mut self) -> Result<AST, Error> {
         let mut call_base_expr = match self.current_token() {
-            Some(Token::CommentL(..)) => self.parse_comment_expr(),
             Some(Token::ParenL(..)) => self.parse_paren_expr(),
             Some(Token::BracketL(..)) => self.parse_bracket_expr(),
             Some(Token::BraceL(..)) => self.parse_brace_expr(),
@@ -199,7 +223,6 @@ impl Parser {
         loop {
             let token = self.current_token();
             let call_arg_expr = match token {
-                Some(Token::CommentL(..)) => self.parse_comment_expr(),
                 Some(Token::ParenL(..)) => self.parse_paren_expr(),
                 Some(Token::BracketL(..)) => self.parse_bracket_expr(),
                 Some(Token::BraceL(..)) => self.parse_brace_expr(),
@@ -227,63 +250,6 @@ impl Parser {
             ));
         }
         Ok(call_base_expr)
-    }
-
-    pub fn parse_comment_expr(&mut self) -> Result<AST, Error> {
-        // Eat the left comment brace.
-        let token = self.current_token();
-        let span_begin = match token {
-            Some(Token::CommentL(span, ..)) => {
-                self.next_token();
-                span
-            }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
-                    *token.span(),
-                    format!("expected '{{-' got {}", token),
-                ));
-                return Err(Error::Parser(self.errors.clone()));
-            }
-            _ => {
-                return Err(vec!["expected `{-`".to_string().into()].into());
-            }
-        };
-
-        let mut comment_tokens = vec![];
-        loop {
-            // Eat tokens until you find a closing comment brace
-            match self.current_token() {
-                Some(Token::CommentR(..)) => {
-                    break;
-                }
-                Some(token) => {
-                    comment_tokens.push(token);
-                    self.next_token();
-                }
-                None => {
-                    self.errors.push("expected `-}`".into());
-                    return Err(Error::Parser(self.errors.clone()));
-                }
-            };
-        }
-
-        // Eat the right comment brace.
-        let token = self.current_token();
-        let span_end = match token {
-            Some(Token::CommentR(span, ..)) => {
-                self.next_token();
-                span
-            }
-            _ => {
-                self.errors.push("expected `-}`".into());
-                return Err(Error::Parser(self.errors.clone()));
-            }
-        };
-
-        Ok(AST::Comment(
-            Span::from_begin_end(span_begin.begin, span_end.end),
-            comment_tokens,
-        ))
     }
 
     pub fn parse_paren_expr(&mut self) -> Result<AST, Error> {
@@ -1021,17 +987,24 @@ mod tests {
 
     #[test]
     fn test_parse_comment() {
-        let mut parser = Parser::new(Token::tokenize("{- this is a comment -}").unwrap());
+        let mut parser = Parser::new(Token::tokenize("true {- this is a boolean -}").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        assert_eq!(expr, AST::Bool(Span::new(1, 1, 1, 4), true));
+
+        let mut parser = Parser::new(Token::tokenize("{- this is a boolean -} false").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        assert_eq!(expr, AST::Bool(Span::new(1, 25, 1, 29), false));
+
+        let mut parser = Parser::new(Token::tokenize("(3.54 {- this is a float -}, {- this is an int -} 42, false {- this is a boolean -})").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_eq!(
             expr,
-            AST::Comment(
-                Span::new(1, 1, 1, 23),
+            AST::Tuple(
+                Span::new(1, 1, 1, 84),
                 vec![
-                    Token::Ident("this".to_string(), Span::new(1, 4, 1, 7)),
-                    Token::Ident("is".to_string(), Span::new(1, 9, 1, 10)),
-                    Token::Ident("a".to_string(), Span::new(1, 12, 1, 12)),
-                    Token::Ident("comment".to_string(), Span::new(1, 14, 1, 20)),
+                    AST::Float(Span::new(1, 2, 1, 5), 3.54),
+                    AST::Uint(Span::new(1, 51, 1, 52), 42),
+                    AST::Bool(Span::new(1, 55, 1, 59), false),
                 ]
             )
         );

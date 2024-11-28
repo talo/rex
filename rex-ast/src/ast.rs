@@ -1,18 +1,12 @@
 use std::fmt::{self, Display, Formatter};
 
-use rex_lexer::{
-    span::{Span, Spanned},
-    Token,
-};
+use rex_lexer::span::{Span, Spanned};
 
 use crate::id::Id;
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AST {
-    // Comment
-    Comment(Span, Vec<Token>),
-
     // Literal expressions
     Null(Span),
     Bool(Span, bool),
@@ -68,15 +62,6 @@ impl From<Ctor> for AST {
 impl Display for AST {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            // Comment
-            Self::Comment(.., comment) => {
-                "{{- ".fmt(f)?;
-                for n in comment {
-                    n.fmt(f)?;
-                }
-                " -}}".fmt(f)
-            }
-
             // Literal expressions
             Self::Null(..) => "null".fmt(f),
             Self::Bool(.., x) => x.fmt(f),
@@ -485,8 +470,6 @@ impl Display for UnnamedFields {
 impl Spanned for AST {
     fn span(&self) -> &Span {
         match self {
-            AST::Comment(span, ..) => span,
-
             AST::Null(span, ..) => span,
             AST::Bool(span, ..) => span,
             AST::Uint(span, ..) => span,
@@ -508,8 +491,6 @@ impl Spanned for AST {
 
     fn span_mut(&mut self) -> &mut Span {
         match self {
-            AST::Comment(span, ..) => span,
-
             AST::Null(span, ..) => span,
             AST::Bool(span, ..) => span,
             AST::Uint(span, ..) => span,

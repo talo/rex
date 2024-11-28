@@ -70,8 +70,6 @@ where
 {
     let trace_node = ast.clone();
     match ast {
-        AST::Comment(..) => unimplemented!(),
-
         AST::Null(_span) => Ok(Value::Null),
         AST::Bool(_span, x) => Ok(Value::Bool(x)),
         AST::Uint(_span, x) => Ok(Value::Uint(x)),
@@ -582,6 +580,24 @@ mod test {
     async fn if_then_else_max() {
         let mut parser =
             Parser::new(Token::tokenize("(\\x y -> if x > y then x else y) 4 20").unwrap());
+        let expr = parser.parse_expr().unwrap();
+
+        let mut id_dispenser = parser.id_dispenser;
+        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
+
+        let mut scope = ftable.scope();
+
+        let ctx = Context::new();
+        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
+
+        assert_eq!(val, Value::Uint(20));
+    }
+
+    #[tokio::test]
+    async fn if_then_else_max_with_comment() {
+        let mut parser =
+            Parser::new(Token::tokenize("(\\ {- this is the max function -} x y -> if {- check which is bigger -} x > y then x {- x bigger -} else y {- y bigger -} ) 4 20").unwrap());
         let expr = parser.parse_expr().unwrap();
 
         let mut id_dispenser = parser.id_dispenser;
