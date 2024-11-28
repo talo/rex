@@ -3,10 +3,20 @@ name = "rex"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+anyhow = { version = "1.0" }
+clap = { version = "4.5", features = ["derive"] }
 rex-ast = { path = "../rex-ast" }
 rex-engine = { path = "../rex-engine" }
+rex-lexer = { path = "../rex-lexer" }
 rex-parser = { path = "../rex-parser" }
 rex-resolver = { path = "../rex-resolver" }
+tokio = { version = "1.27.0", features = [
+    "fs",
+    "io-util",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+] }
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
