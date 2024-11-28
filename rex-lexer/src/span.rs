@@ -6,12 +6,8 @@ use std::fmt::{self, Display, Formatter};
 
 /// A Position represents an arbitrary source position. It includes the line
 /// number, and column number.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct Position {
     pub line: usize,
     pub column: usize,
@@ -52,12 +48,8 @@ impl fmt::Display for Position {
 
 /// A Span represents an arbitrary source range. It includes the beginning and
 /// ending Positions.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct Span {
     pub begin: Position,
     pub end: Position,

@@ -1,17 +1,18 @@
 use std::fmt::{self, Display, Formatter};
 
-use crate::{
-    id::Id,
+use rex_lexer::{
     span::{Span, Spanned},
+    Token,
 };
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+use crate::id::Id;
+
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum AST {
+    // Comment
+    Comment(Span, Vec<Token>),
+
     // Literal expressions
     Null(Span),
     Bool(Span, bool),
@@ -67,6 +68,15 @@ impl From<Ctor> for AST {
 impl Display for AST {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            // Comment
+            Self::Comment(.., comment) => {
+                "{{- ".fmt(f)?;
+                for n in comment {
+                    n.fmt(f)?;
+                }
+                " -}}".fmt(f)
+            }
+
             // Literal expressions
             Self::Null(..) => "null".fmt(f),
             Self::Bool(.., x) => x.fmt(f),
@@ -120,14 +130,10 @@ impl Display for AST {
     }
 }
 
-#[derive(Clone, Debug, Eq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct Var {
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[serde(skip)]
     pub span: Span,
     pub id: Id,
 
@@ -163,14 +169,10 @@ impl Display for Var {
     }
 }
 
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct Call {
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[serde(skip)]
     pub span: Span,
     pub id: Id,
 
@@ -220,14 +222,10 @@ impl Display for Call {
     }
 }
 
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct Lambda {
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[serde(skip)]
     pub span: Span,
     pub id: Id,
 
@@ -262,14 +260,10 @@ impl Display for Lambda {
     }
 }
 
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct LetIn {
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[serde(skip)]
     pub span: Span,
     pub id: Id,
 
@@ -311,14 +305,10 @@ impl Display for LetIn {
     }
 }
 
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct IfThenElse {
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[serde(skip)]
     pub span: Span,
     pub id: Id,
 
@@ -366,14 +356,10 @@ impl Display for IfThenElse {
     }
 }
 
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct Ctor {
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[serde(skip)]
     pub span: Span,
     pub id: Id,
 
@@ -407,12 +393,8 @@ impl Display for Ctor {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Fields {
     Named(NamedFields),
     Unnamed(UnnamedFields),
@@ -439,14 +421,10 @@ impl Display for Fields {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct NamedFields {
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[serde(skip)]
     pub span: Span,
     pub fields: Vec<(Var, AST)>,
 }
@@ -475,14 +453,10 @@ impl Display for NamedFields {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct UnnamedFields {
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[serde(skip)]
     pub span: Span,
     pub fields: Vec<AST>,
 }
@@ -511,6 +485,8 @@ impl Display for UnnamedFields {
 impl Spanned for AST {
     fn span(&self) -> &Span {
         match self {
+            AST::Comment(span, ..) => span,
+
             AST::Null(span, ..) => span,
             AST::Bool(span, ..) => span,
             AST::Uint(span, ..) => span,
@@ -532,6 +508,8 @@ impl Spanned for AST {
 
     fn span_mut(&mut self) -> &mut Span {
         match self {
+            AST::Comment(span, ..) => span,
+
             AST::Null(span, ..) => span,
             AST::Bool(span, ..) => span,
             AST::Uint(span, ..) => span,

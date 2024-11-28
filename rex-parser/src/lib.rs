@@ -3,17 +3,18 @@ use std::collections::VecDeque;
 use rex_ast::{
     ast::{Call, IfThenElse, Lambda, LetIn, Var, AST},
     id::IdDispenser,
+};
+use rex_lexer::{
     span::{Position, Span, Spanned},
+    Token, Tokens,
 };
 
 use crate::{
     error::{Error, ParserErr},
-    lexer::{Token, Tokens},
     op::Operator,
 };
 
 pub mod error;
-pub mod lexer;
 pub mod op;
 
 pub struct Parser {
@@ -163,6 +164,7 @@ impl Parser {
 
     pub fn parse_unary_expr(&mut self) -> Result<AST, Error> {
         let mut call_base_expr = match self.current_token() {
+            Some(Token::CommentL(..)) => self.parse_comment_expr(),
             Some(Token::ParenL(..)) => self.parse_paren_expr(),
             Some(Token::BracketL(..)) => self.parse_bracket_expr(),
             Some(Token::BraceL(..)) => self.parse_brace_expr(),
@@ -197,6 +199,7 @@ impl Parser {
         loop {
             let token = self.current_token();
             let call_arg_expr = match token {
+                Some(Token::CommentL(..)) => self.parse_comment_expr(),
                 Some(Token::ParenL(..)) => self.parse_paren_expr(),
                 Some(Token::BracketL(..)) => self.parse_bracket_expr(),
                 Some(Token::BraceL(..)) => self.parse_brace_expr(),
@@ -224,6 +227,63 @@ impl Parser {
             ));
         }
         Ok(call_base_expr)
+    }
+
+    pub fn parse_comment_expr(&mut self) -> Result<AST, Error> {
+        // Eat the left comment brace.
+        let token = self.current_token();
+        let span_begin = match token {
+            Some(Token::CommentL(span, ..)) => {
+                self.next_token();
+                span
+            }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    *token.span(),
+                    format!("expected '{{-' got {}", token),
+                ));
+                return Err(Error::Parser(self.errors.clone()));
+            }
+            _ => {
+                return Err(vec!["expected `{-`".to_string().into()].into());
+            }
+        };
+
+        let mut comment_tokens = vec![];
+        loop {
+            // Eat tokens until you find a closing comment brace
+            match self.current_token() {
+                Some(Token::CommentR(..)) => {
+                    break;
+                }
+                Some(token) => {
+                    comment_tokens.push(token);
+                    self.next_token();
+                }
+                None => {
+                    self.errors.push("expected `-}`".into());
+                    return Err(Error::Parser(self.errors.clone()));
+                }
+            };
+        }
+
+        // Eat the right comment brace.
+        let token = self.current_token();
+        let span_end = match token {
+            Some(Token::CommentR(span, ..)) => {
+                self.next_token();
+                span
+            }
+            _ => {
+                self.errors.push("expected `-}`".into());
+                return Err(Error::Parser(self.errors.clone()));
+            }
+        };
+
+        Ok(AST::Comment(
+            Span::from_begin_end(span_begin.begin, span_end.end),
+            comment_tokens,
+        ))
     }
 
     pub fn parse_paren_expr(&mut self) -> Result<AST, Error> {
@@ -955,10 +1015,27 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use rex_ast::id::Id;
-
-    use crate::lexer::Token;
+    use rex_lexer::Token;
 
     use super::*;
+
+    #[test]
+    fn test_parse_comment() {
+        let mut parser = Parser::new(Token::tokenize("{- this is a comment -}").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        assert_eq!(
+            expr,
+            AST::Comment(
+                Span::new(1, 1, 1, 23),
+                vec![
+                    Token::Ident("this".to_string(), Span::new(1, 4, 1, 7)),
+                    Token::Ident("is".to_string(), Span::new(1, 9, 1, 10)),
+                    Token::Ident("a".to_string(), Span::new(1, 12, 1, 12)),
+                    Token::Ident("comment".to_string(), Span::new(1, 14, 1, 20)),
+                ]
+            )
+        );
+    }
 
     #[test]
     fn test_parse_literals() {

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use rex_ast::{
     ast::{Call, Ctor, Fields, IfThenElse, Lambda, LetIn, NamedFields, UnnamedFields, Var, AST},
     id::{Id, IdDispenser},
-    span::Span,
 };
+use rex_lexer::span::Span;
 
 use crate::error::Error;
 
@@ -31,6 +31,9 @@ impl Scope {
 
 pub fn resolve(id_dispenser: &mut IdDispenser, scope: &mut Scope, node: AST) -> Result<AST, Error> {
     match node {
+        // Comments
+        AST::Comment(span, tokens) => Ok(AST::Comment(span, tokens)),
+
         // Simple literals do not need resolving
         AST::Null(span) => Ok(AST::Null(span)),
         AST::Bool(span, x) => Ok(AST::Bool(span, x)),

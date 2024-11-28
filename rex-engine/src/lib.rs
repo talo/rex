@@ -70,6 +70,8 @@ where
 {
     let trace_node = ast.clone();
     match ast {
+        AST::Comment(..) => unimplemented!(),
+
         AST::Null(_span) => Ok(Value::Null),
         AST::Bool(_span, x) => Ok(Value::Bool(x)),
         AST::Uint(_span, x) => Ok(Value::Uint(x)),
@@ -296,7 +298,8 @@ async fn eval_unnamed_fields<S: Send + Sync + 'static>(
 mod test {
 
     use rex_ast::{adt, adt_variant_with_named_fields, id::IdDispenser, types::Type};
-    use rex_parser::{lexer::Token, Parser};
+    use rex_lexer::Token;
+    use rex_parser::Parser;
     use rex_resolver::resolve;
 
     use crate::{

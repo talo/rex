@@ -2,12 +2,8 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::ast::Var;
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Pattern {
     Var(Var),
     Tuple(Vec<Pattern>),
@@ -35,12 +31,8 @@ impl Display for Pattern {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ListPattern {
     Var(Var),                                 // xs
     Elems(Vec<Pattern>),                      // [x, y, z]
@@ -70,12 +62,8 @@ impl Display for ListPattern {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DataPattern {
     Constructor(String, Option<Vec<DictPattern>>), // Foo { x, y, w = z:zs }
 }
@@ -101,12 +89,8 @@ impl Display for DataPattern {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DictPattern {
     Key(Var),                       // w
     KeyMatch(String, Box<Pattern>), // w = x:xs
