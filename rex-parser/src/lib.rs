@@ -65,6 +65,14 @@ impl Parser {
         }
     }
 
+    pub fn peek_token(&self, n: usize) -> Option<Token> {
+        if self.token_cursor + n < self.tokens.len() {
+            Some(self.tokens[self.token_cursor + n].clone())
+        } else {
+            None
+        }
+    }
+
     pub fn next_token(&mut self) {
         self.token_cursor += 1;
     }
@@ -90,6 +98,81 @@ impl Parser {
                 }
             }
         }
+    }
+
+    // pub fn parse(&mut self) -> Result<AST, Error> {
+    //     match (self.peek_token(0), self.peek_token(1)) {
+    //         (Some(Token::Ident(..)), Some(Token::ColonColon(..))) => self.parse_fn_forward_decl(),
+    //         _ => self.parse_expr(),
+    //     }
+    // }
+
+    pub fn parse_fn_forward_decl(&mut self) -> Result<(String, Vec<String>), Error> {
+        // Parse the function name
+        let ident = match self.current_token() {
+            Some(Token::Ident(ident, ..)) => {
+                self.next_token();
+                ident
+            }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    *token.span(),
+                    format!("expected `ident` got {}", token),
+                ));
+                return Err(Error::Parser(self.errors.clone()));
+            }
+            _ => {
+                return Err(vec!["expected `ident`".to_string().into()].into());
+            }
+        };
+        // Eat the `::`
+        match self.current_token() {
+            Some(Token::ColonColon(span, ..)) => {
+                self.next_token();
+                span
+            }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    *token.span(),
+                    format!("expected `::` got {}", token),
+                ));
+                return Err(Error::Parser(self.errors.clone()));
+            }
+            _ => {
+                return Err(vec!["expected `::`".to_string().into()].into());
+            }
+        };
+        let mut params = vec![];
+        let mut param_is_expected = true;
+        while param_is_expected {
+            // Parse the next param
+            match self.current_token() {
+                Some(Token::Ident(ident, ..)) => {
+                    self.next_token();
+                    params.push(ident);
+                }
+                Some(token) => {
+                    self.errors.push(ParserErr::new(
+                        *token.span(),
+                        format!("expected `param` got {}", token),
+                    ));
+                    return Err(Error::Parser(self.errors.clone()));
+                }
+                _ => {
+                    return Err(vec!["expected `param`".to_string().into()].into());
+                }
+            };
+            // Eat the `->`
+            param_is_expected = match self.current_token() {
+                Some(Token::ArrowR(..)) => {
+                    self.next_token();
+                    true
+                }
+                _ => false,
+            };
+        }
+        // Return the function definition
+        Ok((ident, params))
     }
 
     pub fn parse_expr(&mut self) -> Result<AST, Error> {

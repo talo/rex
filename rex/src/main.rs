@@ -2,6 +2,7 @@ use std::{env, io, path::PathBuf};
 
 use anyhow::Context as _;
 use clap::Parser as CmdLnArgsParser;
+use rex_ast::types::Type;
 use rex_engine::{error::sprint_trace_with_ident, ftable::Ftable, Context};
 use rex_lexer::Token;
 use rex_parser::Parser;
@@ -43,21 +44,44 @@ pub async fn main() -> anyhow::Result<()> {
 
     match cmd_ln_args.cmd {
         Cmd::Run { interf, input } => {
-            // Open the interface face
-
-            let _interf_content = match interf {
+            let fn_forward_decls = match interf {
                 Some(interf) => {
+                    // Open the interface face
                     let mut interf = File::open(interf).await.context("opening interface file")?;
                     let mut interf_content = String::new();
                     interf
                         .read_to_string(&mut interf_content)
                         .await
                         .context("reading interface file")?;
-                    Some(interf_content)
+
+                    // Parse forward function declarations so we can use them as stubs
+                    let mut parser = Parser::new(
+                        Token::tokenize(&interf_content).context("tokenizing interface")?,
+                    );
+
+                    let mut fn_forward_decls = vec![];
+                    loop {
+                        match parser.parse_fn_forward_decl() {
+                            Ok((fn_ident, type_vars)) => {
+                                fn_forward_decls.push((
+                                    fn_ident,
+                                    type_vars
+                                        .into_iter()
+                                        .map(|tv| rex_hmts::resolve_type_var(&tv))
+                                        .collect::<Vec<_>>(),
+                                ));
+                            }
+                            Err(_e) => {
+                                break;
+                            }
+                        }
+                    }
+                    fn_forward_decls
                 }
-                None => None,
+                None => vec![],
             };
 
+            println!("Interface:\n  {:?}", fn_forward_decls);
             // Open the input file
 
             let mut input = File::open(input).await.context("opening input file")?;
@@ -67,8 +91,6 @@ pub async fn main() -> anyhow::Result<()> {
                 .await
                 .context("reading input file")?;
 
-            // TODO: Parse the interface file
-
             // Parse and evaluate the input file
 
             let mut parser = Parser::new(Token::tokenize(&input_content).context("tokenizing")?);
@@ -77,9 +99,45 @@ pub async fn main() -> anyhow::Result<()> {
             let mut id_dispenser = parser.id_dispenser;
             let ftable = Ftable::with_intrinsics(&mut id_dispenser);
 
+            // Initialize the context with randomly generated values for
+            // function stubs in the interface
+            let mut ctx = Context::new();
             let mut scope = ftable.scope();
 
-            let ctx = Context::new();
+            for (fn_ident, fn_params) in fn_forward_decls {
+                if fn_params.len() == 0 {
+                    panic!("interface function never returns");
+                }
+                if fn_params.len() == 1 {
+                    let id = id_dispenser.next();
+                    let val = rex_hmts::gen_random_value(&mut id_dispenser, &fn_params[0]);
+                    ctx.vars.insert(id, val);
+                    scope.vars.insert(fn_ident, id);
+                    continue;
+                }
+
+                let mut arrow = Type::Arrow(
+                    Box::new(fn_params[0].clone()),
+                    Box::new(fn_params[1].clone()),
+                );
+                for i in 2..fn_params.len() {
+                    match arrow {
+                        Type::Arrow(a, b) => {
+                            arrow = Type::Arrow(
+                                a,
+                                Box::new(Type::Arrow(b, Box::new(fn_params[i].clone()))),
+                            );
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
+                let id = id_dispenser.next();
+                let val = rex_hmts::gen_random_value(&mut id_dispenser, &arrow);
+                ctx.vars.insert(id, val);
+                scope.vars.insert(fn_ident, id);
+            }
+
             let ast =
                 rex_resolver::resolve(&mut id_dispenser, &mut scope, expr).context("resolving")?;
             let result = rex_engine::eval(&ctx, &ftable, &(), ast).await;
