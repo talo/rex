@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use rex_ast::{
     ast::{Call, Ctor, Fields, IfThenElse, Lambda, LetIn, NamedFields, UnnamedFields, Var, AST},
     id::{Id, IdDispenser},
-    span::Span,
 };
+use rex_lexer::span::Span;
 
 use crate::error::Error;
 

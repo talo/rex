@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 rex-ast = { path = "../rex-ast" }
+rex-lexer = { path = "../rex-lexer" }
 thiserror = { version = "1.0" }

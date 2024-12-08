@@ -1,6 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
-use rex_ast::span::Span;
+use rex_lexer::span::Span;
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum Error {

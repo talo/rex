@@ -3,17 +3,18 @@ use std::collections::VecDeque;
 use rex_ast::{
     ast::{Call, IfThenElse, Lambda, LetIn, Var, AST},
     id::IdDispenser,
+};
+use rex_lexer::{
     span::{Position, Span, Spanned},
+    Token, Tokens,
 };
 
 use crate::{
     error::{Error, ParserErr},
-    lexer::{Token, Tokens},
     op::Operator,
 };
 
 pub mod error;
-pub mod lexer;
 pub mod op;
 
 pub struct Parser {
@@ -25,7 +26,7 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(tokens: Tokens) -> Parser {
-        Parser {
+        let mut parser = Parser {
             id_dispenser: IdDispenser::new(),
             token_cursor: 0,
             tokens: tokens
@@ -36,7 +37,9 @@ impl Parser {
                 })
                 .collect(),
             errors: Vec::new(),
-        }
+        };
+        parser.strip_comments();
+        parser
     }
 
     pub fn with_dispenser(id_dispenser: IdDispenser, tokens: Tokens) -> Parser {
@@ -64,6 +67,29 @@ impl Parser {
 
     pub fn next_token(&mut self) {
         self.token_cursor += 1;
+    }
+
+    pub fn strip_comments(&mut self) {
+        let mut cursor = 0;
+
+        while cursor < self.tokens.len() {
+            match self.tokens[cursor] {
+                Token::CommentL(..) => {
+                    self.tokens.remove(cursor);
+                    while cursor < self.tokens.len() {
+                        if let Token::CommentR(..) = self.tokens[cursor] {
+                            self.tokens.remove(cursor);
+                            break;
+                        }
+                        self.tokens.remove(cursor);
+                    }
+                }
+                _ => {
+                    cursor += 1;
+                    continue;
+                }
+            }
+        }
     }
 
     pub fn parse_expr(&mut self) -> Result<AST, Error> {
@@ -559,7 +585,7 @@ impl Parser {
         Ok(AST::Call(Call::new(
             Span::from_begin_end(span_token.begin, expr.span().end),
             self.id_dispenser.next(),
-            Var::new(span_token, id_neg, "-"),
+            Var::new(span_token, id_neg, "negate"),
             expr,
         )))
     }
@@ -955,10 +981,34 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use rex_ast::id::Id;
-
-    use crate::lexer::Token;
+    use rex_lexer::Token;
 
     use super::*;
+
+    #[test]
+    fn test_parse_comment() {
+        let mut parser = Parser::new(Token::tokenize("true {- this is a boolean -}").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        assert_eq!(expr, AST::Bool(Span::new(1, 1, 1, 4), true));
+
+        let mut parser = Parser::new(Token::tokenize("{- this is a boolean -} false").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        assert_eq!(expr, AST::Bool(Span::new(1, 25, 1, 29), false));
+
+        let mut parser = Parser::new(Token::tokenize("(3.54 {- this is a float -}, {- this is an int -} 42, false {- this is a boolean -})").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        assert_eq!(
+            expr,
+            AST::Tuple(
+                Span::new(1, 1, 1, 84),
+                vec![
+                    AST::Float(Span::new(1, 2, 1, 5), 3.54),
+                    AST::Uint(Span::new(1, 51, 1, 52), 42),
+                    AST::Bool(Span::new(1, 55, 1, 59), false),
+                ]
+            )
+        );
+    }
 
     #[test]
     fn test_parse_literals() {

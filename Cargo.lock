@@ -381,6 +381,7 @@ version = "0.1.0"
 dependencies = [
  "rex-ast",
  "rex-engine",
+ "rex-lexer",
  "rex-parser",
  "rex-resolver",
 ]
@@ -393,6 +394,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "regex",
+ "rex-lexer",
  "serde",
  "serde_json",
  "thiserror",
@@ -407,6 +409,7 @@ dependencies = [
  "async-trait",
  "futures",
  "rex-ast",
+ "rex-lexer",
  "rex-parser",
  "rex-resolver",
  "rpds",
@@ -417,11 +420,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rex-lexer"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "rex-parser"
 version = "0.1.0"
 dependencies = [
  "regex",
  "rex-ast",
+ "rex-lexer",
  "thiserror",
 ]
 
@@ -430,6 +444,7 @@ name = "rex-resolver"
 version = "0.1.0"
 dependencies = [
  "rex-ast",
+ "rex-lexer",
  "thiserror",
 ]
 
