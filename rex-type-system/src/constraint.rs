@@ -21,40 +21,13 @@ pub fn generate_constraints(
     id_dispenser: &mut IdDispenser,
 ) -> Result<(Type, Vec<Constraint>), String> {
     match expr {
-        Expr::Var(name) => {
-            match env.get(name) {
-                Some(types) => {
-                    if types.len() == 1 {
-                        // Single type case
-                        let t = &types[0];
-                        match t {
-                            Type::ForAll(_, _) => Ok((instantiate(t, id_dispenser), vec![])),
-                            _ => Ok((t.clone(), vec![])),
-                        }
-                    } else {
-                        // Multiple possible types - generate fresh type variable
-                        // and constraints that it must equal one of the possibilities
-                        let result_type = Type::Var(id_dispenser.next());
-
-                        // Each possible type must be instantiated if polymorphic
-                        let instantiated_types: Vec<Type> = types
-                            .iter()
-                            .map(|t| match t {
-                                Type::ForAll(_, _) => instantiate(t, id_dispenser),
-                                _ => t.clone(),
-                            })
-                            .collect();
-
-                        // Add constraints for all possibilities
-                        Ok((
-                            result_type.clone(),
-                            vec![Constraint::OneOf(result_type, instantiated_types)],
-                        ))
-                    }
-                }
-                None => Err(format!("Unbound variable: {}", name)),
-            }
-        }
+        Expr::Var(name) => match env.get(name) {
+            Some(t) => match t {
+                Type::ForAll(_, _) => Ok((instantiate(t, id_dispenser), vec![])),
+                _ => Ok((t.clone(), vec![])),
+            },
+            None => Err(format!("Unbound variable: {}", name)),
+        },
 
         Expr::Tuple(exprs) => {
             let mut all_constraints = Vec::new();
@@ -115,7 +88,7 @@ pub fn generate_constraints(
             let param_type = Type::Var(id_dispenser.next());
 
             let mut new_env = env.clone();
-            new_env.insert(param.clone(), vec![param_type.clone()]);
+            new_env.insert(param.clone(), param_type.clone());
 
             let (body_type, body_constraints) = generate_constraints(body, &new_env, id_dispenser)?;
 
@@ -143,7 +116,7 @@ pub fn generate_constraints(
 
             // Add generalized type to environment
             let mut new_env = env.clone();
-            new_env.insert(name.clone(), vec![gen_type]);
+            new_env.insert(name.clone(), gen_type);
 
             // Generate constraints for the body with the new environment
             generate_constraints(body, &new_env, id_dispenser)
@@ -207,10 +180,8 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
 // For generalization, we also need to know which variables are free in the environment
 fn env_free_vars(env: &TypeEnv) -> HashSet<Id> {
     let mut vars = HashSet::new();
-    for types in env.values() {
-        for ty in types {
-            vars.extend(free_vars(ty));
-        }
+    for ty in env.values() {
+        vars.extend(free_vars(ty));
     }
     vars
 }
@@ -311,7 +282,7 @@ mod tests {
         let mut env = TypeEnv::new();
 
         // Environment with β free
-        env.insert("y".to_string(), vec![Type::Var(Id(1))]);
+        env.insert("y".to_string(), Type::Var(Id(1)));
 
         // Type to generalize: α -> β
         let ty = Type::Arrow(Box::new(Type::Var(Id(0))), Box::new(Type::Var(Id(1))));
@@ -374,9 +345,9 @@ mod tests {
             Expr::Var("three".to_string()),
         ]);
 
-        env.insert("one".to_string(), vec![Type::Int]);
-        env.insert("two".to_string(), vec![Type::Int]);
-        env.insert("three".to_string(), vec![Type::Int]);
+        env.insert("one".to_string(), Type::Int);
+        env.insert("two".to_string(), Type::Int);
+        env.insert("three".to_string(), Type::Int);
 
         let (ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
 
@@ -399,7 +370,7 @@ mod tests {
             Expr::Var("true".to_string()),
         ]);
 
-        env.insert("true".to_string(), vec![Type::Bool]);
+        env.insert("true".to_string(), Type::Bool);
 
         let (_ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
 
@@ -453,16 +424,16 @@ mod tests {
         let elem_type = id_dispenser.next();
         env.insert(
             "head".to_string(),
-            vec![Type::ForAll(
+            Type::ForAll(
                 elem_type,
                 Box::new(Type::Arrow(
                     Box::new(Type::List(Box::new(Type::Var(elem_type)))),
                     Box::new(Type::Var(elem_type)),
                 )),
-            )],
+            ),
         );
-        env.insert("int_val".to_string(), vec![Type::Int]);
-        env.insert("bool_val".to_string(), vec![Type::Bool]);
+        env.insert("int_val".to_string(), Type::Int);
+        env.insert("bool_val".to_string(), Type::Bool);
 
         let (_ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
 
@@ -493,17 +464,11 @@ mod tests {
                 Box::new(Type::Var(elem_type)),
             )),
         );
-        env.insert("head".to_string(), vec![head_type]);
+        env.insert("head".to_string(), head_type);
 
         // Add example lists to environment
-        env.insert(
-            "int_list".to_string(),
-            vec![Type::List(Box::new(Type::Int))],
-        );
-        env.insert(
-            "bool_list".to_string(),
-            vec![Type::List(Box::new(Type::Bool))],
-        );
+        env.insert("int_list".to_string(), Type::List(Box::new(Type::Int)));
+        env.insert("bool_list".to_string(), Type::List(Box::new(Type::Bool)));
 
         let expr = Expr::Tuple(vec![
             Expr::App(
@@ -552,7 +517,7 @@ mod tests {
             )),
         );
 
-        env.insert("one".to_string(), vec![Type::Int]);
+        env.insert("one".to_string(), Type::Int);
 
         let (result_type, constraints) =
             generate_constraints(&expr, &env, &mut id_dispenser).unwrap();
@@ -599,8 +564,8 @@ mod tests {
         );
 
         // Set up environment
-        env.insert("int_val".to_string(), vec![Type::Int]);
-        env.insert("bool_val".to_string(), vec![Type::Bool]);
+        env.insert("int_val".to_string(), Type::Int);
+        env.insert("bool_val".to_string(), Type::Bool);
 
         let (ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
 
@@ -633,9 +598,9 @@ mod tests {
         );
 
         // Set up environment
-        env.insert("true".to_string(), vec![Type::Bool]);
-        env.insert("one".to_string(), vec![Type::Int]);
-        env.insert("two".to_string(), vec![Type::Int]);
+        env.insert("true".to_string(), Type::Bool);
+        env.insert("one".to_string(), Type::Int);
+        env.insert("two".to_string(), Type::Int);
 
         // Generate constraints
         let (result_type, constraints) =
@@ -712,18 +677,18 @@ mod tests {
         // Set up environment
         env.insert(
             "not".to_string(),
-            vec![Type::Arrow(Box::new(Type::Bool), Box::new(Type::Bool))],
+            Type::Arrow(Box::new(Type::Bool), Box::new(Type::Bool)),
         );
         env.insert(
             "inc".to_string(),
-            vec![Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))],
+            Type::Arrow(Box::new(Type::Int), Box::new(Type::Int)),
         );
         env.insert(
             "inc2".to_string(),
-            vec![Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))],
+            Type::Arrow(Box::new(Type::Int), Box::new(Type::Int)),
         );
-        env.insert("bool_val".to_string(), vec![Type::Bool]);
-        env.insert("int_val".to_string(), vec![Type::Int]);
+        env.insert("bool_val".to_string(), Type::Bool);
+        env.insert("int_val".to_string(), Type::Int);
 
         let (ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
 
@@ -779,14 +744,14 @@ mod tests {
         );
 
         // Set up environment
-        env.insert("bool_val".to_string(), vec![Type::Bool]);
-        env.insert("int_val".to_string(), vec![Type::Int]);
+        env.insert("bool_val".to_string(), Type::Bool);
+        env.insert("int_val".to_string(), Type::Int);
         env.insert(
             "plus".to_string(),
-            vec![Type::Arrow(
+            Type::Arrow(
                 Box::new(Type::Int),
                 Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))),
-            )],
+            ),
         );
 
         // This should fail with a type error
@@ -814,30 +779,13 @@ mod tests {
         let mut env = HashMap::new();
 
         let xor_type_id = id_dispenser.next();
-        env.insert("xor".to_string(), vec![Type::Var(xor_type_id)]);
-        // // Add both versions of xor
-        // types::add_overload(
-        //     &mut env,
-        //     "xor",
-        //     Type::Arrow(
-        //         Box::new(Type::Int),
-        //         Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))),
-        //     ),
-        // );
-        // types::add_overload(
-        //     &mut env,
-        //     "xor",
-        //     Type::Arrow(
-        //         Box::new(Type::Bool),
-        //         Box::new(Type::Arrow(Box::new(Type::Bool), Box::new(Type::Bool))),
-        //     ),
-        // );
+        env.insert("xor".to_string(), Type::Var(xor_type_id));
 
         // Single-type variables
-        env.insert("true".to_string(), vec![Type::Bool]);
-        env.insert("false".to_string(), vec![Type::Bool]);
-        env.insert("one".to_string(), vec![Type::Int]);
-        env.insert("two".to_string(), vec![Type::Int]);
+        env.insert("true".to_string(), Type::Bool);
+        env.insert("false".to_string(), Type::Bool);
+        env.insert("one".to_string(), Type::Int);
+        env.insert("two".to_string(), Type::Int);
 
         // Test bool version: xor true false
         let bool_expr = Expr::App(
@@ -906,7 +854,7 @@ mod tests {
         let mut env = HashMap::new();
 
         let rand_type_id = id_dispenser.next();
-        env.insert("rand".to_string(), vec![Type::Var(rand_type_id)]);
+        env.insert("rand".to_string(), Type::Var(rand_type_id));
 
         // // Add both versions of rand
         // types::add_overload(&mut env, "rand", Type::Int);
@@ -915,17 +863,17 @@ mod tests {
         // Add functions that force return type selection
         env.insert(
             "sum".to_string(),
-            vec![Type::Arrow(
+            Type::Arrow(
                 Box::new(Type::List(Box::new(Type::Int))),
                 Box::new(Type::Int),
-            )],
+            ),
         );
         env.insert(
             "any".to_string(),
-            vec![Type::Arrow(
+            Type::Arrow(
                 Box::new(Type::List(Box::new(Type::Bool))),
                 Box::new(Type::Bool),
-            )],
+            ),
         );
 
         // Test sum [rand, rand]
@@ -985,14 +933,17 @@ mod tests {
         let mut id_dispenser = IdDispenser::new();
         let mut env = HashMap::new();
 
-        // Add both versions of rand
-        types::add_overload(&mut env, "rand", Type::Int);
-        types::add_overload(&mut env, "rand", Type::Bool);
-
+        let rand_type_id = id_dispenser.next();
+        env.insert("rand".to_string(), Type::Var(rand_type_id));
         // Test: just rand by itself (should be ambiguous)
         let expr = Expr::Var("rand".to_string());
 
-        let (_ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
+        let (_ty, mut constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
+        constraints.push(Constraint::OneOf(
+            Type::Var(rand_type_id),
+            vec![Type::Int, Type::Bool],
+        ));
+
         let mut subst = HashMap::new();
 
         // This should fail because both types are possible
