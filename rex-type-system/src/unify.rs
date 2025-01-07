@@ -89,7 +89,6 @@ pub fn occurs_check(var: Id, t: &Type) -> bool {
         Type::List(elem) => occurs_check(var, elem),
         Type::Tuple(elems) => elems.iter().any(|t| occurs_check(var, t)),
         Type::Int | Type::Bool => false,
-        _ => false,
     }
 }
 
