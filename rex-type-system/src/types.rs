@@ -1,9 +1,12 @@
-pub type TypeId = u64;
+use rex_ast::id::Id;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
-    Var(TypeId),
+    Var(Id),
+    ForAll(Id, Box<Type>),
     Arrow(Box<Type>, Box<Type>),
+    List(Box<Type>),
+    Tuple(Vec<Type>),
     Int,
     Bool,
 }

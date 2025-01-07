@@ -670,8 +670,6 @@ version = "0.1.0"
 dependencies = [
  "rand",
  "rex-ast",
- "rex-engine",
- "rex-lexer",
 ]
 
 [[package]]
