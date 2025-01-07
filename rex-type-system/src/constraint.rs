@@ -9,10 +9,13 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct Constraint(Type, Type);
+pub enum Constraint {
+    Eq(Type, Type),
+    OneOf(Type, Vec<Type>),
+}
 
 // Generate constraints from an expression
-fn generate_constraints(
+pub fn generate_constraints(
     expr: &Expr,
     env: &TypeEnv,
     id_dispenser: &mut IdDispenser,
@@ -22,7 +25,7 @@ fn generate_constraints(
             match env.get(name) {
                 Some(types) => {
                     if types.len() == 1 {
-                        // Single type case - behave as before
+                        // Single type case
                         let t = &types[0];
                         match t {
                             Type::ForAll(_, _) => Ok((instantiate(t, id_dispenser), vec![])),
@@ -32,7 +35,6 @@ fn generate_constraints(
                         // Multiple possible types - generate fresh type variable
                         // and constraints that it must equal one of the possibilities
                         let result_type = Type::Var(id_dispenser.next());
-                        let mut constraints = Vec::new();
 
                         // Each possible type must be instantiated if polymorphic
                         let instantiated_types: Vec<Type> = types
@@ -44,11 +46,10 @@ fn generate_constraints(
                             .collect();
 
                         // Add constraints for all possibilities
-                        for possible_type in instantiated_types {
-                            constraints.push(Constraint(result_type.clone(), possible_type));
-                        }
-
-                        Ok((result_type, constraints))
+                        Ok((
+                            result_type.clone(),
+                            vec![Constraint::OneOf(result_type, instantiated_types)],
+                        ))
                     }
                 }
                 None => Err(format!("Unbound variable: {}", name)),
@@ -88,7 +89,7 @@ fn generate_constraints(
 
             // Add constraints that all elements must have the same type
             for ty in &types[1..] {
-                all_constraints.push(Constraint(types[0].clone(), ty.clone()));
+                all_constraints.push(Constraint::Eq(types[0].clone(), ty.clone()));
             }
 
             Ok((Type::List(Box::new(types[0].clone())), all_constraints))
@@ -103,7 +104,7 @@ fn generate_constraints(
             let expected_f_type =
                 Type::Arrow(Box::new(x_type.clone()), Box::new(result_type.clone()));
 
-            let mut constraints = vec![Constraint(f_type, expected_f_type)];
+            let mut constraints = vec![Constraint::Eq(f_type, expected_f_type)];
             constraints.append(&mut f_constraints);
             constraints.append(&mut x_constraints);
 
@@ -130,7 +131,10 @@ fn generate_constraints(
             // Solve definition constraints to get its type
             let mut def_subst = HashMap::new();
             for constraint in &def_constraints {
-                unify::unify(&constraint.0, &constraint.1, &mut def_subst)?;
+                match constraint {
+                    Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut def_subst)?,
+                    _ => panic!("Expected equality constraint"),
+                }
             }
             let solved_def_type = unify::apply_subst(&def_type, &def_subst);
 
@@ -155,9 +159,9 @@ fn generate_constraints(
 
             // Condition must be boolean
             let mut constraints = vec![
-                Constraint(cond_type, Type::Bool),
+                Constraint::Eq(cond_type, Type::Bool),
                 // Then and else branches must have the same type
-                Constraint(then_type.clone(), else_type),
+                Constraint::Eq(then_type.clone(), else_type),
             ];
 
             // Combine all constraints
@@ -379,7 +383,10 @@ mod tests {
         // Solve constraints
         let mut subst = HashMap::new();
         for constraint in constraints {
-            unify::unify(&constraint.0, &constraint.1, &mut subst)?;
+            match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                _ => panic!("Expected equality constraint"),
+            }
         }
 
         // Final type should be [Int]
@@ -400,7 +407,10 @@ mod tests {
         let mut subst = Subst::new();
         let result = constraints
             .into_iter()
-            .try_for_each(|constraint| unify::unify(&constraint.0, &constraint.1, &mut subst));
+            .try_for_each(|constraint| match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst),
+                _ => panic!("Expected equality constraint"),
+            });
         assert!(result.is_err());
 
         // Test empty list
@@ -460,7 +470,10 @@ mod tests {
         let mut subst = HashMap::new();
         let result = constraints
             .into_iter()
-            .try_for_each(|constraint| unify::unify(&constraint.0, &constraint.1, &mut subst));
+            .try_for_each(|constraint| match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst),
+                _ => panic!("Expected equality constraint"),
+            });
         assert!(result.is_err());
 
         Ok(())
@@ -508,7 +521,10 @@ mod tests {
         // Solve constraints
         let mut subst = HashMap::new();
         for constraint in &constraints {
-            unify::unify(&constraint.0, &constraint.1, &mut subst)?;
+            match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                _ => panic!("Expected equality constraint"),
+            }
         }
 
         let final_type = unify::apply_subst(&ty, &subst);
@@ -543,8 +559,11 @@ mod tests {
 
         // Solve constraints
         let mut subst = HashMap::new();
-        for Constraint(t1, t2) in constraints {
-            assert!(unify::unify(&t1, &t2, &mut subst).is_ok());
+        for constraint in constraints {
+            match constraint {
+                Constraint::Eq(t1, t2) => assert!(unify::unify_eq(&t1, &t2, &mut subst).is_ok()),
+                _ => panic!("Expected equality constraint"),
+            }
         }
 
         // Result should be Int
@@ -587,8 +606,11 @@ mod tests {
 
         // Solve constraints
         let mut subst = Subst::new();
-        for Constraint(t1, t2) in constraints {
-            unify::unify(&t1, &t2, &mut subst)?;
+        for constraint in constraints {
+            match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                _ => panic!("Expected equality constraint"),
+            }
         }
 
         // The final type should be (Int, Bool)
@@ -621,8 +643,11 @@ mod tests {
 
         // Solve constraints
         let mut subst = HashMap::new();
-        for Constraint(t1, t2) in constraints {
-            assert!(unify::unify(&t1, &t2, &mut subst).is_ok());
+        for constraint in constraints {
+            match constraint {
+                Constraint::Eq(t1, t2) => assert!(unify::unify_eq(&t1, &t2, &mut subst).is_ok()),
+                _ => panic!("Expected equality constraint"),
+            }
         }
 
         // Result should be Int
@@ -705,7 +730,10 @@ mod tests {
         // Solve constraints
         let mut subst = Subst::new();
         for constraint in constraints {
-            unify::unify(&constraint.0, &constraint.1, &mut subst)?;
+            match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                _ => panic!("Expected equality constraint"),
+            }
         }
 
         // The final type should be (Bool, Int)
@@ -766,7 +794,10 @@ mod tests {
             generate_constraints(&expr, &env, &mut id_dispenser).and_then(|(ty, constraints)| {
                 let mut subst = HashMap::new();
                 for constraint in constraints {
-                    unify::unify(&constraint.0, &constraint.1, &mut subst)?;
+                    match constraint {
+                        Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                        _ => panic!("Expected equality constraint"),
+                    }
                 }
                 Ok(unify::apply_subst(&ty, &subst))
             });
@@ -816,9 +847,15 @@ mod tests {
         );
 
         let (ty, constraints) = generate_constraints(&bool_expr, &env, &mut id_dispenser)?;
+
         let mut subst = HashMap::new();
         for constraint in constraints {
-            unify::unify(&constraint.0, &constraint.1, &mut subst)?;
+            match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                Constraint::OneOf(t1, t2_possibilties) => {
+                    unify::unify_one_of(&t1, &t2_possibilties, &mut subst)?
+                }
+            }
         }
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Type::Bool);
@@ -835,7 +872,12 @@ mod tests {
         let (ty, constraints) = generate_constraints(&int_expr, &env, &mut id_dispenser)?;
         let mut subst = HashMap::new();
         for constraint in constraints {
-            unify::unify(&constraint.0, &constraint.1, &mut subst)?;
+            match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                Constraint::OneOf(t1, t2_possibilties) => {
+                    unify::unify_one_of(&t1, &t2_possibilties, &mut subst)?
+                }
+            }
         }
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Type::Int);
@@ -880,7 +922,12 @@ mod tests {
         let (ty, constraints) = generate_constraints(&sum_expr, &env, &mut id_dispenser)?;
         let mut subst = HashMap::new();
         for constraint in constraints {
-            unify::unify(&constraint.0, &constraint.1, &mut subst)?;
+            match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                Constraint::OneOf(t1, t2_possibilties) => {
+                    unify::unify_one_of(&t1, &t2_possibilties, &mut subst)?
+                }
+            }
         }
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Type::Int);
@@ -897,7 +944,12 @@ mod tests {
         let (ty, constraints) = generate_constraints(&any_expr, &env, &mut id_dispenser)?;
         let mut subst = HashMap::new();
         for constraint in constraints {
-            unify::unify(&constraint.0, &constraint.1, &mut subst)?;
+            match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                Constraint::OneOf(t1, t2_possibilties) => {
+                    unify::unify_one_of(&t1, &t2_possibilties, &mut subst)?
+                }
+            }
         }
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Type::Bool);
@@ -923,7 +975,12 @@ mod tests {
         // This should fail because both types are possible
         let result = constraints
             .into_iter()
-            .try_for_each(|constraint| unify::unify(&constraint.0, &constraint.1, &mut subst));
+            .try_for_each(|constraint| match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst),
+                Constraint::OneOf(t1, t2_possibilties) => {
+                    unify::unify_one_of(&t1, &t2_possibilties, &mut subst)
+                }
+            });
         assert!(result.is_err());
 
         Ok(())

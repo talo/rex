@@ -6,7 +6,7 @@ use crate::types::Type;
 
 pub type Subst = HashMap<Id, Type>;
 
-pub fn unify(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
+pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
     let t2 = apply_subst(t2, subst);
@@ -23,19 +23,19 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
             }
 
             for (t1, t2) in ts1.iter().zip(ts2.iter()) {
-                unify(t1, t2, subst)?;
+                unify_eq(t1, t2, subst)?;
             }
 
             Ok(())
         }
 
         // Lists
-        (Type::List(t1), Type::List(t2)) => unify(&t1, &t2, subst),
+        (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, subst),
 
         // For function types, unify arguments and results
         (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
-            unify(&a1, &a2, subst)?;
-            unify(&b1, &b2, subst)
+            unify_eq(&a1, &a2, subst)?;
+            unify_eq(&b1, &b2, subst)
         }
 
         // Type variable case requires occurs check
@@ -50,6 +50,77 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
 
         // Everything else fails
         (t1, t2) => Err(format!("Cannot unify {:?} with {:?}", t1, t2)),
+    }
+}
+
+pub fn unify_one_of(
+    t1: &Type,
+    t2_possibilities: &Vec<Type>,
+    subst: &mut Subst,
+) -> Result<(), String> {
+    // First apply any existing substitutions
+    let t1 = apply_subst(t1, subst);
+    let t2_unifications = t2_possibilities
+        .iter()
+        .map(|t2| {
+            let t2 = apply_subst(t2, subst);
+
+            match (t1.clone(), t2) {
+                // Base types must match exactly
+                (Type::Int, Type::Int) => Ok(()),
+                (Type::Bool, Type::Bool) => Ok(()),
+
+                // Tuples
+                (Type::Tuple(ts1), Type::Tuple(ts2)) => {
+                    if ts1.len() != ts2.len() {
+                        return Err("Tuple lengths do not match".to_string());
+                    }
+
+                    for (t1, t2) in ts1.iter().zip(ts2.iter()) {
+                        unify_eq(t1, t2, subst)?;
+                    }
+
+                    Ok(())
+                }
+
+                // Lists
+                (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, subst),
+
+                // For function types, unify arguments and results
+                (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
+                    unify_eq(&a1, &a2, subst)?;
+                    unify_eq(&b1, &b2, subst)
+                }
+
+                // Type variable case requires occurs check
+                (Type::Var(v), t) | (t, Type::Var(v)) => {
+                    if occurs_check(v, &t) {
+                        Err("Occurs check failed".to_string())
+                    } else {
+                        subst.insert(v, t);
+                        Ok(())
+                    }
+                }
+
+                // Everything else fails
+                (t1, t2) => Err(format!("Cannot unify {:?} with {:?}", t1, t2)),
+            }
+        })
+        .filter(|r| r.is_ok())
+        .collect::<Vec<_>>();
+
+    if t2_unifications.len() == 1 {
+        Ok(())
+    } else if t2_unifications.len() == 0 {
+        Err(format!(
+            "Cannot unify {:?} with incompatible candidates {:?}",
+            t1, t2_possibilities
+        ))
+    } else {
+        Err(format!(
+            "Cannot unify {:?} with ambiguous candidates {:?}",
+            t1, t2_possibilities
+        ))
     }
 }
 
@@ -106,13 +177,13 @@ mod tests {
         // Test case 1: α = Int
         let t1 = Type::Var(Id(0));
         let t2 = Type::Int;
-        assert!(unify(&t1, &t2, &mut subst).is_ok());
+        assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
         assert_eq!(apply_subst(&Type::Var(Id(0)), &subst), Type::Int);
 
         // Test case 2: (α -> β) = (Int -> Bool)
         let t1 = Type::Arrow(Box::new(Type::Var(Id(0))), Box::new(Type::Var(Id(1))));
         let t2 = Type::Arrow(Box::new(Type::Int), Box::new(Type::Bool));
-        assert!(unify(&t1, &t2, &mut subst).is_ok());
+        assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
         assert_eq!(apply_subst(&Type::Var(Id(0)), &subst), Type::Int);
         assert_eq!(apply_subst(&Type::Var(Id(1)), &subst), Type::Bool);
     }
@@ -124,7 +195,7 @@ mod tests {
         // Unify α = β
         let t1 = Type::Var(Id(0));
         let t2 = Type::Var(Id(1));
-        assert!(unify(&t1, &t2, &mut subst).is_ok());
+        assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
 
         // Now α should be mapped to β
         assert_eq!(apply_subst(&Type::Var(Id(0)), &subst), Type::Var(Id(1)));
@@ -147,7 +218,7 @@ mod tests {
         );
 
         // Unify f with g directly
-        assert!(unify(&f_type, &g_type, &mut subst).is_ok());
+        assert!(unify_eq(&f_type, &g_type, &mut subst).is_ok());
 
         // After unification:
         let final_f = apply_subst(&f_type, &subst);
@@ -182,10 +253,10 @@ mod tests {
         // Now unify g's output with f's input
         let g_output = Type::Var(Id(2)); // γ
         let f_input = Type::Var(Id(0)); // α
-        assert!(unify(&g_output, &f_input, &mut subst).is_ok());
+        assert!(unify_eq(&g_output, &f_input, &mut subst).is_ok());
 
         // Let's make g take an Int
-        assert!(unify(&Type::Var(Id(2)), &Type::Int, &mut subst).is_ok());
+        assert!(unify_eq(&Type::Var(Id(2)), &Type::Int, &mut subst).is_ok());
 
         // After unification:
         let final_g = apply_subst(&g_type, &subst);
@@ -224,7 +295,7 @@ mod tests {
         );
 
         // Unify f with g
-        assert!(unify(&f_type, &g_type, &mut subst).is_ok());
+        assert!(unify_eq(&f_type, &g_type, &mut subst).is_ok());
 
         // After unification:
         let final_f = apply_subst(&f_type, &subst);
