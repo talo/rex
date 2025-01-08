@@ -162,6 +162,13 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
         }
         Type::Option(t) => free_vars(t),
         Type::List(t) => free_vars(t),
+        Type::Dict(kts) => {
+            let mut vars = HashSet::new();
+            for t in kts.values() {
+                vars.extend(free_vars(t));
+            }
+            vars
+        }
         Type::Tuple(ts) => {
             let mut vars = HashSet::new();
             for t in ts {
@@ -229,6 +236,11 @@ fn instantiate(ty: &Type, id_dispenser: &mut IdDispenser) -> Type {
             ),
             Type::Option(t) => Type::Option(Box::new(inst_helper(t, subst, id_dispenser))),
             Type::List(t) => Type::List(Box::new(inst_helper(t, subst, id_dispenser))),
+            Type::Dict(kts) => Type::Dict(
+                kts.iter()
+                    .map(|(k, t)| (k.clone(), inst_helper(t, subst, id_dispenser)))
+                    .collect(),
+            ),
             Type::Tuple(ts) => Type::Tuple(
                 ts.iter()
                     .map(|t| inst_helper(t, subst, id_dispenser))

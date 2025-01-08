@@ -118,6 +118,11 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
         ),
         Type::Option(t) => Type::Option(Box::new(apply_subst(t, subst))),
         Type::List(t) => Type::List(Box::new(apply_subst(t, subst))),
+        Type::Dict(kts) => Type::Dict(
+            kts.iter()
+                .map(|(k, t)| (k.clone(), apply_subst(t, subst)))
+                .collect(),
+        ),
         Type::Tuple(ts) => Type::Tuple(ts.iter().map(|t| apply_subst(t, subst)).collect()),
         Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => t.clone(),
     }
@@ -139,6 +144,7 @@ pub fn occurs_check(var: Id, t: &Type) -> bool {
         Type::Result(t, e) => occurs_check(var, t) || occurs_check(var, e),
         Type::Option(t) => occurs_check(var, t),
         Type::List(t) => occurs_check(var, t),
+        Type::Dict(kts) => kts.values().any(|t| occurs_check(var, t)),
         Type::Tuple(ts) => ts.iter().any(|t| occurs_check(var, t)),
         Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => false,
     }

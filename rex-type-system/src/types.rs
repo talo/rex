@@ -14,6 +14,7 @@ pub enum Type {
     Result(Box<Type>, Box<Type>),
     Option(Box<Type>),
     List(Box<Type>),
+    Dict(HashMap<String, Type>),
     Tuple(Vec<Type>),
 
     Bool,
