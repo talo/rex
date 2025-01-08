@@ -7,4 +7,10 @@ pub enum Expr {
     Ite(Box<Expr>, Box<Expr>, Box<Expr>), // if e1 then e2 else e3
     Tuple(Vec<Expr>),                     // Tuple (e1, e2, e3)
     List(Vec<Expr>),                      // List [e1, e2, e3]
+    Dict(Vec<(String, Expr)>),            // Dictionary {k1 = v1, k2 = v2}
+    Bool(bool), 
+    Uint(u64), 
+    Int(i64), 
+    Float(f64), 
+    String(String), 
 }

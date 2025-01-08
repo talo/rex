@@ -30,6 +30,18 @@ pub fn generate_constraints(
             None => Err(format!("Unbound variable: {}", name)),
         },
 
+        Expr::Dict(exprs) => {
+            let mut types = Vec::new();
+
+            // Generate constraints for each expression in the tuple
+            for (_key, expr) in exprs {
+                let ty = generate_constraints(expr, env, constraints, id_dispenser)?;
+                types.push(ty);
+            }
+
+            Ok(Type::Tuple(types))
+        }
+
         Expr::Tuple(exprs) => {
             let mut types = Vec::new();
 
@@ -134,6 +146,12 @@ pub fn generate_constraints(
 
             Ok(then_type)
         }
+
+        Expr::Bool(_) => Ok(Type::Bool),
+        Expr::Uint(_) => Ok(Type::Uint),
+        Expr::Int(_) => Ok(Type::Int),
+        Expr::Float(_) => Ok(Type::Float),
+        Expr::String(_) => Ok(Type::String),
     }
 }
 
