@@ -145,25 +145,31 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
             set.insert(*id);
             set
         }
-        Type::Arrow(a, b) => {
-            let mut set = free_vars(a);
-            set.extend(free_vars(b));
-            set
-        }
-        Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => HashSet::new(),
-        Type::Tuple(types) => {
-            let mut vars = HashSet::new();
-            for ty in types {
-                vars.extend(free_vars(ty));
-            }
-            vars
-        }
-        Type::List(ty) => free_vars(ty),
         Type::ForAll(id, ty) => {
             let mut set = free_vars(ty);
             set.remove(id);
             set
         }
+        Type::Arrow(a, b) => {
+            let mut set = free_vars(a);
+            set.extend(free_vars(b));
+            set
+        }
+        Type::Result(t, e) => {
+            let mut set = free_vars(t);
+            set.extend(free_vars(e));
+            set
+        }
+        Type::Option(t) => free_vars(t),
+        Type::List(t) => free_vars(t),
+        Type::Tuple(ts) => {
+            let mut vars = HashSet::new();
+            for t in ts {
+                vars.extend(free_vars(t));
+            }
+            vars
+        }
+        Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => HashSet::new(),
     }
 }
 
@@ -213,18 +219,18 @@ fn instantiate(ty: &Type, id_dispenser: &mut IdDispenser) -> Type {
                 Some(t) => t.clone(),
                 None => Type::Var(*id),
             },
-            Type::Arrow(arg, ret) => {
-                let new_arg = inst_helper(arg, subst, id_dispenser);
-                let new_ret = inst_helper(ret, subst, id_dispenser);
-                Type::Arrow(Box::new(new_arg), Box::new(new_ret))
-            }
-            Type::List(elem) => {
-                let new_elem = inst_helper(elem, subst, id_dispenser);
-                Type::List(Box::new(new_elem))
-            }
-            Type::Tuple(elems) => Type::Tuple(
-                elems
-                    .iter()
+            Type::Arrow(a, b) => Type::Arrow(
+                Box::new(inst_helper(a, subst, id_dispenser)),
+                Box::new(inst_helper(b, subst, id_dispenser)),
+            ),
+            Type::Result(t, e) => Type::Result(
+                Box::new(inst_helper(t, subst, id_dispenser)),
+                Box::new(inst_helper(e, subst, id_dispenser)),
+            ),
+            Type::Option(t) => Type::Option(Box::new(inst_helper(t, subst, id_dispenser))),
+            Type::List(t) => Type::List(Box::new(inst_helper(t, subst, id_dispenser))),
+            Type::Tuple(ts) => Type::Tuple(
+                ts.iter()
                     .map(|t| inst_helper(t, subst, id_dispenser))
                     .collect(),
             ),

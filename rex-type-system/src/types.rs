@@ -11,6 +11,8 @@ pub enum Type {
     ForAll(Id, Box<Type>),
 
     Arrow(Box<Type>, Box<Type>),
+    Result(Box<Type>, Box<Type>),
+    Option(Box<Type>),
     List(Box<Type>),
     Tuple(Vec<Type>),
 
