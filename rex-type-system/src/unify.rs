@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rex_ast::id::Id;
 
-use crate::types::Type;
+use crate::types::{ADTVariant, Type, ADT};
 
 pub type Subst = HashMap<Id, Type>;
 
@@ -108,6 +108,18 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
             }
         }
         Type::ForAll(id, ty) => Type::ForAll(*id, Box::new(apply_subst(ty, subst))),
+
+        Type::ADT(adt) => Type::ADT(ADT {
+            name: adt.name.clone(),
+            variants: adt
+                .variants
+                .iter()
+                .map(|v| ADTVariant {
+                    name: v.name.clone(),
+                    t: v.t.as_ref().map(|t| Box::new(apply_subst(t, subst))),
+                })
+                .collect(),
+        }),
         Type::Arrow(a, b) => Type::Arrow(
             Box::new(apply_subst(a, subst)),
             Box::new(apply_subst(b, subst)),
@@ -124,6 +136,7 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
                 .collect(),
         ),
         Type::Tuple(ts) => Type::Tuple(ts.iter().map(|t| apply_subst(t, subst)).collect()),
+
         Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => t.clone(),
     }
 }
@@ -140,12 +153,18 @@ pub fn occurs_check(var: Id, t: &Type) -> bool {
                 occurs_check(var, ty)
             }
         }
+
+        Type::ADT(adt) => adt.variants.iter().any(|v| match &v.t {
+            Some(t) => occurs_check(var, t),
+            None => false,
+        }),
         Type::Arrow(a, b) => occurs_check(var, a) || occurs_check(var, b),
         Type::Result(t, e) => occurs_check(var, t) || occurs_check(var, e),
         Type::Option(t) => occurs_check(var, t),
         Type::List(t) => occurs_check(var, t),
         Type::Dict(kts) => kts.values().any(|t| occurs_check(var, t)),
         Type::Tuple(ts) => ts.iter().any(|t| occurs_check(var, t)),
+
         Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => false,
     }
 }

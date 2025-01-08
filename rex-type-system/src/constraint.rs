@@ -4,7 +4,7 @@ use rex_ast::id::{Id, IdDispenser};
 
 use crate::{
     expr::Expr,
-    types::{Type, TypeEnv},
+    types::{ADTVariant, Type, TypeEnv, ADT},
     unify,
 };
 
@@ -150,6 +150,16 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
             set.remove(id);
             set
         }
+
+        Type::ADT(adt) => {
+            let mut set = HashSet::new();
+            for variant in &adt.variants {
+                if let Some(t) = &variant.t {
+                    set.extend(free_vars(t));
+                }
+            }
+            set
+        }
         Type::Arrow(a, b) => {
             let mut set = free_vars(a);
             set.extend(free_vars(b));
@@ -176,6 +186,7 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
             }
             vars
         }
+
         Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => HashSet::new(),
     }
 }
@@ -216,16 +227,30 @@ fn instantiate(ty: &Type, id_dispenser: &mut IdDispenser) -> Type {
         id_dispenser: &mut IdDispenser,
     ) -> Type {
         let result = match ty {
+            Type::Var(id) => match subst.get(id) {
+                Some(t) => t.clone(),
+                None => Type::Var(*id),
+            },
             Type::ForAll(id, ty) => {
                 // Create fresh type variable
                 let fresh_id = id_dispenser.next();
                 subst.insert(*id, Type::Var(fresh_id));
                 inst_helper(ty, subst, id_dispenser)
             }
-            Type::Var(id) => match subst.get(id) {
-                Some(t) => t.clone(),
-                None => Type::Var(*id),
-            },
+
+            Type::ADT(adt) => Type::ADT(ADT {
+                name: adt.name.clone(),
+                variants: adt
+                    .variants
+                    .iter()
+                    .map(|v| ADTVariant {
+                        name: v.name.clone(),
+                        t: v.t
+                            .as_ref()
+                            .map(|t| Box::new(inst_helper(t, subst, id_dispenser))),
+                    })
+                    .collect(),
+            }),
             Type::Arrow(a, b) => Type::Arrow(
                 Box::new(inst_helper(a, subst, id_dispenser)),
                 Box::new(inst_helper(b, subst, id_dispenser)),
@@ -246,6 +271,7 @@ fn instantiate(ty: &Type, id_dispenser: &mut IdDispenser) -> Type {
                     .map(|t| inst_helper(t, subst, id_dispenser))
                     .collect(),
             ),
+
             Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => ty.clone(),
         };
         result
