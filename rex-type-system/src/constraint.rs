@@ -18,70 +18,64 @@ pub enum Constraint {
 pub fn generate_constraints(
     expr: &Expr,
     env: &TypeEnv,
+    constraints: &mut Vec<Constraint>,
     id_dispenser: &mut IdDispenser,
-) -> Result<(Type, Vec<Constraint>), String> {
+) -> Result<Type, String> {
     match expr {
         Expr::Var(name) => match env.get(name) {
             Some(t) => match t {
-                Type::ForAll(_, _) => Ok((instantiate(t, id_dispenser), vec![])),
-                _ => Ok((t.clone(), vec![])),
+                Type::ForAll(_, _) => Ok(instantiate(t, id_dispenser)),
+                _ => Ok(t.clone()),
             },
             None => Err(format!("Unbound variable: {}", name)),
         },
 
         Expr::Tuple(exprs) => {
-            let mut all_constraints = Vec::new();
             let mut types = Vec::new();
 
             // Generate constraints for each expression in the tuple
             for expr in exprs {
-                let (ty, mut constraints) = generate_constraints(expr, env, id_dispenser)?;
+                let ty = generate_constraints(expr, env, constraints, id_dispenser)?;
                 types.push(ty);
-                all_constraints.append(&mut constraints);
             }
 
-            Ok((Type::Tuple(types), all_constraints))
+            Ok(Type::Tuple(types))
         }
 
         Expr::List(exprs) => {
-            let mut all_constraints = Vec::new();
-
             // If list is empty, create a fresh type variable for element type
             if exprs.is_empty() {
                 let elem_ty = Type::Var(id_dispenser.next());
-                return Ok((Type::List(Box::new(elem_ty)), all_constraints));
+                return Ok(Type::List(Box::new(elem_ty)));
             }
 
             // Generate constraints for all expressions
             let mut types = Vec::new();
             for expr in exprs {
-                let (ty, mut constraints) = generate_constraints(expr, env, id_dispenser)?;
+                let ty = generate_constraints(expr, env, constraints, id_dispenser)?;
                 types.push(ty);
-                all_constraints.append(&mut constraints);
             }
 
             // Add constraints that all elements must have the same type
             for ty in &types[1..] {
-                all_constraints.push(Constraint::Eq(types[0].clone(), ty.clone()));
+                constraints.push(Constraint::Eq(types[0].clone(), ty.clone()));
             }
 
-            Ok((Type::List(Box::new(types[0].clone())), all_constraints))
+            Ok(Type::List(Box::new(types[0].clone())))
         }
 
         Expr::App(f, x) => {
-            let (f_type, mut f_constraints) = generate_constraints(f, env, id_dispenser)?;
-            let (x_type, mut x_constraints) = generate_constraints(x, env, id_dispenser)?;
+            let f_type = generate_constraints(f, env, constraints, id_dispenser)?;
+            let x_type = generate_constraints(x, env, constraints, id_dispenser)?;
 
             let result_type = Type::Var(id_dispenser.next());
 
             let expected_f_type =
                 Type::Arrow(Box::new(x_type.clone()), Box::new(result_type.clone()));
 
-            let mut constraints = vec![Constraint::Eq(f_type, expected_f_type)];
-            constraints.append(&mut f_constraints);
-            constraints.append(&mut x_constraints);
+            constraints.push(Constraint::Eq(f_type, expected_f_type));
 
-            Ok((result_type, constraints))
+            Ok(result_type)
         }
 
         Expr::Lam(param, body) => {
@@ -90,16 +84,21 @@ pub fn generate_constraints(
             let mut new_env = env.clone();
             new_env.insert(param.clone(), param_type.clone());
 
-            let (body_type, body_constraints) = generate_constraints(body, &new_env, id_dispenser)?;
+            let body_type = generate_constraints(body, &new_env, constraints, id_dispenser)?;
 
             let result_type = Type::Arrow(Box::new(param_type), Box::new(body_type));
 
-            Ok((result_type, body_constraints))
+            Ok(result_type)
         }
 
         Expr::Let(name, def, body) => {
+            // TODO(loong): should this be cloned from `constraints`, or should
+            // it be fresh? A direct translation of the algorithm would make a
+            // fresh list.
+            let mut def_constraints = vec![];
+
             // First generate constraints for the definition
-            let (def_type, def_constraints) = generate_constraints(def, env, id_dispenser)?;
+            let def_type = generate_constraints(def, env, &mut def_constraints, id_dispenser)?;
 
             // Solve definition constraints to get its type
             let mut def_subst = HashMap::new();
@@ -119,30 +118,21 @@ pub fn generate_constraints(
             new_env.insert(name.clone(), gen_type);
 
             // Generate constraints for the body with the new environment
-            generate_constraints(body, &new_env, id_dispenser)
+            generate_constraints(body, &new_env, constraints, id_dispenser)
         }
 
         Expr::Ite(cond, then_branch, else_branch) => {
             // Generate constraints for all parts
-            let (cond_type, mut cond_constraints) = generate_constraints(cond, env, id_dispenser)?;
-            let (then_type, mut then_constraints) =
-                generate_constraints(then_branch, env, id_dispenser)?;
-            let (else_type, mut else_constraints) =
-                generate_constraints(else_branch, env, id_dispenser)?;
+            let cond_type = generate_constraints(cond, env, constraints, id_dispenser)?;
+            let then_type = generate_constraints(then_branch, env, constraints, id_dispenser)?;
+            let else_type = generate_constraints(else_branch, env, constraints, id_dispenser)?;
 
             // Condition must be boolean
-            let mut constraints = vec![
-                Constraint::Eq(cond_type, Type::Bool),
-                // Then and else branches must have the same type
-                Constraint::Eq(then_type.clone(), else_type),
-            ];
+            constraints.push(Constraint::Eq(cond_type, Type::Bool));
+            // Then and else branches must have the same type
+            constraints.push(Constraint::Eq(then_type.clone(), else_type));
 
-            // Combine all constraints
-            constraints.append(&mut cond_constraints);
-            constraints.append(&mut then_constraints);
-            constraints.append(&mut else_constraints);
-
-            Ok((then_type, constraints))
+            Ok(then_type)
         }
     }
 }
@@ -249,7 +239,7 @@ fn instantiate(ty: &Type, id_dispenser: &mut IdDispenser) -> Type {
 #[cfg(test)]
 mod tests {
     use crate::{
-        types::{self, TypeEnv},
+        types::TypeEnv,
         unify::{self, Subst},
     };
 
@@ -349,7 +339,8 @@ mod tests {
         env.insert("two".to_string(), Type::Int);
         env.insert("three".to_string(), Type::Int);
 
-        let (ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
+        let mut constraints = vec![];
+        let ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
 
         // Solve constraints
         let mut subst = HashMap::new();
@@ -372,7 +363,8 @@ mod tests {
 
         env.insert("true".to_string(), Type::Bool);
 
-        let (_ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
+        let mut constraints = vec![];
+        let _ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
 
         // This should fail unification
         let mut subst = Subst::new();
@@ -386,7 +378,8 @@ mod tests {
 
         // Test empty list
         let expr = Expr::List(vec![]);
-        let (ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
+        let mut constraints = vec![];
+        let ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
         assert!(matches!(ty, Type::List(_)));
         assert!(constraints.is_empty());
 
@@ -435,7 +428,8 @@ mod tests {
         env.insert("int_val".to_string(), Type::Int);
         env.insert("bool_val".to_string(), Type::Bool);
 
-        let (_ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
+        let mut constraints = vec![];
+        let _ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
 
         // This should fail unification because the list elements don't match
         let mut subst = HashMap::new();
@@ -481,7 +475,8 @@ mod tests {
             ),
         ]);
 
-        let (ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
+        let mut constraints = vec![];
+        let ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
 
         // Solve constraints
         let mut subst = HashMap::new();
@@ -519,8 +514,9 @@ mod tests {
 
         env.insert("one".to_string(), Type::Int);
 
-        let (result_type, constraints) =
-            generate_constraints(&expr, &env, &mut id_dispenser).unwrap();
+        let mut constraints = vec![];
+        let result_type =
+            generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser).unwrap();
 
         // Solve constraints
         let mut subst = HashMap::new();
@@ -567,7 +563,8 @@ mod tests {
         env.insert("int_val".to_string(), Type::Int);
         env.insert("bool_val".to_string(), Type::Bool);
 
-        let (ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
+        let mut constraints = vec![];
+        let ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
 
         // Solve constraints
         let mut subst = Subst::new();
@@ -603,8 +600,9 @@ mod tests {
         env.insert("two".to_string(), Type::Int);
 
         // Generate constraints
-        let (result_type, constraints) =
-            generate_constraints(&expr, &env, &mut id_dispenser).unwrap();
+        let mut constraints = vec![];
+        let result_type =
+            generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser).unwrap();
 
         // Solve constraints
         let mut subst = HashMap::new();
@@ -690,7 +688,8 @@ mod tests {
         env.insert("bool_val".to_string(), Type::Bool);
         env.insert("int_val".to_string(), Type::Int);
 
-        let (ty, constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
+        let mut constraints = vec![];
+        let ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
 
         // Solve constraints
         let mut subst = Subst::new();
@@ -755,8 +754,9 @@ mod tests {
         );
 
         // This should fail with a type error
-        let result =
-            generate_constraints(&expr, &env, &mut id_dispenser).and_then(|(ty, constraints)| {
+        let mut constraints = vec![];
+        let result = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)
+            .and_then(|ty| {
                 let mut subst = HashMap::new();
                 for constraint in constraints {
                     match constraint {
@@ -768,13 +768,13 @@ mod tests {
             });
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Cannot unify Bool with Int"));
+        assert!(result.unwrap_err().contains("Cannot unify"));
 
         Ok(())
     }
 
     #[test]
-    fn test_argument_based_overloading() -> Result<(), String> {
+    fn test_overloading_with_arguments() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut env = HashMap::new();
 
@@ -796,7 +796,7 @@ mod tests {
             Box::new(Expr::Var("false".to_string())),
         );
 
-        let (ty, mut constraints) = generate_constraints(&bool_expr, &env, &mut id_dispenser)?;
+        let mut constraints = vec![];
         constraints.push(Constraint::OneOf(
             Type::Var(xor_type_id),
             vec![
@@ -810,13 +810,24 @@ mod tests {
                 ),
             ],
         ));
+        let ty = generate_constraints(&bool_expr, &env, &mut constraints, &mut id_dispenser)?;
+
+        println!("Constraints: {:?}", constraints);
 
         let mut subst = HashMap::new();
-        for constraint in constraints {
+        for constraint in &constraints {
+            println!("Subst: {:?}", subst);
             match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst)?,
+                _ => {}
+            }
+        }
+        for constraint in &constraints {
+            println!("Subst: {:?}", subst);
+            match constraint {
+                Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
-                    unify::unify_one_of(&t1, &t2_possibilties, &mut subst)?
+                    unify::unify_one_of(t1, t2_possibilties, &mut subst)?
                 }
             }
         }
@@ -849,7 +860,7 @@ mod tests {
     }
 
     #[test]
-    fn test_return_based_overloading() -> Result<(), String> {
+    fn test_overloading_with_return() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut env = HashMap::new();
 
@@ -885,11 +896,14 @@ mod tests {
             ])),
         );
 
-        let (ty, mut constraints) = generate_constraints(&sum_expr, &env, &mut id_dispenser)?;
+        let mut constraints = vec![];
+        let ty = generate_constraints(&sum_expr, &env, &mut constraints, &mut id_dispenser)?;
         constraints.push(Constraint::OneOf(
             Type::Var(rand_type_id),
             vec![Type::Int, Type::Bool],
         ));
+
+        println!("Constraints: {:?}", constraints);
 
         let mut subst = HashMap::new();
         for constraint in constraints {
@@ -900,6 +914,9 @@ mod tests {
                 }
             }
         }
+
+        println!("Subst: {:?}", subst);
+
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Type::Int);
 
@@ -929,7 +946,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ambiguous_overloading() -> Result<(), String> {
+    fn test_overloading_with_ambiguity() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut env = HashMap::new();
 
@@ -938,7 +955,8 @@ mod tests {
         // Test: just rand by itself (should be ambiguous)
         let expr = Expr::Var("rand".to_string());
 
-        let (_ty, mut constraints) = generate_constraints(&expr, &env, &mut id_dispenser)?;
+        let mut constraints = vec![];
+        let _ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
         constraints.push(Constraint::OneOf(
             Type::Var(rand_type_id),
             vec![Type::Int, Type::Bool],

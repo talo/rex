@@ -39,6 +39,14 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
         }
 
         // Type variable case requires occurs check
+        (Type::Var(v1), Type::Var(v2)) => {
+            if v1 != v2 {
+                subst.insert(v1, Type::Var(v2));
+            }
+            Ok(())
+        }
+
+        // Type variable case requires occurs check
         (Type::Var(v), t) | (t, Type::Var(v)) => {
             if occurs_check(v, &t) {
                 Err("Occurs check failed".to_string())
@@ -60,67 +68,33 @@ pub fn unify_one_of(
 ) -> Result<(), String> {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
-    let t2_unifications = t2_possibilities
-        .iter()
-        .map(|t2| {
-            let t2 = apply_subst(t2, subst);
 
-            match (t1.clone(), t2) {
-                // Base types must match exactly
-                (Type::Int, Type::Int) => Ok(()),
-                (Type::Bool, Type::Bool) => Ok(()),
+    let mut successes = Vec::new();
 
-                // Tuples
-                (Type::Tuple(ts1), Type::Tuple(ts2)) => {
-                    if ts1.len() != ts2.len() {
-                        return Err("Tuple lengths do not match".to_string());
-                    }
+    // Try unifying with each possibility
+    for t2 in t2_possibilities {
+        let t2 = apply_subst(t2, subst);
+        let mut test_subst = subst.clone();
 
-                    for (t1, t2) in ts1.iter().zip(ts2.iter()) {
-                        unify_eq(t1, t2, subst)?;
-                    }
+        if unify_eq(&t1, &t2, &mut test_subst).is_ok() {
+            successes.push((t2, test_subst));
+        }
+    }
 
-                    Ok(())
-                }
-
-                // Lists
-                (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, subst),
-
-                // For function types, unify arguments and results
-                (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
-                    unify_eq(&a1, &a2, subst)?;
-                    unify_eq(&b1, &b2, subst)
-                }
-
-                // Type variable case requires occurs check
-                (Type::Var(v), t) | (t, Type::Var(v)) => {
-                    if occurs_check(v, &t) {
-                        Err("Occurs check failed".to_string())
-                    } else {
-                        subst.insert(v, t);
-                        Ok(())
-                    }
-                }
-
-                // Everything else fails
-                (t1, t2) => Err(format!("Cannot unify {:?} with {:?}", t1, t2)),
-            }
-        })
-        .filter(|r| r.is_ok())
-        .collect::<Vec<_>>();
-
-    if t2_unifications.len() == 1 {
-        Ok(())
-    } else if t2_unifications.len() == 0 {
-        Err(format!(
+    match successes.len() {
+        0 => Err(format!(
             "Cannot unify {:?} with incompatible candidates {:?}",
             t1, t2_possibilities
-        ))
-    } else {
-        Err(format!(
+        )),
+        1 => {
+            // Use the successful substitution
+            *subst = successes[0].1.clone();
+            Ok(())
+        }
+        _ => Err(format!(
             "Cannot unify {:?} with ambiguous candidates {:?}",
             t1, t2_possibilities
-        ))
+        )),
     }
 }
 
