@@ -796,8 +796,7 @@ mod tests {
             Box::new(Expr::Var("false".to_string())),
         );
 
-        let mut constraints = vec![];
-        constraints.push(Constraint::OneOf(
+        let mut constraints = vec![Constraint::OneOf(
             Type::Var(xor_type_id),
             vec![
                 Type::Arrow(
@@ -809,21 +808,17 @@ mod tests {
                     Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))),
                 ),
             ],
-        ));
+        )];
         let ty = generate_constraints(&bool_expr, &env, &mut constraints, &mut id_dispenser)?;
-
-        println!("Constraints: {:?}", constraints);
 
         let mut subst = HashMap::new();
         for constraint in &constraints {
-            println!("Subst: {:?}", subst);
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst)?,
                 _ => {}
             }
         }
         for constraint in &constraints {
-            println!("Subst: {:?}", subst);
             match constraint {
                 Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
@@ -896,26 +891,27 @@ mod tests {
             ])),
         );
 
-        let mut constraints = vec![];
-        let ty = generate_constraints(&sum_expr, &env, &mut constraints, &mut id_dispenser)?;
-        constraints.push(Constraint::OneOf(
+        let mut constraints = vec![Constraint::OneOf(
             Type::Var(rand_type_id),
             vec![Type::Int, Type::Bool],
-        ));
-
-        println!("Constraints: {:?}", constraints);
+        )];
+        let ty = generate_constraints(&sum_expr, &env, &mut constraints, &mut id_dispenser)?;
 
         let mut subst = HashMap::new();
-        for constraint in constraints {
+        for constraint in &constraints {
             match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst)?,
+                Constraint::OneOf(..) => {}
+            }
+        }
+        for constraint in &constraints {
+            match constraint {
+                Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
-                    unify::unify_one_of(&t1, &t2_possibilties, &mut subst)?
+                    unify::unify_one_of(t1, t2_possibilties, &mut subst)?
                 }
             }
         }
-
-        println!("Subst: {:?}", subst);
 
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Type::Int);
