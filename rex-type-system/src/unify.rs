@@ -114,7 +114,7 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
         ),
         Type::Tuple(ts) => Type::Tuple(ts.iter().map(|t| apply_subst(t, subst)).collect()),
         Type::List(elem) => Type::List(Box::new(apply_subst(elem, subst))),
-        Type::Int | Type::Bool => t.clone(),
+        Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => t.clone(),
     }
 }
 
@@ -133,7 +133,7 @@ pub fn occurs_check(var: Id, t: &Type) -> bool {
         Type::Arrow(a, b) => occurs_check(var, a) || occurs_check(var, b),
         Type::List(elem) => occurs_check(var, elem),
         Type::Tuple(elems) => elems.iter().any(|t| occurs_check(var, t)),
-        Type::Int | Type::Bool => false,
+        Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => false,
     }
 }
 

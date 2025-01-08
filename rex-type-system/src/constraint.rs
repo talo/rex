@@ -150,7 +150,7 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
             set.extend(free_vars(b));
             set
         }
-        Type::Int | Type::Bool => HashSet::new(),
+        Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => HashSet::new(),
         Type::Tuple(types) => {
             let mut vars = HashSet::new();
             for ty in types {
@@ -228,7 +228,7 @@ fn instantiate(ty: &Type, id_dispenser: &mut IdDispenser) -> Type {
                     .map(|t| inst_helper(t, subst, id_dispenser))
                     .collect(),
             ),
-            Type::Int | Type::Bool => ty.clone(),
+            Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => ty.clone(),
         };
         result
     }

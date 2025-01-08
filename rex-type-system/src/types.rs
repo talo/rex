@@ -9,9 +9,14 @@ pub type TypeEnv = HashMap<String, Type>;
 pub enum Type {
     Var(Id),
     ForAll(Id, Box<Type>),
+
     Arrow(Box<Type>, Box<Type>),
     List(Box<Type>),
     Tuple(Vec<Type>),
-    Int,
+
     Bool,
+    Uint,
+    Int,
+    Float,
+    String,
 }
