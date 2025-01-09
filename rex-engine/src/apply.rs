@@ -43,11 +43,11 @@ pub async fn apply<S: Send + Sync + 'static>(
                     Ok(Value::Closure(closure))
                 }
             }
-            FunctionLike::Lambda(lam) => {
+            FunctionLike::Lambda(lam_id, _param, body) => {
                 let mut new_ctx = ctx.clone();
-                new_ctx.vars.insert(lam.var.id, arg);
+                new_ctx.vars.insert(*lam_id, arg);
                 new_ctx.extend(closure.captured_ctx);
-                eval(&new_ctx, ftable, state, *lam.body.clone()).await
+                eval(&new_ctx, ftable, state, body.clone()).await
             }
         },
         got => Err(Error::ExpectedCallable {

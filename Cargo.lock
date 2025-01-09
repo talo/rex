@@ -629,6 +629,7 @@ dependencies = [
  "rex-lexer",
  "rex-parser",
  "rex-resolver",
+ "rex-type-system",
  "serde",
  "serde_json",
  "thiserror",

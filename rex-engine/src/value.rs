@@ -4,17 +4,16 @@ use std::{
 };
 
 use rex_ast::{
-    ast::Lambda,
+    expr::{Expr, Var},
     id::Id,
-    types::{ADTVariantFields, Type, ADT},
 };
+use rex_type_system::types::Type;
 use serde::ser::Error;
 use serde_json::json;
 
 use crate::Context;
 
-#[derive(Clone, Debug, PartialEq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Value {
     // Basics
@@ -39,42 +38,6 @@ pub enum Value {
 
     // Data
     Data(Data),
-}
-
-impl Value {
-    pub fn implements(&self, t: &Type) -> bool {
-        match (self, t) {
-            (Self::Null, Type::Null) => true,
-            (Self::Bool(_), Type::Bool) => true,
-            (Self::Uint(_), Type::Uint) => true,
-            (Self::Int(_), Type::Int) => true,
-            (Self::Float(_), Type::Float) => true,
-            (Self::String(_), Type::String) => true,
-            (Self::List(xs), Type::List(t)) => xs.iter().all(|x| x.implements(t)),
-            (Self::Tuple(xs), Type::Tuple(ts)) => {
-                xs.len() == ts.len() && xs.iter().zip(ts).all(|(x, t)| x.implements(t))
-            }
-            (Self::Dict(xs), Type::Dict(ts)) => {
-                xs.len() == ts.len()
-                    && xs
-                        .iter()
-                        .all(|(k, v)| ts.get(k).map_or(false, |t| v.implements(t)))
-            }
-            (Self::Option(Some(x)), Type::Option(t)) => x.implements(t),
-            (Self::Option(None), Type::Option(_)) => true,
-            (Self::Option(None), Type::Null) => true,
-
-            // FIXE: Until type inference is implemented, we cannot know if a
-            // value is compatible with a generic type. For now, we just assume
-            // that it is
-            (_, Type::Generic(_)) => true,
-
-            (Self::Function(function), t) => function.implements(t),
-            (Self::Closure(closure), t) => closure.implements(t),
-            (Self::Data(data), Type::ADT(adt)) => data.implements(adt),
-            _ => false,
-        }
-    }
 }
 
 impl Display for Value {
@@ -191,7 +154,7 @@ impl Display for Function {
 #[serde(rename_all = "lowercase")]
 pub enum FunctionLike {
     Function(Function),
-    Lambda(Lambda),
+    Lambda(Id, Var, Expr),
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -200,33 +163,6 @@ pub struct Closure {
     pub captured_ctx: Context,
     pub captured_args: Vec<Value>,
     pub body: FunctionLike,
-}
-
-impl Closure {
-    pub fn implements(&self, t: &Type) -> bool {
-        match &self.body {
-            FunctionLike::Function(function) => Function {
-                id: function.id,
-                name: function.name.clone(),
-                params: function
-                    .params
-                    .iter()
-                    .skip(self.captured_args.len())
-                    .cloned()
-                    .collect(),
-                ret: function.ret.clone(),
-            }
-            .implements(t),
-            FunctionLike::Lambda(_lam) => match t {
-                // FIXME: Until we implement type inference, we cannot know if
-                // this lambda is actually implements the arrow type (and thus,
-                // this check gets deferred until the lambda continue to
-                // evaluate)
-                Type::Arrow(..) => true,
-                _ => false,
-            },
-        }
-    }
 }
 
 impl Display for Closure {
@@ -248,55 +184,6 @@ impl Data {
             name,
             fields: Some(fields.into()),
         }
-    }
-
-    pub fn implements(&self, adt: &ADT) -> bool {
-        if !adt.generics.is_empty() {
-            // FIXME: We do not currently support generic ADTs
-            return false;
-        }
-        for variant in &adt.variants {
-            if self.name != variant.name {
-                continue;
-            }
-            match (&self.fields, &variant.fields) {
-                (None, None) => return true,
-                (
-                    Some(DataFields::Named(named_fields)),
-                    Some(ADTVariantFields::Named(named_variant_fields)),
-                ) => {
-                    if named_fields.fields.len() != named_variant_fields.fields.len() {
-                        continue;
-                    }
-                    if named_fields
-                        .fields
-                        .iter()
-                        .zip(named_variant_fields.fields.iter())
-                        .all(|((k1, v), (k2, t))| k1 == k2 && v.implements(t))
-                    {
-                        return true;
-                    }
-                }
-                (
-                    Some(DataFields::Unnamed(unnamed_fields)),
-                    Some(ADTVariantFields::Unnamed(unnamed_variant_fields)),
-                ) => {
-                    if unnamed_fields.fields.len() != unnamed_variant_fields.fields.len() {
-                        continue;
-                    }
-                    if unnamed_fields
-                        .fields
-                        .iter()
-                        .zip(unnamed_variant_fields.fields.iter())
-                        .all(|(v, t)| v.implements(t))
-                    {
-                        return true;
-                    }
-                }
-                _ => continue,
-            }
-        }
-        false
     }
 }
 

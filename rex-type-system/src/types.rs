@@ -1,14 +1,15 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::{self, Display, Formatter},
 };
 
 use rex_ast::id::Id;
 
-// Change from single type to vec of types
 pub type TypeEnv = HashMap<String, Type>;
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+pub type ExprTypeEnv = HashMap<Id, Type>;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Type {
     Var(Id),
@@ -19,7 +20,7 @@ pub enum Type {
     Result(Box<Type>, Box<Type>),
     Option(Box<Type>),
     List(Box<Type>),
-    Dict(HashMap<String, Type>),
+    Dict(BTreeMap<String, Type>),
     Tuple(Vec<Type>),
 
     Bool,
@@ -29,14 +30,23 @@ pub enum Type {
     String,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+impl Type {
+    pub fn num_params(&self) -> usize {
+        match self {
+            Type::Arrow(_, b) => 1 + b.num_params(),
+            _ => 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub struct ADT {
     pub name: String,
     pub variants: Vec<ADTVariant>,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub struct ADTVariant {
     pub name: String,

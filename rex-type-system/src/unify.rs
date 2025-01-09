@@ -13,8 +13,11 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
 
     match (t1, t2) {
         // Base types must match exactly
-        (Type::Int, Type::Int) => Ok(()),
         (Type::Bool, Type::Bool) => Ok(()),
+        (Type::Uint, Type::Uint) => Ok(()),
+        (Type::Int, Type::Int) => Ok(()),
+        (Type::Float, Type::Float) => Ok(()),
+        (Type::String, Type::String) => Ok(()),
 
         // Tuples
         (Type::Tuple(ts1), Type::Tuple(ts2)) => {

@@ -11,6 +11,7 @@ rex-ast = { path = "../rex-ast" }
 rex-lexer = { path = "../rex-lexer" }
 rex-parser = { path = "../rex-parser" }
 rex-resolver = { path = "../rex-resolver" }
+rex-type-system = { path = "../rex-type-system" }
 thiserror = { version = "1.0" }
 tokio = { version = "1.27.0", features = ["macros", "rt"] }
 serde = { version = "1.0", features = ["derive"] }

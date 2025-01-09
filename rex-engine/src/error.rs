@@ -1,15 +1,16 @@
 use std::collections::VecDeque;
 
-use rex_ast::{ast::AST, id::Id, types::Type};
+use rex_ast::{expr::Expr, id::Id};
+use rex_type_system::types::Type;
 
 use crate::value::{Function, Value};
 
 pub trait Trace {
-    fn trace(self, node: AST) -> Self;
+    fn trace(self, node: Expr) -> Self;
 }
 
 impl<T> Trace for Result<T, Error> {
-    fn trace(self, node: AST) -> Self {
+    fn trace(self, node: Expr) -> Self {
         match self {
             Ok(ok) => Ok(ok),
             Err(Error::ExpectedCallable { got, mut trace }) => Err(Error::ExpectedCallable {
@@ -125,64 +126,70 @@ impl<T> Trace for Result<T, Error> {
     }
 }
 
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Error {
     #[error("expected callable, got `{got}`")]
-    ExpectedCallable { got: Value, trace: VecDeque<AST> },
+    ExpectedCallable { got: Value, trace: VecDeque<Expr> },
 
     #[error("expected num, got `{got}`")]
-    ExpectedNum { got: Value, trace: VecDeque<AST> },
+    ExpectedNum { got: Value, trace: VecDeque<Expr> },
 
     #[error("expected cmp, got `{got}`")]
-    ExpectedCmp { got: Value, trace: VecDeque<AST> },
+    ExpectedCmp { got: Value, trace: VecDeque<Expr> },
 
     #[error("expected concat, got `{got}`")]
-    ExpectedConcat { got: Value, trace: VecDeque<AST> },
+    ExpectedConcat { got: Value, trace: VecDeque<Expr> },
 
     #[error("expected indexable, got `{got}`")]
-    ExpectedIndexable { got: Value, trace: VecDeque<AST> },
+    ExpectedIndexable { got: Value, trace: VecDeque<Expr> },
 
     #[error("expected keyable, got `{got}`")]
-    ExpectedKeyable { got: Value, trace: VecDeque<AST> },
+    ExpectedKeyable { got: Value, trace: VecDeque<Expr> },
 
     #[error("expected {expected} arguments, got {got} arguments")]
     ExpectedArguments {
         expected: usize,
         got: usize,
-        trace: VecDeque<AST>,
+        trace: VecDeque<Expr>,
     },
 
     #[error("expected {expected}, got `{got}`")]
     UnexpectedType {
         expected: Type,
         got: Value,
-        trace: VecDeque<AST>,
+        trace: VecDeque<Expr>,
     },
 
     #[error("id not found `{id}`")]
-    IdNotFound { id: Id, trace: VecDeque<AST> },
+    IdNotFound { id: Id, trace: VecDeque<Expr> },
 
     #[error("field not found `{field}`")]
-    FieldNotFound { field: String, trace: VecDeque<AST> },
+    FieldNotFound {
+        field: String,
+        trace: VecDeque<Expr>,
+    },
 
     #[error("function not found `{function}`")]
     FunctionNotFound {
         function: Function,
-        trace: VecDeque<AST>,
+        trace: VecDeque<Expr>,
     },
 
     #[error("index out of bounds")]
-    IndexOutOfBounds { trace: VecDeque<AST> },
+    IndexOutOfBounds { trace: VecDeque<Expr> },
 
     #[error("key not found")]
-    KeyNotFound { trace: VecDeque<AST> },
+    KeyNotFound { trace: VecDeque<Expr> },
 
     #[error("{error}")]
-    Custom { error: String, trace: VecDeque<AST> },
+    Custom {
+        error: String,
+        trace: VecDeque<Expr>,
+    },
 }
 
 impl Error {
-    pub fn trace(&self) -> &VecDeque<AST> {
+    pub fn trace(&self) -> &VecDeque<Expr> {
         match self {
             Self::ExpectedCallable { trace, .. } => trace,
             Self::ExpectedNum { trace, .. } => trace,
@@ -202,15 +209,15 @@ impl Error {
     }
 }
 
-pub fn sprint_trace(trace: &VecDeque<AST>) -> String {
+pub fn sprint_trace(trace: &VecDeque<Expr>) -> String {
     sprint_trace_with_ident(trace, "".to_string())
 }
 
-pub fn sprint_trace_with_ident(trace: &VecDeque<AST>, indent: impl Into<String>) -> String {
+pub fn sprint_trace_with_ident(trace: &VecDeque<Expr>, indent: impl Into<String>) -> String {
     sprint_trace_with_ident_and_sp(trace, indent.into(), 0)
 }
 
-fn sprint_trace_with_ident_and_sp(trace: &VecDeque<AST>, indent: String, i: usize) -> String {
+fn sprint_trace_with_ident_and_sp(trace: &VecDeque<Expr>, indent: String, i: usize) -> String {
     if i >= trace.len() {
         return String::new();
     }

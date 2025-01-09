@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
-use rex_ast::id::{Id, IdDispenser};
+use rex_ast::{
+    expr::Expr,
+    id::{Id, IdDispenser},
+};
 
 use crate::{
-    expr::Expr,
-    types::{ADTVariant, Type, TypeEnv, ADT},
+    types::{ADTVariant, ExprTypeEnv, Type, TypeEnv, ADT},
     unify,
 };
 
@@ -18,43 +20,51 @@ pub enum Constraint {
 pub fn generate_constraints(
     expr: &Expr,
     env: &TypeEnv,
+    expr_env: &mut ExprTypeEnv,
     constraints: &mut Vec<Constraint>,
     id_dispenser: &mut IdDispenser,
 ) -> Result<Type, String> {
     match expr {
-        Expr::Var(name, _span) => match env.get(name) {
+        Expr::Var(var) => match env.get(&var.name) {
             Some(t) => match t {
-                Type::ForAll(_, _) => Ok(instantiate(t, id_dispenser)),
-                _ => Ok(t.clone()),
+                Type::ForAll(_, _) => {
+                    let instantiated_type = instantiate(t, id_dispenser);
+                    expr_env.insert(var.id, instantiated_type.clone());
+                    Ok(instantiated_type)
+                }
+                _ => {
+                    expr_env.insert(var.id, t.clone());
+                    Ok(t.clone())
+                }
             },
-            None => Err(format!("Unbound variable: {}", name)),
+            None => Err(format!("Unbound variable: {}", &var.name)),
         },
 
-        Expr::Dict(exprs, _span) => {
+        Expr::Dict(_id, _span, exprs) => {
             let mut types = Vec::new();
 
             // Generate constraints for each expression in the tuple
             for (_key, expr) in exprs {
-                let ty = generate_constraints(expr, env, constraints, id_dispenser)?;
+                let ty = generate_constraints(expr, env, expr_env, constraints, id_dispenser)?;
                 types.push(ty);
             }
 
             Ok(Type::Tuple(types))
         }
 
-        Expr::Tuple(exprs, _span) => {
+        Expr::Tuple(_id, _span, exprs) => {
             let mut types = Vec::new();
 
             // Generate constraints for each expression in the tuple
             for expr in exprs {
-                let ty = generate_constraints(expr, env, constraints, id_dispenser)?;
+                let ty = generate_constraints(expr, env, expr_env, constraints, id_dispenser)?;
                 types.push(ty);
             }
 
             Ok(Type::Tuple(types))
         }
 
-        Expr::List(exprs, _span) => {
+        Expr::List(_id, _span, exprs) => {
             // If list is empty, create a fresh type variable for element type
             if exprs.is_empty() {
                 let elem_ty = Type::Var(id_dispenser.next());
@@ -64,7 +74,7 @@ pub fn generate_constraints(
             // Generate constraints for all expressions
             let mut types = Vec::new();
             for expr in exprs {
-                let ty = generate_constraints(expr, env, constraints, id_dispenser)?;
+                let ty = generate_constraints(expr, env, expr_env, constraints, id_dispenser)?;
                 types.push(ty);
             }
 
@@ -76,9 +86,9 @@ pub fn generate_constraints(
             Ok(Type::List(Box::new(types[0].clone())))
         }
 
-        Expr::App(f, x, _span) => {
-            let f_type = generate_constraints(f, env, constraints, id_dispenser)?;
-            let x_type = generate_constraints(x, env, constraints, id_dispenser)?;
+        Expr::App(id, _span, f, x) => {
+            let f_type = generate_constraints(f, env, expr_env, constraints, id_dispenser)?;
+            let x_type = generate_constraints(x, env, expr_env, constraints, id_dispenser)?;
 
             let result_type = Type::Var(id_dispenser.next());
 
@@ -87,30 +97,37 @@ pub fn generate_constraints(
 
             constraints.push(Constraint::Eq(f_type, expected_f_type));
 
+            expr_env.insert(*id, result_type.clone());
             Ok(result_type)
         }
 
-        Expr::Lam(param, body, _span) => {
+        Expr::Lam(_id, _span, param, body) => {
             let param_type = Type::Var(id_dispenser.next());
 
             let mut new_env = env.clone();
-            new_env.insert(param.clone(), param_type.clone());
+            new_env.insert(param.name.clone(), param_type.clone());
 
-            let body_type = generate_constraints(body, &new_env, constraints, id_dispenser)?;
+            // TODO(loong): do we need to clone `expr_env` in the same way that
+            // we do for `env`?
+            let body_type =
+                generate_constraints(body, &new_env, expr_env, constraints, id_dispenser)?;
 
             let result_type = Type::Arrow(Box::new(param_type), Box::new(body_type));
 
             Ok(result_type)
         }
 
-        Expr::Let(name, def, body, _span) => {
+        Expr::Let(_id, _span, var, def, body) => {
             // TODO(loong): should this be cloned from `constraints`, or should
             // it be fresh? A direct translation of the algorithm would make a
             // fresh list.
             let mut def_constraints = vec![];
 
             // First generate constraints for the definition
-            let def_type = generate_constraints(def, env, &mut def_constraints, id_dispenser)?;
+            let def_type =
+                generate_constraints(def, env, expr_env, &mut def_constraints, id_dispenser)?;
+            println!("DEF_TYPE: {:?}", def_type);
+            println!("ENV: {:?}", env);
 
             // Solve definition constraints to get its type
             let mut def_subst = HashMap::new();
@@ -121,23 +138,28 @@ pub fn generate_constraints(
                 }
             }
             let solved_def_type = unify::apply_subst(&def_type, &def_subst);
+            println!("DEF_SUBST: {:?}", def_subst);
+            println!("SOLVED_DEF_TYPE: {:?}", solved_def_type);
 
             // Generalize the type
             let gen_type = generalize(env, &solved_def_type);
+            println!("GEN_TYPE: {:?}", gen_type);
 
             // Add generalized type to environment
             let mut new_env = env.clone();
-            new_env.insert(name.clone(), gen_type);
+            new_env.insert(var.name.clone(), gen_type);
 
             // Generate constraints for the body with the new environment
-            generate_constraints(body, &new_env, constraints, id_dispenser)
+            generate_constraints(body, &new_env, expr_env, constraints, id_dispenser)
         }
 
-        Expr::Ite(cond, then_branch, else_branch, _span) => {
+        Expr::Ite(_id, _span, cond, then_branch, else_branch) => {
             // Generate constraints for all parts
-            let cond_type = generate_constraints(cond, env, constraints, id_dispenser)?;
-            let then_type = generate_constraints(then_branch, env, constraints, id_dispenser)?;
-            let else_type = generate_constraints(else_branch, env, constraints, id_dispenser)?;
+            let cond_type = generate_constraints(cond, env, expr_env, constraints, id_dispenser)?;
+            let then_type =
+                generate_constraints(then_branch, env, expr_env, constraints, id_dispenser)?;
+            let else_type =
+                generate_constraints(else_branch, env, expr_env, constraints, id_dispenser)?;
 
             // Condition must be boolean
             constraints.push(Constraint::Eq(cond_type, Type::Bool));
@@ -147,11 +169,26 @@ pub fn generate_constraints(
             Ok(then_type)
         }
 
-        Expr::Bool(_x, _span) => Ok(Type::Bool),
-        Expr::Uint(_x, _span) => Ok(Type::Uint),
-        Expr::Int(_x, _span) => Ok(Type::Int),
-        Expr::Float(_x, _span) => Ok(Type::Float),
-        Expr::String(_x, _span) => Ok(Type::String),
+        Expr::Bool(id, _span, _x) => {
+            expr_env.insert(*id, Type::Bool);
+            Ok(Type::Bool)
+        }
+        Expr::Uint(id, _span, _x) => {
+            expr_env.insert(*id, Type::Uint);
+            Ok(Type::Uint)
+        }
+        Expr::Int(id, _span, _x) => {
+            expr_env.insert(*id, Type::Int);
+            Ok(Type::Int)
+        }
+        Expr::Float(id, _span, _x) => {
+            expr_env.insert(*id, Type::Float);
+            Ok(Type::Float)
+        }
+        Expr::String(id, _span, _x) => {
+            expr_env.insert(*id, Type::String);
+            Ok(Type::String)
+        }
     }
 }
 
@@ -300,6 +337,9 @@ fn instantiate(ty: &Type, id_dispenser: &mut IdDispenser) -> Type {
 
 #[cfg(test)]
 mod tests {
+    use rex_ast::expr::Var;
+    use rex_lexer::span::Span;
+
     use crate::{
         types::TypeEnv,
         unify::{self, Subst},
@@ -392,12 +432,13 @@ mod tests {
 
         // Test [1, 2, 3]
         let expr = Expr::List(
+            id_dispenser.next(),
+            Span::default(),
             vec![
-                Expr::Var("one".to_string(), None),
-                Expr::Var("two".to_string(), None),
-                Expr::Var("three".to_string(), None),
+                Expr::Var(Var::next(&mut id_dispenser, "one")),
+                Expr::Var(Var::next(&mut id_dispenser, "two")),
+                Expr::Var(Var::next(&mut id_dispenser, "three")),
             ],
-            None,
         );
 
         env.insert("one".to_string(), Type::Int);
@@ -405,7 +446,14 @@ mod tests {
         env.insert("three".to_string(), Type::Int);
 
         let mut constraints = vec![];
-        let ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
+        let mut expr_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )?;
 
         // Solve constraints
         let mut subst = HashMap::new();
@@ -422,17 +470,25 @@ mod tests {
 
         // Test that lists of mixed types fail
         let expr = Expr::List(
+            id_dispenser.next(),
+            Span::default(),
             vec![
-                Expr::Var("one".to_string(), None),
-                Expr::Var("true".to_string(), None),
+                Expr::Var(Var::next(&mut id_dispenser, "one")),
+                Expr::Var(Var::next(&mut id_dispenser, "true")),
             ],
-            None,
         );
 
         env.insert("true".to_string(), Type::Bool);
 
         let mut constraints = vec![];
-        let _ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
+        let mut expr_env = ExprTypeEnv::new();
+        let _ty = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )?;
 
         // This should fail unification
         let mut subst = Subst::new();
@@ -445,9 +501,16 @@ mod tests {
         assert!(result.is_err());
 
         // Test empty list
-        let expr = Expr::List(vec![], None);
+        let expr = Expr::List(id_dispenser.next(), Span::default(), vec![]);
         let mut constraints = vec![];
-        let ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
+        let mut expr_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )?;
         assert!(matches!(ty, Type::List(_)));
         assert!(constraints.is_empty());
 
@@ -462,30 +525,35 @@ mod tests {
         // let f = \xs -> head xs in f [1, true]
         // should fail, xs can't be both [Int] and [Bool]
         let expr = Expr::Let(
-            "f".to_string(),
+            id_dispenser.next(),
+            Span::default(),
+            Var::next(&mut id_dispenser, "f"),
             // \xs -> head xs
             Box::new(Expr::Lam(
-                "xs".to_string(),
+                id_dispenser.next(),
+                Span::default(),
+                Var::next(&mut id_dispenser, "xs"),
                 Box::new(Expr::App(
-                    Box::new(Expr::Var("head".to_string(), None)),
-                    Box::new(Expr::Var("xs".to_string(), None)),
-                    None,
+                    id_dispenser.next(),
+                    Span::default(),
+                    Box::new(Expr::Var(Var::next(&mut id_dispenser, "head"))),
+                    Box::new(Expr::Var(Var::next(&mut id_dispenser, "xs"))),
                 )),
-                None,
             )),
             // f [1, true]
             Box::new(Expr::App(
-                Box::new(Expr::Var("f".to_string(), None)),
+                id_dispenser.next(),
+                Span::default(),
+                Box::new(Expr::Var(Var::next(&mut id_dispenser, "f"))),
                 Box::new(Expr::List(
+                    id_dispenser.next(),
+                    Span::default(),
                     vec![
-                        Expr::Var("int_val".to_string(), None),
-                        Expr::Var("bool_val".to_string(), None),
+                        Expr::Var(Var::next(&mut id_dispenser, "int_val")),
+                        Expr::Var(Var::next(&mut id_dispenser, "bool_val")),
                     ],
-                    None,
                 )),
-                None,
             )),
-            None,
         );
 
         // Set up environment
@@ -504,7 +572,14 @@ mod tests {
         env.insert("bool_val".to_string(), Type::Bool);
 
         let mut constraints = vec![];
-        let _ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
+        let mut expr_env = ExprTypeEnv::new();
+        let _ty = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )?;
 
         // This should fail unification because the list elements don't match
         let mut subst = HashMap::new();
@@ -540,23 +615,33 @@ mod tests {
         env.insert("bool_list".to_string(), Type::List(Box::new(Type::Bool)));
 
         let expr = Expr::Tuple(
+            id_dispenser.next(),
+            Span::default(),
             vec![
                 Expr::App(
-                    Box::new(Expr::Var("head".to_string(), None)),
-                    Box::new(Expr::Var("int_list".to_string(), None)),
-                    None,
+                    id_dispenser.next(),
+                    Span::default(),
+                    Box::new(Expr::Var(Var::next(&mut id_dispenser, "head"))),
+                    Box::new(Expr::Var(Var::next(&mut id_dispenser, "int_list"))),
                 ),
                 Expr::App(
-                    Box::new(Expr::Var("head".to_string(), None)),
-                    Box::new(Expr::Var("bool_list".to_string(), None)),
-                    None,
+                    id_dispenser.next(),
+                    Span::default(),
+                    Box::new(Expr::Var(Var::next(&mut id_dispenser, "head"))),
+                    Box::new(Expr::Var(Var::next(&mut id_dispenser, "bool_list"))),
                 ),
             ],
-            None,
         );
 
         let mut constraints = vec![];
-        let ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
+        let mut expr_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )?;
 
         // Solve constraints
         let mut subst = HashMap::new();
@@ -581,25 +666,35 @@ mod tests {
 
         // Test expression: let id = (\x -> x) in id 1
         let expr = Expr::Let(
-            "id".to_string(),
+            id_dispenser.next(),
+            Span::default(),
+            Var::next(&mut id_dispenser, "id"),
             Box::new(Expr::Lam(
-                "x".to_string(),
-                Box::new(Expr::Var("x".to_string(), None)),
-                None,
+                id_dispenser.next(),
+                Span::default(),
+                Var::next(&mut id_dispenser, "x"),
+                Box::new(Expr::Var(Var::next(&mut id_dispenser, "x"))),
             )),
             Box::new(Expr::App(
-                Box::new(Expr::Var("id".to_string(), None)),
-                Box::new(Expr::Var("one".to_string(), None)),
-                None,
+                id_dispenser.next(),
+                Span::default(),
+                Box::new(Expr::Var(Var::next(&mut id_dispenser, "id"))),
+                Box::new(Expr::Var(Var::next(&mut id_dispenser, "one"))),
             )),
-            None,
         );
 
         env.insert("one".to_string(), Type::Int);
 
         let mut constraints = vec![];
-        let result_type =
-            generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser).unwrap();
+        let mut expr_env = ExprTypeEnv::new();
+        let result_type = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )
+        .unwrap();
 
         // Solve constraints
         let mut subst = HashMap::new();
@@ -623,30 +718,35 @@ mod tests {
         // let id = \x -> x
         // in (id 1, id true)
         let expr = Expr::Let(
-            "id".to_string(),
+            id_dispenser.next(),
+            Span::default(),
+            Var::next(&mut id_dispenser, "id"),
             // \x -> x
             Box::new(Expr::Lam(
-                "x".to_string(),
-                Box::new(Expr::Var("x".to_string(), None)),
-                None,
+                id_dispenser.next(),
+                Span::default(),
+                Var::next(&mut id_dispenser, "x"),
+                Box::new(Expr::Var(Var::next(&mut id_dispenser, "x"))),
             )),
             // Create tuple of (id 1, id true)
             Box::new(Expr::Tuple(
+                id_dispenser.next(),
+                Span::default(),
                 vec![
                     Expr::App(
-                        Box::new(Expr::Var("id".to_string(), None)),
-                        Box::new(Expr::Var("int_val".to_string(), None)),
-                        None,
+                        id_dispenser.next(),
+                        Span::default(),
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "id"))),
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "int_val"))),
                     ),
                     Expr::App(
-                        Box::new(Expr::Var("id".to_string(), None)),
-                        Box::new(Expr::Var("bool_val".to_string(), None)),
-                        None,
+                        id_dispenser.next(),
+                        Span::default(),
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "id"))),
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "bool_val"))),
                     ),
                 ],
-                None,
             )),
-            None,
         );
 
         // Set up environment
@@ -654,7 +754,14 @@ mod tests {
         env.insert("bool_val".to_string(), Type::Bool);
 
         let mut constraints = vec![];
-        let ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
+        let mut expr_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )?;
 
         // Solve constraints
         let mut subst = Subst::new();
@@ -679,10 +786,11 @@ mod tests {
 
         // Test expression: if true then 1 else 2
         let expr = Expr::Ite(
-            Box::new(Expr::Var("true".to_string(), None)),
-            Box::new(Expr::Var("one".to_string(), None)),
-            Box::new(Expr::Var("two".to_string(), None)),
-            None,
+            id_dispenser.next(),
+            Span::default(),
+            Box::new(Expr::Var(Var::next(&mut id_dispenser, "true"))),
+            Box::new(Expr::Var(Var::next(&mut id_dispenser, "one"))),
+            Box::new(Expr::Var(Var::next(&mut id_dispenser, "two"))),
         );
 
         // Set up environment
@@ -692,8 +800,15 @@ mod tests {
 
         // Generate constraints
         let mut constraints = vec![];
-        let result_type =
-            generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser).unwrap();
+        let mut expr_env = ExprTypeEnv::new();
+        let result_type = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )
+        .unwrap();
 
         // Solve constraints
         let mut subst = HashMap::new();
@@ -720,62 +835,75 @@ mod tests {
         //   compose (\x -> x + 1) (\x -> x + 2) 3  // Int -> Int -> Int -> Int
         // )
         let expr = Expr::Let(
-            "compose".to_string(),
+            id_dispenser.next(),
+            Span::default(),
+            Var::next(&mut id_dispenser, "compose"),
             Box::new(Expr::Lam(
-                "f".to_string(),
+                id_dispenser.next(),
+                Span::default(),
+                Var::next(&mut id_dispenser, "f"),
                 Box::new(Expr::Lam(
-                    "g".to_string(),
+                    id_dispenser.next(),
+                    Span::default(),
+                    Var::next(&mut id_dispenser, "g"),
                     Box::new(Expr::Lam(
-                        "x".to_string(),
+                        id_dispenser.next(),
+                        Span::default(),
+                        Var::next(&mut id_dispenser, "x"),
                         Box::new(Expr::App(
-                            Box::new(Expr::Var("f".to_string(), None)),
+                            id_dispenser.next(),
+                            Span::default(),
+                            Box::new(Expr::Var(Var::next(&mut id_dispenser, "f"))),
                             Box::new(Expr::App(
-                                Box::new(Expr::Var("g".to_string(), None)),
-                                Box::new(Expr::Var("x".to_string(), None)),
-                                None,
+                                id_dispenser.next(),
+                                Span::default(),
+                                Box::new(Expr::Var(Var::next(&mut id_dispenser, "g"))),
+                                Box::new(Expr::Var(Var::next(&mut id_dispenser, "x"))),
                             )),
-                            None,
                         )),
-                        None,
                     )),
-                    None,
                 )),
-                None,
             )),
             Box::new(Expr::Tuple(
+                id_dispenser.next(),
+                Span::default(),
                 vec![
                     // compose not not true
                     Expr::App(
+                        id_dispenser.next(),
+                        Span::default(),
                         Box::new(Expr::App(
+                            id_dispenser.next(),
+                            Span::default(),
                             Box::new(Expr::App(
-                                Box::new(Expr::Var("compose".to_string(), None)),
-                                Box::new(Expr::Var("not".to_string(), None)),
-                                None,
+                                id_dispenser.next(),
+                                Span::default(),
+                                Box::new(Expr::Var(Var::next(&mut id_dispenser, "compose"))),
+                                Box::new(Expr::Var(Var::next(&mut id_dispenser, "not"))),
                             )),
-                            Box::new(Expr::Var("not".to_string(), None)),
-                            None,
+                            Box::new(Expr::Var(Var::next(&mut id_dispenser, "not"))),
                         )),
-                        Box::new(Expr::Var("bool_val".to_string(), None)),
-                        None,
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "bool_val"))),
                     ),
                     // compose (+1) (+2) 3
                     Expr::App(
+                        id_dispenser.next(),
+                        Span::default(),
                         Box::new(Expr::App(
+                            id_dispenser.next(),
+                            Span::default(),
                             Box::new(Expr::App(
-                                Box::new(Expr::Var("compose".to_string(), None)),
-                                Box::new(Expr::Var("inc".to_string(), None)),
-                                None,
+                                id_dispenser.next(),
+                                Span::default(),
+                                Box::new(Expr::Var(Var::next(&mut id_dispenser, "compose"))),
+                                Box::new(Expr::Var(Var::next(&mut id_dispenser, "inc"))),
                             )),
-                            Box::new(Expr::Var("inc2".to_string(), None)),
-                            None,
+                            Box::new(Expr::Var(Var::next(&mut id_dispenser, "inc2"))),
                         )),
-                        Box::new(Expr::Var("int_val".to_string(), None)),
-                        None,
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "int_val"))),
                     ),
                 ],
-                None,
             )),
-            None,
         );
 
         // Set up environment
@@ -795,7 +923,14 @@ mod tests {
         env.insert("int_val".to_string(), Type::Int);
 
         let mut constraints = vec![];
-        let ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
+        let mut expr_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )?;
 
         // Solve constraints
         let mut subst = Subst::new();
@@ -821,40 +956,47 @@ mod tests {
         // let id = \x -> x in
         // (id true, id 1, id true + 1)  // Last one should fail!
         let expr = Expr::Let(
-            "id".to_string(),
+            id_dispenser.next(),
+            Span::default(),
+            Var::next(&mut id_dispenser, "id"),
             Box::new(Expr::Lam(
-                "x".to_string(),
-                Box::new(Expr::Var("x".to_string(), None)),
-                None,
+                id_dispenser.next(),
+                Span::default(),
+                Var::next(&mut id_dispenser, "x"),
+                Box::new(Expr::Var(Var::next(&mut id_dispenser, "x"))),
             )),
             Box::new(Expr::Tuple(
+                id_dispenser.next(),
+                Span::default(),
                 vec![
                     // id true - ok
                     Expr::App(
-                        Box::new(Expr::Var("id".to_string(), None)),
-                        Box::new(Expr::Var("bool_val".to_string(), None)),
-                        None,
+                        id_dispenser.next(),
+                        Span::default(),
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "id"))),
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "bool_val"))),
                     ),
                     // id 1 - ok
                     Expr::App(
-                        Box::new(Expr::Var("id".to_string(), None)),
-                        Box::new(Expr::Var("int_val".to_string(), None)),
-                        None,
+                        id_dispenser.next(),
+                        Span::default(),
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "id"))),
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "int_val"))),
                     ),
                     // id true + 1 - should fail!
                     Expr::App(
-                        Box::new(Expr::Var("plus".to_string(), None)),
+                        id_dispenser.next(),
+                        Span::default(),
+                        Box::new(Expr::Var(Var::next(&mut id_dispenser, "plus"))),
                         Box::new(Expr::App(
-                            Box::new(Expr::Var("id".to_string(), None)),
-                            Box::new(Expr::Var("bool_val".to_string(), None)),
-                            None,
+                            id_dispenser.next(),
+                            Span::default(),
+                            Box::new(Expr::Var(Var::next(&mut id_dispenser, "id"))),
+                            Box::new(Expr::Var(Var::next(&mut id_dispenser, "bool_val"))),
                         )),
-                        None,
                     ),
                 ],
-                None,
             )),
-            None,
         );
 
         // Set up environment
@@ -870,17 +1012,24 @@ mod tests {
 
         // This should fail with a type error
         let mut constraints = vec![];
-        let result = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)
-            .and_then(|ty| {
-                let mut subst = HashMap::new();
-                for constraint in constraints {
-                    match constraint {
-                        Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
-                        _ => panic!("Expected equality constraint"),
-                    }
+        let mut expr_env = ExprTypeEnv::new();
+        let result = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )
+        .and_then(|ty| {
+            let mut subst = HashMap::new();
+            for constraint in constraints {
+                match constraint {
+                    Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
+                    _ => panic!("Expected equality constraint"),
                 }
-                Ok(unify::apply_subst(&ty, &subst))
-            });
+            }
+            Ok(unify::apply_subst(&ty, &subst))
+        });
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Cannot unify"));
@@ -904,13 +1053,15 @@ mod tests {
 
         // Test bool version: xor true false
         let bool_expr = Expr::App(
+            id_dispenser.next(),
+            Span::default(),
             Box::new(Expr::App(
-                Box::new(Expr::Var("xor".to_string(), None)),
-                Box::new(Expr::Var("true".to_string(), None)),
-                None,
+                id_dispenser.next(),
+                Span::default(),
+                Box::new(Expr::Var(Var::next(&mut id_dispenser, "xor"))),
+                Box::new(Expr::Var(Var::next(&mut id_dispenser, "true"))),
             )),
-            Box::new(Expr::Var("false".to_string(), None)),
-            None,
+            Box::new(Expr::Var(Var::next(&mut id_dispenser, "false"))),
         );
 
         let mut constraints = vec![Constraint::OneOf(
@@ -926,7 +1077,14 @@ mod tests {
                 ),
             ],
         )];
-        let ty = generate_constraints(&bool_expr, &env, &mut constraints, &mut id_dispenser)?;
+        let mut expr_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &bool_expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )?;
 
         let mut subst = HashMap::new();
         for constraint in &constraints {
@@ -946,42 +1104,16 @@ mod tests {
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Type::Bool);
 
-        // // Test int version: xor 1 2
-        // let int_expr = Expr::App(
-        //     Box::new(Expr::App(
-        //         Box::new(Expr::Var("xor".to_string())),
-        //         Box::new(Expr::Var("one".to_string())),
-        //     )),
-        //     Box::new(Expr::Var("two".to_string())),
-        // );
-
-        // let (ty, constraints) = generate_constraints(&int_expr, &env, &mut id_dispenser)?;
-        // let mut subst = HashMap::new();
-        // for constraint in constraints {
-        //     match constraint {
-        //         Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
-        //         Constraint::OneOf(t1, t2_possibilties) => {
-        //             unify::unify_one_of(&t1, &t2_possibilties, &mut subst)?
-        //         }
-        //     }
-        // }
-        // let final_type = unify::apply_subst(&ty, &subst);
-        // assert_eq!(final_type, Type::Int);
-
         Ok(())
     }
 
     #[test]
     fn test_overloading_with_return() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
-        let mut env = HashMap::new();
+        let mut env = TypeEnv::new();
 
         let rand_type_id = id_dispenser.next();
         env.insert("rand".to_string(), Type::Var(rand_type_id));
-
-        // // Add both versions of rand
-        // types::add_overload(&mut env, "rand", Type::Int);
-        // types::add_overload(&mut env, "rand", Type::Bool);
 
         // Add functions that force return type selection
         env.insert(
@@ -1001,22 +1133,31 @@ mod tests {
 
         // Test sum [rand, rand]
         let sum_expr = Expr::App(
-            Box::new(Expr::Var("sum".to_string(), None)),
+            id_dispenser.next(),
+            Span::default(),
+            Box::new(Expr::Var(Var::next(&mut id_dispenser, "sum"))),
             Box::new(Expr::List(
+                id_dispenser.next(),
+                Span::default(),
                 vec![
-                    Expr::Var("rand".to_string(), None),
-                    Expr::Var("rand".to_string(), None),
+                    Expr::Var(Var::next(&mut id_dispenser, "rand")),
+                    Expr::Var(Var::next(&mut id_dispenser, "rand")),
                 ],
-                None,
             )),
-            None,
         );
 
         let mut constraints = vec![Constraint::OneOf(
             Type::Var(rand_type_id),
             vec![Type::Int, Type::Bool],
         )];
-        let ty = generate_constraints(&sum_expr, &env, &mut constraints, &mut id_dispenser)?;
+        let mut expr_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &sum_expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )?;
 
         let mut subst = HashMap::new();
         for constraint in &constraints {
@@ -1037,28 +1178,6 @@ mod tests {
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Type::Int);
 
-        // // Test any [rand, rand]
-        // let any_expr = Expr::App(
-        //     Box::new(Expr::Var("any".to_string())),
-        //     Box::new(Expr::List(vec![
-        //         Expr::Var("rand".to_string()),
-        //         Expr::Var("rand".to_string()),
-        //     ])),
-        // );
-
-        // let (ty, constraints) = generate_constraints(&any_expr, &env, &mut id_dispenser)?;
-        // let mut subst = HashMap::new();
-        // for constraint in constraints {
-        //     match constraint {
-        //         Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
-        //         Constraint::OneOf(t1, t2_possibilties) => {
-        //             unify::unify_one_of(&t1, &t2_possibilties, &mut subst)?
-        //         }
-        //     }
-        // }
-        // let final_type = unify::apply_subst(&ty, &subst);
-        // assert_eq!(final_type, Type::Bool);
-
         Ok(())
     }
 
@@ -1070,10 +1189,17 @@ mod tests {
         let rand_type_id = id_dispenser.next();
         env.insert("rand".to_string(), Type::Var(rand_type_id));
         // Test: just rand by itself (should be ambiguous)
-        let expr = Expr::Var("rand".to_string(), None);
+        let expr = Expr::Var(Var::next(&mut id_dispenser, "rand"));
 
         let mut constraints = vec![];
-        let _ty = generate_constraints(&expr, &env, &mut constraints, &mut id_dispenser)?;
+        let mut expr_env = ExprTypeEnv::new();
+        let _ty = generate_constraints(
+            &expr,
+            &env,
+            &mut expr_env,
+            &mut constraints,
+            &mut id_dispenser,
+        )?;
         constraints.push(Constraint::OneOf(
             Type::Var(rand_type_id),
             vec![Type::Int, Type::Bool],
