@@ -194,7 +194,7 @@ pub mod test {
     use rex_resolver::Scope;
     use rex_type_system::{
         arrow,
-        constraint::{generate_constraints, sprint_constraints, Constraint},
+        constraint::{self, generate_constraints, Constraint, ConstraintSystem},
         trace::{sprint_expr_with_type, sprint_subst, sprint_type_env},
         types::TypeEnv,
         unify::{self, Subst},
@@ -221,27 +221,25 @@ pub mod test {
         let app_op_type_id = id_dispenser.next();
         // type_env.insert("+".to_string(), Type::Var(app_op_type_id));
 
-        let mut constraints = vec![];
-        let mut global_constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
-        for constraint in &constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
                 Constraint::OneOf(..) => {}
             }
         }
-        for constraint in &constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
@@ -283,34 +281,33 @@ pub mod test {
         let neg_op_typeid = id_dispenser.next();
         type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
 
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(neg_op_typeid),
-            vec![
-                arrow!(Type::Uint =>  Type::Int),
-                arrow!(Type::Int =>  Type::Int),
-                arrow!(Type::Float => Type::Float),
-            ],
-        )];
-        let mut constraints = global_constraints.clone();
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(neg_op_typeid),
+                vec![
+                    arrow!(Type::Uint =>  Type::Int),
+                    arrow!(Type::Int =>  Type::Int),
+                    arrow!(Type::Float => Type::Float),
+                ],
+            )]);
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
-        for constraint in &constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
                 Constraint::OneOf(..) => {}
             }
         }
-        for constraint in &constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
@@ -395,34 +392,33 @@ pub mod test {
         let neg_op_typeid = id_dispenser.next();
         type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
 
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(neg_op_typeid),
-            vec![
-                arrow!(Type::Uint =>  Type::Int),
-                arrow!(Type::Int =>  Type::Int),
-                arrow!(Type::Float => Type::Float),
-            ],
-        )];
-        let mut constraints = global_constraints.clone();
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(neg_op_typeid),
+                vec![
+                    arrow!(Type::Uint =>  Type::Int),
+                    arrow!(Type::Int =>  Type::Int),
+                    arrow!(Type::Float => Type::Float),
+                ],
+            )]);
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
-        for constraint in &constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
                 Constraint::OneOf(..) => {}
             }
         }
-        for constraint in &constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
@@ -440,7 +436,7 @@ pub mod test {
         println!(
             "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
             sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
-            sprint_constraints(&constraints),
+            &constraint_system,
             sprint_subst(&subst)
         );
 
@@ -509,34 +505,33 @@ pub mod test {
         let neg_op_typeid = id_dispenser.next();
         type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
 
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(neg_op_typeid),
-            vec![
-                arrow!(Type::Uint =>  Type::Int),
-                arrow!(Type::Int =>  Type::Int),
-                arrow!(Type::Float => Type::Float),
-            ],
-        )];
-        let mut constraints = global_constraints.clone();
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(neg_op_typeid),
+                vec![
+                    arrow!(Type::Uint =>  Type::Int),
+                    arrow!(Type::Int =>  Type::Int),
+                    arrow!(Type::Float => Type::Float),
+                ],
+            )]);
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
-        for constraint in &constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
                 Constraint::OneOf(..) => {}
             }
         }
-        for constraint in &constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
@@ -554,7 +549,7 @@ pub mod test {
         println!(
             "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
             sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
-            sprint_constraints(&constraints),
+            &constraint_system,
             sprint_subst(&subst)
         );
 
@@ -621,34 +616,33 @@ pub mod test {
         let neg_op_typeid = id_dispenser.next();
         type_env.insert("+".to_string(), Type::Var(neg_op_typeid));
 
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(neg_op_typeid),
-            vec![
-                arrow!(Type::Uint => arrow!(Type::Uint =>  Type::Uint)),
-                arrow!(Type::Int => arrow!(Type::Int =>  Type::Int)),
-                arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
-            ],
-        )];
-        let mut constraints = global_constraints.clone();
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(neg_op_typeid),
+                vec![
+                    arrow!(Type::Uint => arrow!(Type::Uint =>  Type::Uint)),
+                    arrow!(Type::Int => arrow!(Type::Int =>  Type::Int)),
+                    arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
+                ],
+            )]);
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
-        for constraint in &constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
                 Constraint::OneOf(..) => {}
             }
         }
-        for constraint in &constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
@@ -742,8 +736,6 @@ pub mod test {
 
         let mut id_dispenser = parser.id_dispenser;
 
-        let mut ftable = Ftable(Default::default());
-
         let mut scope = Scope::default();
         let add_op_id = id_dispenser.next();
         scope.vars.insert("+".to_string(), add_op_id);
@@ -753,29 +745,28 @@ pub mod test {
         let add_op_typeid = id_dispenser.next();
         type_env.insert("+".to_string(), Type::Var(add_op_typeid));
 
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(add_op_typeid),
-            vec![
-                arrow!(Type::Uint => arrow!(Type::Uint =>  Type::Uint)),
-                arrow!(Type::Int => arrow!(Type::Int =>  Type::Int)),
-                arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
-            ],
-        )];
-        let mut constraints = global_constraints.clone();
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(add_op_typeid),
+                vec![
+                    arrow!(Type::Uint => arrow!(Type::Uint =>  Type::Uint)),
+                    arrow!(Type::Int => arrow!(Type::Int =>  Type::Int)),
+                    arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
+                ],
+            )]);
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
         for _ in 1..10 {
-            for constraint in &constraints {
+            for constraint in constraint_system.constraints() {
                 match constraint {
                     Constraint::Eq(t1, t2) => {
                         unify::unify_eq(t1, t2, &mut subst);
@@ -783,7 +774,7 @@ pub mod test {
                     Constraint::OneOf(..) => {}
                 }
             }
-            for constraint in &constraints {
+            for constraint in constraint_system.constraints() {
                 match constraint {
                     Constraint::Eq(..) => {}
                     Constraint::OneOf(t1, t2_possibilties) => {
@@ -798,9 +789,10 @@ pub mod test {
         println!(
             "{}\n{}",
             sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
-            sprint_constraints(&constraints)
+            &constraint_system
         );
 
+        let mut ftable = Ftable(Default::default());
         ftable.0.insert(
             (
                 "+".to_string(),
@@ -891,29 +883,28 @@ pub mod test {
         let neg_op_typeid = id_dispenser.next();
         type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
 
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(neg_op_typeid),
-            vec![
-                arrow!(Type::Uint =>  Type::Int),
-                arrow!(Type::Int =>  Type::Int),
-                arrow!(Type::Float => Type::Float),
-            ],
-        )];
-        let mut constraints = global_constraints.clone();
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(neg_op_typeid),
+                vec![
+                    arrow!(Type::Uint =>  Type::Int),
+                    arrow!(Type::Int =>  Type::Int),
+                    arrow!(Type::Float => Type::Float),
+                ],
+            )]);
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
         for _ in 1..10 {
-            for constraint in &constraints {
+            for constraint in constraint_system.constraints() {
                 match constraint {
                     Constraint::Eq(t1, t2) => {
                         unify::unify_eq(t1, t2, &mut subst);
@@ -921,7 +912,7 @@ pub mod test {
                     Constraint::OneOf(..) => {}
                 }
             }
-            for constraint in &constraints {
+            for constraint in constraint_system.constraints() {
                 match constraint {
                     Constraint::Eq(..) => {}
                     Constraint::OneOf(t1, t2_possibilties) => {
@@ -936,7 +927,7 @@ pub mod test {
         println!(
             "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
             sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
-            sprint_constraints(&constraints),
+            &constraint_system,
             sprint_subst(&subst)
         );
 
@@ -1006,37 +997,36 @@ pub mod test {
         let neg_op_typeid = id_dispenser.next();
         type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
 
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(neg_op_typeid),
-            vec![
-                arrow!(Type::Uint =>  Type::Int),
-                arrow!(Type::Int =>  Type::Int),
-                arrow!(Type::Float => Type::Float),
-            ],
-        )];
-        let mut constraints = global_constraints.clone();
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(neg_op_typeid),
+                vec![
+                    arrow!(Type::Uint =>  Type::Int),
+                    arrow!(Type::Int =>  Type::Int),
+                    arrow!(Type::Float => Type::Float),
+                ],
+            )]);
         let mut expr_type_env = ExprTypeEnv::new();
 
         println!(
             "EXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
             sprint_expr_with_type(&expr, &expr_type_env, None),
             sprint_type_env(&type_env),
-            sprint_constraints(&constraints),
+            &constraint_system,
         );
 
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
         for _ in 1..10 {
-            for constraint in &constraints {
+            for constraint in constraint_system.constraints() {
                 match constraint {
                     Constraint::Eq(t1, t2) => {
                         unify::unify_eq(t1, t2, &mut subst);
@@ -1044,7 +1034,7 @@ pub mod test {
                     Constraint::OneOf(..) => {}
                 }
             }
-            for constraint in &constraints {
+            for constraint in constraint_system.constraints() {
                 match constraint {
                     Constraint::Eq(..) => {}
                     Constraint::OneOf(t1, t2_possibilties) => {
@@ -1059,7 +1049,7 @@ pub mod test {
         println!(
             "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
             sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
-            sprint_constraints(&constraints),
+            &constraint_system,
             sprint_subst(&subst)
         );
 

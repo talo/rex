@@ -2,10 +2,33 @@ use std::collections::HashMap;
 
 use rex_ast::id::Id;
 
-use crate::types::{ADTVariant, Type, ADT};
+use crate::{
+    constraint::{Constraint, ConstraintSystem},
+    types::{ADTVariant, Type, ADT},
+};
 
 pub type Subst = HashMap<Id, Type>;
 
+pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, String> {
+    let mut subst = Subst::new();
+    for constraint in constraint_system.constraints() {
+        match constraint {
+            Constraint::Eq(t1, t2) => {
+                unify_eq(t1, t2, &mut subst)?;
+            }
+            Constraint::OneOf(..) => {}
+        }
+    }
+    for constraint in constraint_system.constraints() {
+        match constraint {
+            Constraint::Eq(..) => {}
+            Constraint::OneOf(t1, t2_possibilties) => {
+                unify_one_of(t1, t2_possibilties, &mut subst)?;
+            }
+        }
+    }
+    Ok(subst)
+}
 
 pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
     // First apply any existing substitutions
@@ -100,15 +123,7 @@ pub fn unify_one_of(
             *subst = successes[0].1.clone();
             Ok(())
         }
-        _ => Err(format!(
-            "Cannot unify {} with ambiguous candidates [{}]",
-            t1,
-            t2_possibilities
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
+        _ => Ok(()),
     }
 }
 
@@ -188,6 +203,8 @@ pub fn occurs_check(var: Id, t: &Type) -> bool {
 // Test cases
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use rex_ast::id::Id;
 
     use super::*;
@@ -380,7 +397,7 @@ mod tests {
         // Case 1: The variable we're looking for is bound by the ForAll
         assert!(!occurs_check(
             var,
-            &Type::ForAll(Id(0), Box::new(Type::Var(Id(0))), vec![])
+            &Type::ForAll(Id(0), Box::new(Type::Var(Id(0))), BTreeSet::new())
         ));
 
         // Case 2: The variable we're looking for occurs freely in the body
@@ -393,7 +410,7 @@ mod tests {
                     Box::new(Type::Var(Id(1))),
                     Box::new(Type::Var(Id(0)))
                 )),
-                vec![]
+                BTreeSet::new()
             )
         ));
     }

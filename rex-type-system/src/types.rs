@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{self, Display, Formatter},
 };
 
@@ -13,7 +13,7 @@ pub type ExprTypeEnv = HashMap<Id, Type>;
 #[serde(rename_all = "lowercase")]
 pub enum Type {
     Var(Id),
-    ForAll(Id, Box<Type>, Vec<Id>),
+    ForAll(Id, Box<Type>, BTreeSet<Id>),
 
     ADT(ADT),
     Arrow(Box<Type>, Box<Type>),
@@ -138,7 +138,7 @@ impl Display for Type {
                 ". ".fmt(f)?;
                 t.fmt(f)?;
                 if !deps.is_empty() {
-                    " where {".fmt(f)?;
+                    " with {".fmt(f)?;
                     for (i, dep) in deps.iter().enumerate() {
                         dep.fmt(f)?;
                         if i + 1 < deps.len() {

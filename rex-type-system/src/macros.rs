@@ -40,6 +40,6 @@ macro_rules! adt {
 #[macro_export]
 macro_rules! arrow {
     ($a:expr => $b:expr) => {
-        $crate::types::Type::Arrow(Box::new($a), Box::new($b))
+        $crate::types::Type::Arrow(($a).into(), ($b).into())
     };
 }

@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    fmt::{self, Display, Formatter},
+};
 
 use rex_ast::{
     expr::Expr,
@@ -6,10 +9,151 @@ use rex_ast::{
 };
 
 use crate::{
-    trace::{sprint_expr_with_type, sprint_subst, sprint_type_env},
+    trace::{sprint_expr_with_type, sprint_type_env},
     types::{ADTVariant, ExprTypeEnv, Type, TypeEnv, ADT},
-    unify::{self},
+    unify::{self, Subst},
 };
+
+#[derive(Clone, Debug)]
+pub struct ConstraintSystem {
+    pub local_constraints: Vec<Constraint>,
+    pub global_constraints: Vec<Constraint>,
+}
+
+impl ConstraintSystem {
+    pub fn new() -> Self {
+        Self {
+            local_constraints: vec![],
+            global_constraints: vec![],
+        }
+    }
+
+    pub fn with_global_constraints(global_constraints: Vec<Constraint>) -> Self {
+        Self {
+            local_constraints: vec![],
+            global_constraints,
+        }
+    }
+
+    pub fn add_global_constraint(&mut self, constraint: Constraint) {
+        if !self.is_constrained_globally(&constraint) {
+            self.global_constraints.push(constraint);
+        }
+    }
+
+    pub fn add_global_constraints(&mut self, constraints: impl Iterator<Item = Constraint>) {
+        for constraint in constraints {
+            self.add_global_constraint(constraint);
+        }
+    }
+
+    pub fn add_local_constraints(&mut self, constraints: impl Iterator<Item = Constraint>) {
+        for constraint in constraints {
+            self.add_local_constraint(constraint);
+        }
+    }
+
+    pub fn add_local_constraint(&mut self, constraint: Constraint) {
+        if !self.is_constrained_globally(&constraint) && !self.is_constrained_locally(&constraint) {
+            self.local_constraints.push(constraint);
+        }
+    }
+
+    pub fn extend(&mut self, other: ConstraintSystem) {
+        for constraint in other.global_constraints {
+            self.add_global_constraint(constraint);
+        }
+        for constraint in other.local_constraints {
+            self.add_local_constraint(constraint);
+        }
+    }
+
+    pub fn apply_subst(&mut self, subst: &Subst) {
+        Self::apply_subst_to_constraints(subst, self.global_constraints.iter_mut());
+        Self::apply_subst_to_constraints(subst, self.local_constraints.iter_mut());
+    }
+
+    pub fn is_constrained_globally(&self, constraint: &Constraint) -> bool {
+        Self::is_constrained_by_constraints(constraint, self.global_constraints.iter())
+    }
+
+    pub fn is_constrained_locally(&self, constraint: &Constraint) -> bool {
+        Self::is_constrained_by_constraints(constraint, self.local_constraints.iter())
+    }
+
+    pub fn is_constrained(&self, constraint: &Constraint) -> bool {
+        Self::is_constrained_by_constraints(constraint, self.constraints())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.local_constraints.is_empty() && self.global_constraints.is_empty()
+    }
+
+    pub fn constraints(&self) -> impl Iterator<Item = &Constraint> {
+        self.local_constraints
+            .iter()
+            .chain(self.global_constraints.iter())
+    }
+
+    fn is_constrained_by_constraints<'a>(
+        constraint: &Constraint,
+        constraints: impl Iterator<Item = &'a Constraint>,
+    ) -> bool {
+        for check in constraints {
+            match (constraint, check) {
+                (Constraint::Eq(t11, t12), Constraint::Eq(t21, t22)) => {
+                    if t11 == t21 && t12 == t22 {
+                        return true;
+                    }
+                }
+                (Constraint::OneOf(t1, ts1), Constraint::OneOf(t2, ts2)) => {
+                    if t1 == t2 && ts1 == ts2 {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn apply_subst_to_constraints<'a>(
+        subst: &Subst,
+        constraints: impl Iterator<Item = &'a mut Constraint>,
+    ) {
+        constraints.for_each(|constraint| match constraint {
+            Constraint::Eq(t1, t2) => {
+                *t1 = unify::apply_subst(&t1, subst);
+                *t2 = unify::apply_subst(&t2, subst);
+            }
+            Constraint::OneOf(t, ts) => {
+                *t = unify::apply_subst(&t, subst);
+                for t in ts {
+                    *t = unify::apply_subst(&t, subst);
+                }
+            }
+        });
+    }
+}
+
+impl Display for ConstraintSystem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "local = [{}], global = [{}]",
+            self.local_constraints
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.global_constraints
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Constraint {
@@ -17,25 +161,22 @@ pub enum Constraint {
     OneOf(Type, Vec<Type>),
 }
 
-pub fn sprint_constraints(constraints: &[Constraint]) -> String {
-    let mut s = String::new();
-    s.push_str("{\n");
-    for constraint in constraints {
-        match constraint {
-            Constraint::Eq(t1, t2) => {
-                s.push_str(&format!("  {} = {}\n", t1, t2));
-            }
+impl Display for Constraint {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Constraint::Eq(t1, t2) => write!(f, "{} = {}", t1, t2),
             Constraint::OneOf(t, ts) => {
-                s.push_str(&format!("  {} ∈ {{", t));
-                for ty in ts {
-                    s.push_str(&format!("{}, ", ty));
+                write!(f, "{} ∈ {{", t)?;
+                for (i, ty) in ts.iter().enumerate() {
+                    write!(f, "{}", ty)?;
+                    if i + 1 < ts.len() {
+                        write!(f, ", ")?;
+                    }
                 }
-                s.push_str("}\n");
+                write!(f, "}}")
             }
         }
     }
-    s.push('}');
-    s
 }
 
 // Generate constraints from an expression
@@ -43,8 +184,7 @@ pub fn generate_constraints(
     expr: &Expr,
     env: &TypeEnv,
     expr_env: &mut ExprTypeEnv,
-    constraints: &mut Vec<Constraint>,
-    global_constraints: &mut Vec<Constraint>,
+    constraint_system: &mut ConstraintSystem,
     id_dispenser: &mut IdDispenser,
 ) -> Result<Type, String> {
     match expr {
@@ -52,20 +192,25 @@ pub fn generate_constraints(
             Some(t) => {
                 if let Type::Var(id) = t {
                     // Look for OneOf constraint for this var
-                    if let Some(Constraint::OneOf(_, possible_types)) = constraints
-                        .iter()
-                        .find(|c| matches!(c, Constraint::OneOf(Type::Var(v), _) if v == id))
-                    {
+                    if let Some(Constraint::OneOf(_, possible_types)) = {
+                        let x = constraint_system
+                            .constraints()
+                            .find(|c| matches!(c, Constraint::OneOf(Type::Var(v), _) if v == id))
+                            .cloned();
+                        x
+                    } {
                         // Create fresh type variable for this use
                         let fresh_id = id_dispenser.next();
                         let fresh_var = Type::Var(fresh_id);
 
                         // Add OneOf constraint with same possibilities
-                        constraints
-                            .push(Constraint::OneOf(fresh_var.clone(), possible_types.clone()));
+                        constraint_system.add_local_constraint(Constraint::OneOf(
+                            fresh_var.clone(),
+                            possible_types,
+                        ));
 
                         let mut new_global_constraints = vec![];
-                        for constraint in global_constraints.iter() {
+                        for constraint in constraint_system.global_constraints.iter() {
                             match constraint {
                                 Constraint::Eq(t1, t2) => {
                                     let new_t1 = if t1 == t { &fresh_var } else { t1 };
@@ -80,7 +225,8 @@ pub fn generate_constraints(
                                 }
                             }
                         }
-                        global_constraints.extend(new_global_constraints);
+                        constraint_system
+                            .add_global_constraints(new_global_constraints.into_iter());
 
                         expr_env.insert(var.id, fresh_var.clone());
                         Ok(fresh_var)
@@ -92,7 +238,7 @@ pub fn generate_constraints(
                 } else {
                     match t {
                         Type::ForAll(_, _, _) => {
-                            let instantiated_type = instantiate(t, id_dispenser, constraints);
+                            let instantiated_type = instantiate(t, id_dispenser, constraint_system);
                             expr_env.insert(var.id, instantiated_type.clone());
                             Ok(instantiated_type)
                         }
@@ -111,14 +257,8 @@ pub fn generate_constraints(
 
             // Generate constraints for each expression in the tuple
             for (key, expr) in exprs {
-                let ty = generate_constraints(
-                    expr,
-                    env,
-                    expr_env,
-                    constraints,
-                    global_constraints,
-                    id_dispenser,
-                )?;
+                let ty =
+                    generate_constraints(expr, env, expr_env, constraint_system, id_dispenser)?;
                 kvs.insert(key.clone(), ty);
             }
 
@@ -131,14 +271,8 @@ pub fn generate_constraints(
 
             // Generate constraints for each expression in the tuple
             for expr in exprs {
-                let ty = generate_constraints(
-                    expr,
-                    env,
-                    expr_env,
-                    constraints,
-                    global_constraints,
-                    id_dispenser,
-                )?;
+                let ty =
+                    generate_constraints(expr, env, expr_env, constraint_system, id_dispenser)?;
                 types.push(ty);
             }
 
@@ -156,20 +290,15 @@ pub fn generate_constraints(
             // Generate constraints for all expressions
             let mut types = Vec::new();
             for expr in exprs {
-                let ty = generate_constraints(
-                    expr,
-                    env,
-                    expr_env,
-                    constraints,
-                    global_constraints,
-                    id_dispenser,
-                )?;
+                let ty =
+                    generate_constraints(expr, env, expr_env, constraint_system, id_dispenser)?;
                 types.push(ty);
             }
 
             // Add constraints that all elements must have the same type
             for ty in &types[1..] {
-                constraints.push(Constraint::Eq(types[0].clone(), ty.clone()));
+                constraint_system
+                    .add_local_constraint(Constraint::Eq(types[0].clone(), ty.clone()));
             }
 
             expr_env.insert(*id, Type::List(Box::new(types[0].clone())));
@@ -177,36 +306,21 @@ pub fn generate_constraints(
         }
 
         Expr::App(id, _span, f, x) => {
-            let f_type = generate_constraints(
-                f,
-                env,
-                expr_env,
-                constraints,
-                global_constraints,
-                id_dispenser,
-            )?;
-            let x_type = generate_constraints(
-                x,
-                env,
-                expr_env,
-                constraints,
-                global_constraints,
-                id_dispenser,
-            )?;
+            let f_type = generate_constraints(f, env, expr_env, constraint_system, id_dispenser)?;
+            let x_type = generate_constraints(x, env, expr_env, constraint_system, id_dispenser)?;
 
             let result_type = Type::Var(id_dispenser.next());
 
             let expected_f_type =
                 Type::Arrow(Box::new(x_type.clone()), Box::new(result_type.clone()));
 
-            constraints.push(Constraint::Eq(f_type, expected_f_type));
+            constraint_system.add_local_constraint(Constraint::Eq(f_type, expected_f_type));
 
             println!(
-                "APP:\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\nGLOBALS: {}\n",
+                "APP:\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
                 sprint_expr_with_type(&expr, &expr_env, None),
                 sprint_type_env(&env),
-                sprint_constraints(&constraints),
-                sprint_constraints(&global_constraints),
+                constraint_system,
             );
 
             expr_env.insert(*id, result_type.clone());
@@ -221,30 +335,22 @@ pub fn generate_constraints(
             expr_env.insert(param.id, param_type.clone());
 
             println!(
-                "LAM (before):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\nGLOBALS: {}\n",
+                "LAM (before):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
                 sprint_expr_with_type(&expr, &expr_env, None),
                 sprint_type_env(&new_env),
-                sprint_constraints(&constraints),
-                sprint_constraints(&global_constraints),
+                constraint_system,
             );
 
             // TODO(loong): do we need to clone `expr_env` in the same way that
             // we do for `env`?
-            let body_type = generate_constraints(
-                body,
-                &new_env,
-                expr_env,
-                constraints,
-                global_constraints,
-                id_dispenser,
-            )?;
+            let body_type =
+                generate_constraints(body, &new_env, expr_env, constraint_system, id_dispenser)?;
 
             println!(
-                "LAM (after):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\nGLOBALS: {}\n",
+                "LAM (after):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
                 sprint_expr_with_type(&expr, &expr_env, None),
                 sprint_type_env(&env),
-                sprint_constraints(&constraints),
-                sprint_constraints(&global_constraints),
+                constraint_system,
             );
 
             let result_type = Type::Arrow(Box::new(param_type), Box::new(body_type));
@@ -254,25 +360,22 @@ pub fn generate_constraints(
 
         Expr::Let(id, _span, var, def, body) => {
             // First generate constraints for the definition
-            let mut def_constraints = global_constraints.clone();
-            let def_type = generate_constraints(
-                def,
-                env,
-                expr_env,
-                &mut def_constraints,
-                global_constraints,
-                id_dispenser,
-            )?;
+            let mut def_constraint_system = ConstraintSystem {
+                local_constraints: vec![],
+                global_constraints: constraint_system.global_constraints.clone(),
+            };
+            let def_type =
+                generate_constraints(def, env, expr_env, &mut def_constraint_system, id_dispenser)?;
 
             // Solve definition constraints to get its type
             let mut def_subst = HashMap::new();
-            for constraint in &def_constraints {
+            for constraint in def_constraint_system.constraints() {
                 match constraint {
                     Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut def_subst)?,
                     _ => {}
                 }
             }
-            for constraint in &def_constraints {
+            for constraint in def_constraint_system.constraints() {
                 match constraint {
                     Constraint::Eq(..) => {}
                     Constraint::OneOf(t1, t2_possibilties) => {
@@ -281,20 +384,19 @@ pub fn generate_constraints(
                 }
             }
             let solved_def_type = unify::apply_subst(&def_type, &def_subst);
-            constraints.extend(def_constraints.clone());
+            constraint_system.extend(def_constraint_system.clone());
 
             println!(
-                "LET (before):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\nGLOBAL: {}\nDEF_TYPE: {}\n",
+                "LET (before):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\nDEF_TYPE: {}\n",
                 sprint_expr_with_type(&expr, &expr_env, None),
                 sprint_type_env(&env),
-                sprint_constraints(&constraints),
-                sprint_constraints(&global_constraints),
+                constraint_system,
                 solved_def_type,
             );
 
             // Generalize the type
-            let gen_deps = def_constraints
-                .iter()
+            let gen_deps = def_constraint_system
+                .constraints()
                 .filter_map(|c| match c {
                     Constraint::OneOf(Type::Var(id), _) => Some(*id),
                     Constraint::Eq(Type::Var(id), _) => Some(*id),
@@ -309,58 +411,34 @@ pub fn generate_constraints(
             new_env.insert(var.name.clone(), gen_type.clone());
             expr_env.insert(var.id, gen_type);
 
+            // Generate constraints for the body with the new environment
+            let result_type =
+                generate_constraints(body, &new_env, expr_env, constraint_system, id_dispenser)?;
+            expr_env.insert(*id, result_type.clone());
+
             println!(
-                "LET (after):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\nGLOBAL: {}\n",
+                "LET (after):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
                 sprint_expr_with_type(&expr, &expr_env, None),
                 sprint_type_env(&new_env),
-                sprint_constraints(&constraints),
-                sprint_constraints(&global_constraints),
+                constraint_system,
             );
 
-            // Generate constraints for the body with the new environment
-            let result_type = generate_constraints(
-                body,
-                &new_env,
-                expr_env,
-                constraints,
-                global_constraints,
-                id_dispenser,
-            )?;
-            expr_env.insert(*id, result_type.clone());
             Ok(result_type)
         }
 
         Expr::Ite(id, _span, cond, then_branch, else_branch) => {
             // Generate constraints for all parts
-            let cond_type = generate_constraints(
-                cond,
-                env,
-                expr_env,
-                constraints,
-                global_constraints,
-                id_dispenser,
-            )?;
-            let then_type = generate_constraints(
-                then_branch,
-                env,
-                expr_env,
-                constraints,
-                global_constraints,
-                id_dispenser,
-            )?;
-            let else_type = generate_constraints(
-                else_branch,
-                env,
-                expr_env,
-                constraints,
-                global_constraints,
-                id_dispenser,
-            )?;
+            let cond_type =
+                generate_constraints(cond, env, expr_env, constraint_system, id_dispenser)?;
+            let then_type =
+                generate_constraints(then_branch, env, expr_env, constraint_system, id_dispenser)?;
+            let else_type =
+                generate_constraints(else_branch, env, expr_env, constraint_system, id_dispenser)?;
 
             // Condition must be boolean
-            constraints.push(Constraint::Eq(cond_type, Type::Bool));
+            constraint_system.add_local_constraint(Constraint::Eq(cond_type, Type::Bool));
             // Then and else branches must have the same type
-            constraints.push(Constraint::Eq(then_type.clone(), else_type));
+            constraint_system.add_local_constraint(Constraint::Eq(then_type.clone(), else_type));
 
             expr_env.insert(*id, then_type.clone());
             Ok(then_type)
@@ -453,7 +531,7 @@ fn env_free_vars(env: &TypeEnv) -> HashSet<Id> {
 }
 
 // Generalize a type by quantifying over any type variables that aren't free in the environment
-fn generalize(env: &TypeEnv, ty: &Type, deps: Vec<Id>) -> Type {
+fn generalize(env: &TypeEnv, ty: &Type, deps: BTreeSet<Id>) -> Type {
     let env_vars = env_free_vars(env);
     let ty_vars = free_vars(ty);
 
@@ -465,11 +543,11 @@ fn generalize(env: &TypeEnv, ty: &Type, deps: Vec<Id>) -> Type {
     let mut result = ty.clone();
     // Add deps to first (innermost) ForAll
     if let Some(first_var) = to_quantify.pop() {
-        result = Type::ForAll(first_var, Box::new(result), deps);
+        result = Type::ForAll(first_var, Box::new(result), deps.into_iter().collect());
     }
     // Rest without deps
     for var in to_quantify {
-        result = Type::ForAll(var, Box::new(result), vec![]);
+        result = Type::ForAll(var, Box::new(result), BTreeSet::new());
     }
     result
 }
@@ -478,21 +556,20 @@ fn generalize(env: &TypeEnv, ty: &Type, deps: Vec<Id>) -> Type {
 fn instantiate(
     ty: &Type,
     id_dispenser: &mut IdDispenser,
-    constraints: &mut Vec<Constraint>,
+    constraint_system: &mut ConstraintSystem,
 ) -> Type {
     let mut subst = HashMap::new();
 
     println!(
         "INSTANTIATE (before):\nCONSTRAINTS: {}\nTYPE: {}\n",
-        sprint_constraints(&constraints),
-        ty,
+        &constraint_system, ty,
     );
 
     fn inst_helper(
         ty: &Type,
         subst: &mut HashMap<Id, Type>,
         id_dispenser: &mut IdDispenser,
-        constraints: &mut Vec<Constraint>,
+        constraint_system: &mut ConstraintSystem,
     ) -> Type {
         let result = match ty {
             Type::Var(id) => match subst.get(id) {
@@ -507,24 +584,26 @@ fn instantiate(
                 println!("  INSTANTIATE: {} -> {}", id, fresh_id);
 
                 // Create fresh vars for dependencies
-                let mut new_constraints = vec![];
+                let mut new_constraint_sytem = ConstraintSystem::new();
                 for dep_id in deps {
                     let fresh_dep_id = id_dispenser.next();
                     // Add equality constraint between old and new var
                     subst.insert(*dep_id, Type::Var(fresh_dep_id));
                     println!("    DEP: {} -> {}", dep_id, fresh_dep_id);
 
-                    for constraint in constraints.iter() {
+                    for constraint in constraint_system.constraints() {
                         match constraint {
                             Constraint::Eq(Type::Var(t1), t2) => {
                                 if t1 == dep_id {
-                                    new_constraints
-                                        .push(Constraint::Eq(Type::Var(fresh_dep_id), t2.clone()));
+                                    new_constraint_sytem.add_local_constraint(Constraint::Eq(
+                                        Type::Var(fresh_dep_id),
+                                        t2.clone(),
+                                    ));
                                 }
                             }
                             Constraint::OneOf(Type::Var(t1), ts) => {
                                 if t1 == dep_id {
-                                    new_constraints.push(Constraint::OneOf(
+                                    new_constraint_sytem.add_local_constraint(Constraint::OneOf(
                                         Type::Var(fresh_dep_id),
                                         ts.clone(),
                                     ));
@@ -535,34 +614,12 @@ fn instantiate(
                     }
                 }
 
-                println!(
-                    "  NEW_DEP_CONSTRAINTS: {}",
-                    sprint_constraints(&new_constraints)
-                );
+                new_constraint_sytem.apply_subst(&subst);
+                constraint_system.extend(new_constraint_sytem);
 
-                // Find constraints that mention this quantified variable
-                let new_fixed_constraints = new_constraints
-                    .into_iter()
-                    .map(|constraint| match constraint {
-                        Constraint::Eq(t1, t2) => Constraint::Eq(
-                            unify::apply_subst(&t1, subst),
-                            unify::apply_subst(&t2, subst),
-                        ),
-                        Constraint::OneOf(t, ts) => Constraint::OneOf(
-                            unify::apply_subst(&t, subst),
-                            ts.iter().map(|t| unify::apply_subst(t, subst)).collect(),
-                        ),
-                    })
-                    .collect::<Vec<_>>();
+                println!("  NEW_FIXED_DEP_CONSTRAINTS: {}", constraint_system);
 
-                println!(
-                    "  NEW_FIXED_DEP_CONSTRAINTS: {}",
-                    sprint_constraints(&new_fixed_constraints)
-                );
-
-                constraints.extend(new_fixed_constraints);
-
-                inst_helper(ty, subst, id_dispenser, constraints)
+                inst_helper(ty, subst, id_dispenser, constraint_system)
             }
             Type::ADT(adt) => Type::ADT(ADT {
                 name: adt.name.clone(),
@@ -571,32 +628,45 @@ fn instantiate(
                     .iter()
                     .map(|v| ADTVariant {
                         name: v.name.clone(),
-                        t: v.t
-                            .as_ref()
-                            .map(|t| Box::new(inst_helper(t, subst, id_dispenser, constraints))),
+                        t: v.t.as_ref().map(|t| {
+                            Box::new(inst_helper(t, subst, id_dispenser, constraint_system))
+                        }),
                     })
                     .collect(),
             }),
             Type::Arrow(a, b) => Type::Arrow(
-                Box::new(inst_helper(a, subst, id_dispenser, constraints)),
-                Box::new(inst_helper(b, subst, id_dispenser, constraints)),
+                Box::new(inst_helper(a, subst, id_dispenser, constraint_system)),
+                Box::new(inst_helper(b, subst, id_dispenser, constraint_system)),
             ),
             Type::Result(t, e) => Type::Result(
-                Box::new(inst_helper(t, subst, id_dispenser, constraints)),
-                Box::new(inst_helper(e, subst, id_dispenser, constraints)),
+                Box::new(inst_helper(t, subst, id_dispenser, constraint_system)),
+                Box::new(inst_helper(e, subst, id_dispenser, constraint_system)),
             ),
-            Type::Option(t) => {
-                Type::Option(Box::new(inst_helper(t, subst, id_dispenser, constraints)))
-            }
-            Type::List(t) => Type::List(Box::new(inst_helper(t, subst, id_dispenser, constraints))),
+            Type::Option(t) => Type::Option(Box::new(inst_helper(
+                t,
+                subst,
+                id_dispenser,
+                constraint_system,
+            ))),
+            Type::List(t) => Type::List(Box::new(inst_helper(
+                t,
+                subst,
+                id_dispenser,
+                constraint_system,
+            ))),
             Type::Dict(kts) => Type::Dict(
                 kts.iter()
-                    .map(|(k, t)| (k.clone(), inst_helper(t, subst, id_dispenser, constraints)))
+                    .map(|(k, t)| {
+                        (
+                            k.clone(),
+                            inst_helper(t, subst, id_dispenser, constraint_system),
+                        )
+                    })
                     .collect(),
             ),
             Type::Tuple(ts) => Type::Tuple(
                 ts.iter()
-                    .map(|t| inst_helper(t, subst, id_dispenser, constraints))
+                    .map(|t| inst_helper(t, subst, id_dispenser, constraint_system))
                     .collect(),
             ),
 
@@ -605,13 +675,12 @@ fn instantiate(
         result
     }
 
-    let res = inst_helper(ty, &mut subst, id_dispenser, constraints);
+    let res = inst_helper(ty, &mut subst, id_dispenser, constraint_system);
     // let res = unify::apply_subst(&res, &subst);
 
     println!(
         "INSTANTIATE (after):\nCONSTRAINTS: {}\nDTYPE: {}\n",
-        sprint_constraints(&constraints),
-        res,
+        &constraint_system, res,
     );
 
     res
@@ -619,6 +688,8 @@ fn instantiate(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use rex_ast::expr::Var;
     use rex_lexer::span::Span;
 
@@ -646,7 +717,7 @@ mod tests {
                 Box::new(Type::Var(Id(0))),
                 Box::new(Type::Var(Id(1))),
             )),
-            vec![],
+            BTreeSet::new(),
         );
         let vars = free_vars(&ty);
         assert_eq!(vars.len(), 1);
@@ -665,7 +736,7 @@ mod tests {
 
         // Should become ∀α. α -> β
         // (β isn't quantified because it appears in env)
-        let gen_ty = generalize(&env, &ty, vec![]);
+        let gen_ty = generalize(&env, &ty, BTreeSet::new());
         match gen_ty {
             Type::ForAll(id, ty, _deps) => {
                 assert_eq!(id, Id(0));
@@ -695,10 +766,10 @@ mod tests {
                 Box::new(Type::Var(id_0)),
                 Box::new(Type::Var(id_1)),
             )),
-            vec![],
+            BTreeSet::new(),
         );
 
-        let inst_ty = instantiate(&ty, &mut id_dispenser, &mut vec![]);
+        let inst_ty = instantiate(&ty, &mut id_dispenser, &mut ConstraintSystem::new());
 
         // Should become γ -> β where γ is fresh
         match inst_ty {
@@ -730,20 +801,19 @@ mod tests {
         env.insert("two".to_string(), Type::Int);
         env.insert("three".to_string(), Type::Int);
 
-        let mut constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut vec![],
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
 
         // Solve constraints
         let mut subst = HashMap::new();
-        for constraint in constraints {
+        for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
                 _ => panic!("Expected equality constraint"),
@@ -766,21 +836,20 @@ mod tests {
 
         env.insert("true".to_string(), Type::Bool);
 
-        let mut constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_env = ExprTypeEnv::new();
         let _ty = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut vec![],
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
 
         // This should fail unification
         let mut subst = Subst::new();
-        let result = constraints
-            .into_iter()
+        let result = constraint_system
+            .constraints()
             .try_for_each(|constraint| match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst),
                 _ => panic!("Expected equality constraint"),
@@ -789,18 +858,17 @@ mod tests {
 
         // Test empty list
         let expr = Expr::List(id_dispenser.next(), Span::default(), vec![]);
-        let mut constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut vec![],
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
         assert!(matches!(ty, Type::List(_)));
-        assert!(constraints.is_empty());
+        assert!(constraint_system.is_empty());
 
         Ok(())
     }
@@ -854,27 +922,26 @@ mod tests {
                     Box::new(Type::List(Box::new(Type::Var(elem_type)))),
                     Box::new(Type::Var(elem_type)),
                 )),
-                vec![],
+                BTreeSet::new(),
             ),
         );
         env.insert("int_val".to_string(), Type::Int);
         env.insert("bool_val".to_string(), Type::Bool);
 
-        let mut constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_env = ExprTypeEnv::new();
         let _ty = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut vec![],
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
 
         // This should fail unification because the list elements don't match
         let mut subst = HashMap::new();
-        let result = constraints
-            .into_iter()
+        let result = constraint_system
+            .constraints()
             .try_for_each(|constraint| match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst),
                 _ => panic!("Expected equality constraint"),
@@ -897,7 +964,7 @@ mod tests {
                 Box::new(Type::List(Box::new(Type::Var(elem_type)))),
                 Box::new(Type::Var(elem_type)),
             )),
-            vec![],
+            BTreeSet::new(),
         );
         env.insert("head".to_string(), head_type);
 
@@ -924,25 +991,18 @@ mod tests {
             ],
         );
 
-        let mut constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut vec![],
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
 
         // Solve constraints
-        let mut subst = HashMap::new();
-        for constraint in &constraints {
-            match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
-                _ => panic!("Expected equality constraint"),
-            }
-        }
+        let subst = unify::unify_constraints(&constraint_system)?;
 
         let final_type = unify::apply_subst(&ty, &subst);
 
@@ -952,7 +1012,7 @@ mod tests {
     }
 
     #[test]
-    fn test_let() {
+    fn test_let() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut env = TypeEnv::new();
 
@@ -977,30 +1037,25 @@ mod tests {
 
         env.insert("one".to_string(), Type::Int);
 
-        let mut constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_env = ExprTypeEnv::new();
         let result_type = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut vec![],
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .unwrap();
 
         // Solve constraints
-        let mut subst = HashMap::new();
-        for constraint in constraints {
-            match constraint {
-                Constraint::Eq(t1, t2) => assert!(unify::unify_eq(&t1, &t2, &mut subst).is_ok()),
-                _ => panic!("Expected equality constraint"),
-            }
-        }
+        let subst = unify::unify_constraints(&constraint_system)?;
 
         // Result should be Int
         let final_result = unify::apply_subst(&result_type, &subst);
         assert_eq!(final_result, Type::Int);
+
+        Ok(())
     }
 
     #[test]
@@ -1046,25 +1101,18 @@ mod tests {
         env.insert("int_val".to_string(), Type::Int);
         env.insert("bool_val".to_string(), Type::Bool);
 
-        let mut constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut vec![],
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
 
         // Solve constraints
-        let mut subst = Subst::new();
-        for constraint in constraints {
-            match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
-                _ => panic!("Expected equality constraint"),
-            }
-        }
+        let subst = unify::unify_constraints(&constraint_system)?;
 
         // The final type should be (Int, Bool)
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1074,7 +1122,7 @@ mod tests {
     }
 
     #[test]
-    fn test_if_then_else() {
+    fn test_if_then_else() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut env = TypeEnv::new();
 
@@ -1093,30 +1141,25 @@ mod tests {
         env.insert("two".to_string(), Type::Int);
 
         // Generate constraints
-        let mut constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_env = ExprTypeEnv::new();
         let result_type = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut vec![],
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .unwrap();
 
         // Solve constraints
-        let mut subst = HashMap::new();
-        for constraint in constraints {
-            match constraint {
-                Constraint::Eq(t1, t2) => assert!(unify::unify_eq(&t1, &t2, &mut subst).is_ok()),
-                _ => panic!("Expected equality constraint"),
-            }
-        }
+        let subst = unify::unify_constraints(&constraint_system)?;
 
         // Result should be Int
         let final_result = unify::apply_subst(&result_type, &subst);
         assert_eq!(final_result, Type::Int);
+
+        Ok(())
     }
 
     #[test]
@@ -1217,25 +1260,18 @@ mod tests {
         env.insert("bool_val".to_string(), Type::Bool);
         env.insert("int_val".to_string(), Type::Int);
 
-        let mut constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut vec![],
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
 
         // Solve constraints
-        let mut subst = Subst::new();
-        for constraint in constraints {
-            match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
-                _ => panic!("Expected equality constraint"),
-            }
-        }
+        let subst = unify::unify_constraints(&constraint_system)?;
 
         // The final type should be (Bool, Int)
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1307,19 +1343,18 @@ mod tests {
         );
 
         // This should fail with a type error
-        let mut constraints = vec![];
+        let mut constraint_system = ConstraintSystem::new();
         let mut expr_env = ExprTypeEnv::new();
         let result = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut vec![],
+            &mut constraint_system,
             &mut id_dispenser,
         )
         .and_then(|ty| {
             let mut subst = HashMap::new();
-            for constraint in constraints {
+            for constraint in constraint_system.constraints() {
                 match constraint {
                     Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst)?,
                     _ => panic!("Expected equality constraint"),
@@ -1361,46 +1396,30 @@ mod tests {
             Box::new(Expr::Var(Var::next(&mut id_dispenser, "false"))),
         );
 
-        let mut constraints = vec![];
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(xor_type_id),
-            vec![
-                Type::Arrow(
-                    Box::new(Type::Bool),
-                    Box::new(Type::Arrow(Box::new(Type::Bool), Box::new(Type::Bool))),
-                ),
-                Type::Arrow(
-                    Box::new(Type::Int),
-                    Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))),
-                ),
-            ],
-        )];
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(xor_type_id),
+                vec![
+                    Type::Arrow(
+                        Box::new(Type::Bool),
+                        Box::new(Type::Arrow(Box::new(Type::Bool), Box::new(Type::Bool))),
+                    ),
+                    Type::Arrow(
+                        Box::new(Type::Int),
+                        Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))),
+                    ),
+                ],
+            )]);
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &bool_expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
-        constraints.extend(global_constraints);
 
-        let mut subst = HashMap::new();
-        for constraint in &constraints {
-            match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst)?,
-                _ => {}
-            }
-        }
-        for constraint in &constraints {
-            match constraint {
-                Constraint::Eq(..) => {}
-                Constraint::OneOf(t1, t2_possibilties) => {
-                    unify::unify_one_of(t1, t2_possibilties, &mut subst)?
-                }
-            }
-        }
+        let subst = unify::unify_constraints(&constraint_system)?;
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Type::Bool);
 
@@ -1480,55 +1499,37 @@ mod tests {
         //     Box::new(tuple_expr),
         // );
 
-        let mut constraints = vec![];
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(xor_type_id),
-            vec![
-                Type::Arrow(
-                    Box::new(Type::Bool),
-                    Box::new(Type::Arrow(Box::new(Type::Bool), Box::new(Type::Bool))),
-                ),
-                Type::Arrow(
-                    Box::new(Type::Int),
-                    Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))),
-                ),
-            ],
-        )];
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(xor_type_id),
+                vec![
+                    Type::Arrow(
+                        Box::new(Type::Bool),
+                        Box::new(Type::Arrow(Box::new(Type::Bool), Box::new(Type::Bool))),
+                    ),
+                    Type::Arrow(
+                        Box::new(Type::Int),
+                        Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))),
+                    ),
+                ],
+            )]);
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &tuple_expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
-        constraints.extend(global_constraints);
 
         println!(
             "TYPES:\n{}\nEXPR TYPES:\n{}\nCONSTRAINTS:\n{}",
             sprint_type_env(&env),
             sprint_expr_type_env(&expr_env),
-            sprint_constraints(&constraints)
+            &constraint_system
         );
 
-        let mut subst = HashMap::new();
-        for constraint in &constraints {
-            match constraint {
-                Constraint::Eq(t1, t2) => {
-                    unify::unify_eq(t1, t2, &mut subst);
-                }
-                _ => {}
-            }
-        }
-        for constraint in &constraints {
-            match constraint {
-                Constraint::Eq(..) => {}
-                Constraint::OneOf(t1, t2_possibilties) => {
-                    unify::unify_one_of(t1, t2_possibilties, &mut subst);
-                }
-            }
-        }
+        let subst = unify::unify_constraints(&constraint_system)?;
 
         let final_type = unify::apply_subst(&ty, &subst);
 
@@ -1584,37 +1585,21 @@ mod tests {
             )),
         );
 
-        let mut constraints = vec![];
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(rand_type_id),
-            vec![Type::Int, Type::Bool],
-        )];
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(rand_type_id),
+                vec![Type::Int, Type::Bool],
+            )]);
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &sum_expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
-        constraints.extend(global_constraints);
 
-        let mut subst = HashMap::new();
-        for constraint in &constraints {
-            match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst)?,
-                Constraint::OneOf(..) => {}
-            }
-        }
-        for constraint in &constraints {
-            match constraint {
-                Constraint::Eq(..) => {}
-                Constraint::OneOf(t1, t2_possibilties) => {
-                    unify::unify_one_of(t1, t2_possibilties, &mut subst)?
-                }
-            }
-        }
+        let subst = unify::unify_constraints(&constraint_system)?;
 
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Type::Int);
@@ -1632,27 +1617,25 @@ mod tests {
         // Test: just rand by itself (should be ambiguous)
         let expr = Expr::Var(Var::next(&mut id_dispenser, "rand"));
 
-        let mut constraints = vec![];
-        let mut global_constraints = vec![Constraint::OneOf(
-            Type::Var(rand_type_id),
-            vec![Type::Int, Type::Bool],
-        )];
+        let mut constraint_system =
+            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Type::Var(rand_type_id),
+                vec![Type::Int, Type::Bool],
+            )]);
         let mut expr_env = ExprTypeEnv::new();
         let _ty = generate_constraints(
             &expr,
             &env,
             &mut expr_env,
-            &mut constraints,
-            &mut global_constraints,
+            &mut constraint_system,
             &mut id_dispenser,
         )?;
-        constraints.extend(global_constraints);
 
         let mut subst = HashMap::new();
 
         // This should fail because both types are possible
-        let result = constraints
-            .into_iter()
+        let result = constraint_system
+            .constraints()
             .try_for_each(|constraint| match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut subst),
                 Constraint::OneOf(t1, t2_possibilties) => {
