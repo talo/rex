@@ -13,7 +13,7 @@ pub type ExprTypeEnv = HashMap<Id, Type>;
 #[serde(rename_all = "lowercase")]
 pub enum Type {
     Var(Id),
-    ForAll(Id, Box<Type>),
+    ForAll(Id, Box<Type>, Vec<Id>),
 
     ADT(ADT),
     Arrow(Box<Type>, Box<Type>),
@@ -132,11 +132,22 @@ impl Display for Type {
                 'τ'.fmt(f)?;
                 x.fmt(f)
             }
-            Type::ForAll(x, t) => {
-                "∀ τ".fmt(f)?;
+            Type::ForAll(x, t, deps) => {
+                "∀τ".fmt(f)?;
                 x.fmt(f)?;
-                " . ".fmt(f)?;
-                t.fmt(f)
+                ". ".fmt(f)?;
+                t.fmt(f)?;
+                if !deps.is_empty() {
+                    " where {".fmt(f)?;
+                    for (i, dep) in deps.iter().enumerate() {
+                        dep.fmt(f)?;
+                        if i + 1 < deps.len() {
+                            ", ".fmt(f)?;
+                        }
+                    }
+                    '}'.fmt(f)?;
+                }
+                Ok(())
             }
             Type::List(x) => {
                 '['.fmt(f)?;

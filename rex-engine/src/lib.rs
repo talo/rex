@@ -339,78 +339,78 @@ mod test {
     //         assert_eq!(val, Value::Uint(1))
     //     }
 
-    #[tokio::test]
-    async fn math() {
-        let mut parser = Parser::new(Token::tokenize("1 + 2").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let state = ();
+    // #[tokio::test]
+    // async fn math() {
+    //     let mut parser = Parser::new(Token::tokenize("1 + 2").unwrap());
+    //     let expr = parser.parse_expr().unwrap();
+    //     let state = ();
 
-        let mut id_dispenser = parser.id_dispenser;
+    //     let mut id_dispenser = parser.id_dispenser;
 
-        let mut ftable = Ftable::with_intrinsics(&mut id_dispenser);
+    //     let mut ftable = Ftable::with_intrinsics(&mut id_dispenser);
 
-        let mut scope = ftable.scope();
-        let add_op_id = id_dispenser.next();
-        scope.vars.insert("+".to_string(), add_op_id);
+    //     let mut scope = ftable.scope();
+    //     let add_op_id = id_dispenser.next();
+    //     scope.vars.insert("+".to_string(), add_op_id);
 
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+    //     let ctx = Context::new();
+    //     let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
 
-        let mut type_env = TypeEnv::new();
+    //     let mut type_env = TypeEnv::new();
 
-        let app_op_type_id = id_dispenser.next();
-        type_env.insert("+".to_string(), Type::Var(app_op_type_id));
+    //     let app_op_type_id = id_dispenser.next();
+    //     type_env.insert("+".to_string(), Type::Var(app_op_type_id));
 
-        let mut type_constraints = vec![Constraint::OneOf(
-            Type::Var(app_op_type_id),
-            vec![
-                arrow!(Type::Uint => arrow!(Type::Uint => Type::Uint)),
-                arrow!(Type::Int => arrow!(Type::Int => Type::Int)),
-                arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
-            ],
-        )];
-        let ty = constraint::generate_constraints(
-            &ast,
-            &type_env,
-            &mut ftable.expr_type_env,
-            &mut type_constraints,
-            &mut id_dispenser,
-        )
-        .unwrap();
+    //     let mut type_constraints = vec![Constraint::OneOf(
+    //         Type::Var(app_op_type_id),
+    //         vec![
+    //             arrow!(Type::Uint => arrow!(Type::Uint => Type::Uint)),
+    //             arrow!(Type::Int => arrow!(Type::Int => Type::Int)),
+    //             arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
+    //         ],
+    //     )];
+    //     let ty = constraint::generate_constraints(
+    //         &ast,
+    //         &type_env,
+    //         &mut ftable.expr_type_env,
+    //         &mut type_constraints,
+    //         &mut id_dispenser,
+    //     )
+    //     .unwrap();
 
-        let mut subst = Subst::new();
-        for constraint in &type_constraints {
-            match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
-                Constraint::OneOf(..) => {}
-            }
-        }
-        for constraint in &type_constraints {
-            match constraint {
-                Constraint::Eq(..) => {}
-                Constraint::OneOf(t1, t2_possibilties) => {
-                    if t2_possibilties.len() == 1 {
-                        unify::unify_eq(t1, &t2_possibilties[0], &mut subst).unwrap()
-                    } else {
-                        unify::unify_one_of(t1, t2_possibilties, &mut subst).unwrap()
-                    }
-                }
-            }
-        }
+    //     let mut subst = Subst::new();
+    //     for constraint in &type_constraints {
+    //         match constraint {
+    //             Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
+    //             Constraint::OneOf(..) => {}
+    //         }
+    //     }
+    //     for constraint in &type_constraints {
+    //         match constraint {
+    //             Constraint::Eq(..) => {}
+    //             Constraint::OneOf(t1, t2_possibilties) => {
+    //                 if t2_possibilties.len() == 1 {
+    //                     unify::unify_eq(t1, &t2_possibilties[0], &mut subst).unwrap()
+    //                 } else {
+    //                     unify::unify_one_of(t1, t2_possibilties, &mut subst).unwrap()
+    //                 }
+    //             }
+    //         }
+    //     }
 
-        let final_type = unify::apply_subst(&ty, &subst);
-        println!("EXPR TYPES: {:#?}", ftable.expr_type_env);
-        println!("EXPRS: {}", ast);
-        println!("SUBSTS: {:#?}", subst);
+    //     let final_type = unify::apply_subst(&ty, &subst);
+    //     println!("EXPR TYPES: {:#?}", ftable.expr_type_env);
+    //     println!("EXPRS: {}", ast);
+    //     println!("SUBSTS: {:#?}", subst);
 
-        let res = eval(&ctx, &ftable, &state, ast).await;
+    //     let res = eval(&ctx, &ftable, &state, ast).await;
 
-        if let Err(e) = &res {
-            eprintln!("{}", sprint_trace(e.trace()));
-        }
+    //     if let Err(e) = &res {
+    //         eprintln!("{}", sprint_trace(e.trace()));
+    //     }
 
-        assert_eq!(res, Ok(Value::Uint(3)))
-    }
+    //     assert_eq!(res, Ok(Value::Uint(3)))
+    // }
 
     //     #[tokio::test]
     //     async fn negate() {

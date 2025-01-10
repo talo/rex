@@ -64,6 +64,24 @@ pub enum Expr {
 }
 
 impl Expr {
+    pub fn id(&self) -> &Id {
+        match self {
+            Self::Bool(id, _, _)
+            | Self::Uint(id, _, _)
+            | Self::Int(id, _, _)
+            | Self::Float(id, _, _)
+            | Self::String(id, _, _)
+            | Self::Tuple(id, _, _)
+            | Self::List(id, _, _)
+            | Self::Dict(id, _, _)
+            | Self::Var(Var { id, .. })
+            | Self::App(id, _, _, _)
+            | Self::Lam(id, _, _, _)
+            | Self::Let(id, _, _, _, _)
+            | Self::Ite(id, _, _, _, _) => id,
+        }
+    }
+
     pub fn span(&self) -> &Span {
         match self {
             Self::Bool(_, span, _)

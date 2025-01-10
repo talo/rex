@@ -1,5 +1,6 @@
 use std::{collections::HashMap, future::Future, pin::Pin};
 
+use futures::future;
 use rex_ast::{
     expr::{Expr, Var},
     id::Id,
@@ -60,10 +61,69 @@ pub async fn eval(ftable: &Ftable, env: &ExprTypeEnv, subst: &Subst, expr: Expr)
         Expr::Int(..) => Value::Expr(expr),
         Expr::Float(..) => Value::Expr(expr),
         Expr::String(..) => Value::Expr(expr),
+        Expr::Tuple(id, span, tuple) => eval_tuple(ftable, env, subst, id, span, tuple).await,
+        Expr::List(id, span, list) => eval_list(ftable, env, subst, id, span, list).await,
         Expr::Var(..) => Value::Expr(expr),
         Expr::App(id, span, f, x) => eval_app(ftable, env, subst, id, span, *f, *x).await,
+        Expr::Lam(..) => unimplemented!(),
+        Expr::Let(id, span, var, def, body) => {
+            eval_let(ftable, env, subst, id, span, var, *def, *body).await
+        }
+        Expr::Ite(..) => unimplemented!(),
         _ => unimplemented!(),
     }
+}
+
+pub async fn eval_tuple(
+    ftable: &Ftable,
+    env: &ExprTypeEnv,
+    subst: &Subst,
+    id: Id,
+    span: Span,
+    tuple: Vec<Expr>,
+) -> Value {
+    let mut result = Vec::with_capacity(tuple.len());
+    for v in tuple {
+        result.push(eval(ftable, env, subst, v));
+    }
+    Value::Expr(Expr::Tuple(
+        id,
+        span,
+        future::join_all(result)
+            .await
+            .into_iter()
+            .map(|v| match v {
+                Value::Expr(e) => e,
+                _ => unimplemented!(),
+            })
+            .collect(),
+    ))
+}
+
+pub async fn eval_list(
+    ftable: &Ftable,
+    env: &ExprTypeEnv,
+    subst: &Subst,
+    id: Id,
+    span: Span,
+    list: Vec<Expr>,
+) -> Value {
+    let mut result = Vec::with_capacity(list.len());
+    for v in list {
+        result.push(eval(ftable, env, subst, v));
+    }
+    Value::Expr(Expr::List(
+        id,
+        span,
+        future::join_all(result)
+            .await
+            .into_iter()
+            .map(|v| match v {
+                Value::Expr(e) => e,
+                _ => unimplemented!(),
+            })
+            .collect(),
+    ))
 }
 
 pub async fn eval_app(
@@ -90,7 +150,7 @@ pub async fn eval_app(
                     _ => Value::Closure(var, vec![x]),
                 }
             } else {
-                panic!("Function not found: {}", var.name)
+                panic!("Function not found: {}:{}", var.name, var_type)
             }
         }
         Value::Closure(var, mut args) => {
@@ -114,14 +174,28 @@ pub async fn eval_app(
     }
 }
 
+pub async fn eval_let(
+    ftable: &Ftable,
+    env: &ExprTypeEnv,
+    subst: &Subst,
+    id: Id,
+    span: Span,
+    var: Var,
+    def: Expr,
+    body: Expr,
+) -> Value {
+    unimplemented!()
+}
+
 #[cfg(test)]
 pub mod test {
     use rex_lexer::Token;
     use rex_parser::Parser;
-    use rex_resolver::{resolve, Scope};
+    use rex_resolver::Scope;
     use rex_type_system::{
         arrow,
-        constraint::{generate_constraints, Constraint},
+        constraint::{generate_constraints, sprint_constraints, Constraint},
+        trace::{sprint_expr_with_type, sprint_subst, sprint_type_env},
         types::TypeEnv,
         unify::{self, Subst},
     };
@@ -142,41 +216,32 @@ pub mod test {
         let add_op_id = id_dispenser.next();
         scope.vars.insert("+".to_string(), add_op_id);
 
-        let expr = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-
         let mut type_env = TypeEnv::new();
 
         let app_op_type_id = id_dispenser.next();
         // type_env.insert("+".to_string(), Type::Var(app_op_type_id));
 
-        let mut type_constraints = vec![
-            // Constraint::OneOf(
-            //  Type::Var(app_op_type_id),
-            //  vec![
-            //       arrow!(Type::Uint => arrow!(Type::Uint => Type::Uint)),
-            //        arrow!(Type::Int => arrow!(Type::Int => Type::Int)),
-            //       arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
-            //  ],
-            // )
-        ];
+        let mut constraints = vec![];
+        let mut global_constraints = vec![];
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut type_constraints,
+            &mut constraints,
+            &mut global_constraints,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
-        for constraint in &type_constraints {
+        for constraint in &constraints {
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
                 Constraint::OneOf(..) => {}
             }
         }
-        for constraint in &type_constraints {
+        for constraint in &constraints {
             match constraint {
                 Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
@@ -213,14 +278,12 @@ pub mod test {
         let neg_op_id = id_dispenser.next();
         scope.vars.insert("negate".to_string(), neg_op_id);
 
-        let expr = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-
         let mut type_env = TypeEnv::new();
 
         let neg_op_typeid = id_dispenser.next();
         type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
 
-        let mut type_constraints = vec![Constraint::OneOf(
+        let mut global_constraints = vec![Constraint::OneOf(
             Type::Var(neg_op_typeid),
             vec![
                 arrow!(Type::Uint =>  Type::Int),
@@ -228,31 +291,33 @@ pub mod test {
                 arrow!(Type::Float => Type::Float),
             ],
         )];
+        let mut constraints = global_constraints.clone();
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut type_constraints,
+            &mut constraints,
+            &mut global_constraints,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
-        for constraint in &type_constraints {
+        for constraint in &constraints {
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
                 Constraint::OneOf(..) => {}
             }
         }
-        for constraint in &type_constraints {
+        for constraint in &constraints {
             match constraint {
                 Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
                     if t2_possibilties.len() == 1 {
                         unify::unify_eq(t1, &t2_possibilties[0], &mut subst).unwrap()
                     } else {
-                        unify::unify_one_of(t1, t2_possibilties, &mut subst).unwrap()
+                        unify::unify_one_of(t1, t2_possibilties, &mut subst);
                     }
                 }
             }
@@ -262,6 +327,236 @@ pub mod test {
         println!("EXPR TYPES: {:#?}", expr_type_env);
         println!("EXPRS: {:#?}", expr);
         println!("SUBSTS: {:#?}", subst);
+
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Uint => Type::Int)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Uint(id, span, x)) => {
+                            Value::Expr(Expr::Int(*id, *span, -(*x as i64)))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Int => Type::Int)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Int(id, span, x)) => {
+                            Value::Expr(Expr::Int(*id, *span, -*x))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Float => Type::Float)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Float(id, span, x)) => {
+                            Value::Expr(Expr::Float(*id, *span, -*x))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+
+        println!("RES: {:#?}", res);
+    }
+
+    #[tokio::test]
+    async fn test_negate_tuple() {
+        let mut parser = Parser::new(Token::tokenize("(negate 6.9, negate 420)").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        let state = ();
+
+        println!("PARSED: {}", expr);
+
+        let mut id_dispenser = parser.id_dispenser;
+
+        let mut ftable = Ftable(Default::default());
+
+        let mut scope = Scope::default();
+        let neg_op_id = id_dispenser.next();
+        scope.vars.insert("negate".to_string(), neg_op_id);
+
+        // let expr = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+
+        let mut type_env = TypeEnv::new();
+
+        let neg_op_typeid = id_dispenser.next();
+        type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
+
+        let mut global_constraints = vec![Constraint::OneOf(
+            Type::Var(neg_op_typeid),
+            vec![
+                arrow!(Type::Uint =>  Type::Int),
+                arrow!(Type::Int =>  Type::Int),
+                arrow!(Type::Float => Type::Float),
+            ],
+        )];
+        let mut constraints = global_constraints.clone();
+        let mut expr_type_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraints,
+            &mut global_constraints,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let mut subst = Subst::new();
+        for constraint in &constraints {
+            match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
+                Constraint::OneOf(..) => {}
+            }
+        }
+        for constraint in &constraints {
+            match constraint {
+                Constraint::Eq(..) => {}
+                Constraint::OneOf(t1, t2_possibilties) => {
+                    if t2_possibilties.len() == 1 {
+                        unify::unify_eq(t1, &t2_possibilties[0], &mut subst);
+                    } else {
+                        unify::unify_one_of(t1, t2_possibilties, &mut subst);
+                    }
+                }
+            }
+        }
+
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
+            sprint_constraints(&constraints),
+            sprint_subst(&subst)
+        );
+
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Uint => Type::Int)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Uint(id, span, x)) => {
+                            Value::Expr(Expr::Int(*id, *span, -(*x as i64)))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Int => Type::Int)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Int(id, span, x)) => {
+                            Value::Expr(Expr::Int(*id, *span, -*x))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Float => Type::Float)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Float(id, span, x)) => {
+                            Value::Expr(Expr::Float(*id, *span, -*x))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+
+        println!("RES: {:#?}", res);
+    }
+
+    #[tokio::test]
+    async fn test_negate_list() {
+        let mut parser = Parser::new(Token::tokenize("[-6.9, -3.14]").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        let state = ();
+
+        println!("PARSED: {}", expr);
+
+        let mut id_dispenser = parser.id_dispenser;
+
+        let mut ftable = Ftable(Default::default());
+
+        let mut scope = Scope::default();
+        let neg_op_id = id_dispenser.next();
+        scope.vars.insert("negate".to_string(), neg_op_id);
+
+        let mut type_env = TypeEnv::new();
+
+        let neg_op_typeid = id_dispenser.next();
+        type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
+
+        let mut global_constraints = vec![Constraint::OneOf(
+            Type::Var(neg_op_typeid),
+            vec![
+                arrow!(Type::Uint =>  Type::Int),
+                arrow!(Type::Int =>  Type::Int),
+                arrow!(Type::Float => Type::Float),
+            ],
+        )];
+        let mut constraints = global_constraints.clone();
+        let mut expr_type_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraints,
+            &mut global_constraints,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let mut subst = Subst::new();
+        for constraint in &constraints {
+            match constraint {
+                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
+                Constraint::OneOf(..) => {}
+            }
+        }
+        for constraint in &constraints {
+            match constraint {
+                Constraint::Eq(..) => {}
+                Constraint::OneOf(t1, t2_possibilties) => {
+                    if t2_possibilties.len() == 1 {
+                        unify::unify_eq(t1, &t2_possibilties[0], &mut subst);
+                    } else {
+                        unify::unify_one_of(t1, t2_possibilties, &mut subst);
+                    }
+                }
+            }
+        }
+
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
+            sprint_constraints(&constraints),
+            sprint_subst(&subst)
+        );
 
         ftable.0.insert(
             ("negate".to_string(), arrow!(Type::Uint => Type::Int)),
@@ -321,14 +616,12 @@ pub mod test {
         let neg_op_id = id_dispenser.next();
         scope.vars.insert("+".to_string(), neg_op_id);
 
-        let expr = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-
         let mut type_env = TypeEnv::new();
 
         let neg_op_typeid = id_dispenser.next();
         type_env.insert("+".to_string(), Type::Var(neg_op_typeid));
 
-        let mut type_constraints = vec![Constraint::OneOf(
+        let mut global_constraints = vec![Constraint::OneOf(
             Type::Var(neg_op_typeid),
             vec![
                 arrow!(Type::Uint => arrow!(Type::Uint =>  Type::Uint)),
@@ -336,31 +629,33 @@ pub mod test {
                 arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
             ],
         )];
+        let mut constraints = global_constraints.clone();
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut type_constraints,
+            &mut constraints,
+            &mut global_constraints,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
-        for constraint in &type_constraints {
+        for constraint in &constraints {
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
                 Constraint::OneOf(..) => {}
             }
         }
-        for constraint in &type_constraints {
+        for constraint in &constraints {
             match constraint {
                 Constraint::Eq(..) => {}
                 Constraint::OneOf(t1, t2_possibilties) => {
                     if t2_possibilties.len() == 1 {
-                        unify::unify_eq(t1, &t2_possibilties[0], &mut subst).unwrap()
+                        unify::unify_eq(t1, &t2_possibilties[0], &mut subst);
                     } else {
-                        unify::unify_one_of(t1, t2_possibilties, &mut subst).unwrap()
+                        unify::unify_one_of(t1, t2_possibilties, &mut subst);
                     }
                 }
             }
@@ -440,7 +735,7 @@ pub mod test {
     }
 
     #[tokio::test]
-    async fn test_tuple_add() {
+    async fn test_add_tuple() {
         let mut parser = Parser::new(Token::tokenize("(6.9 + 4.20, 6 + 9)").unwrap());
         let expr = parser.parse_expr().unwrap();
         let state = ();
@@ -450,58 +745,61 @@ pub mod test {
         let mut ftable = Ftable(Default::default());
 
         let mut scope = Scope::default();
-        let neg_op_id = id_dispenser.next();
-        scope.vars.insert("+".to_string(), neg_op_id);
-
-        let expr = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
+        let add_op_id = id_dispenser.next();
+        scope.vars.insert("+".to_string(), add_op_id);
 
         let mut type_env = TypeEnv::new();
 
-        let neg_op_typeid = id_dispenser.next();
-        type_env.insert("+".to_string(), Type::Var(neg_op_typeid));
+        let add_op_typeid = id_dispenser.next();
+        type_env.insert("+".to_string(), Type::Var(add_op_typeid));
 
-        let mut type_constraints = vec![Constraint::OneOf(
-            Type::Var(neg_op_typeid),
+        let mut global_constraints = vec![Constraint::OneOf(
+            Type::Var(add_op_typeid),
             vec![
                 arrow!(Type::Uint => arrow!(Type::Uint =>  Type::Uint)),
                 arrow!(Type::Int => arrow!(Type::Int =>  Type::Int)),
                 arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
             ],
         )];
+        let mut constraints = global_constraints.clone();
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
             &type_env,
             &mut expr_type_env,
-            &mut type_constraints,
+            &mut constraints,
+            &mut global_constraints,
             &mut id_dispenser,
         )
         .unwrap();
 
         let mut subst = Subst::new();
-        for constraint in &type_constraints {
-            match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst).unwrap(),
-                Constraint::OneOf(..) => {}
+        for _ in 1..10 {
+            for constraint in &constraints {
+                match constraint {
+                    Constraint::Eq(t1, t2) => {
+                        unify::unify_eq(t1, t2, &mut subst);
+                    }
+                    Constraint::OneOf(..) => {}
+                }
             }
-        }
-        for constraint in &type_constraints {
-            match constraint {
-                Constraint::Eq(..) => {}
-                Constraint::OneOf(t1, t2_possibilties) => {
-                    if t2_possibilties.len() == 1 {
-                        unify::unify_eq(t1, &t2_possibilties[0], &mut subst).unwrap()
-                    } else {
-                        unify::unify_one_of(t1, t2_possibilties, &mut subst).unwrap()
+            for constraint in &constraints {
+                match constraint {
+                    Constraint::Eq(..) => {}
+                    Constraint::OneOf(t1, t2_possibilties) => {
+                        unify::unify_one_of(t1, t2_possibilties, &mut subst);
                     }
                 }
             }
         }
 
         let final_type = unify::apply_subst(&ty, &subst);
-        println!("EXPR TYPES: {:#?}", expr_type_env);
-        println!("EXPRS: {:#?}", expr);
-        println!("SUBSTS: {:#?}", subst);
+
+        println!(
+            "{}\n{}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
+            sprint_constraints(&constraints)
+        );
 
         ftable.0.insert(
             (
@@ -519,7 +817,7 @@ pub mod test {
                             Span::from_begin_end(span1.begin, span2.end),
                             x1 + x2,
                         )),
-                        _ => unreachable!(),
+                        _ => panic!("Expected Uint -> Uint -> Uint, got {:#?}", args),
                     }
                 })
             }),
@@ -561,6 +859,244 @@ pub mod test {
                             Span::from_begin_end(span1.begin, span2.end),
                             x1 + x2,
                         )),
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+
+        println!("RES: {:#?}", res);
+    }
+
+    #[tokio::test]
+    async fn test_let_polymorphism() {
+        let mut parser =
+            Parser::new(Token::tokenize("let id = \\x -> x in (id 6.9, id 420)").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        let state = ();
+
+        println!("PARSED: {}", expr);
+
+        let mut id_dispenser = parser.id_dispenser;
+
+        let mut ftable = Ftable(Default::default());
+
+        let mut scope = Scope::default();
+        let neg_op_id = id_dispenser.next();
+        scope.vars.insert("negate".to_string(), neg_op_id);
+
+        let mut type_env = TypeEnv::new();
+
+        let neg_op_typeid = id_dispenser.next();
+        type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
+
+        let mut global_constraints = vec![Constraint::OneOf(
+            Type::Var(neg_op_typeid),
+            vec![
+                arrow!(Type::Uint =>  Type::Int),
+                arrow!(Type::Int =>  Type::Int),
+                arrow!(Type::Float => Type::Float),
+            ],
+        )];
+        let mut constraints = global_constraints.clone();
+        let mut expr_type_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraints,
+            &mut global_constraints,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let mut subst = Subst::new();
+        for _ in 1..10 {
+            for constraint in &constraints {
+                match constraint {
+                    Constraint::Eq(t1, t2) => {
+                        unify::unify_eq(t1, t2, &mut subst);
+                    }
+                    Constraint::OneOf(..) => {}
+                }
+            }
+            for constraint in &constraints {
+                match constraint {
+                    Constraint::Eq(..) => {}
+                    Constraint::OneOf(t1, t2_possibilties) => {
+                        unify::unify_one_of(t1, t2_possibilties, &mut subst);
+                    }
+                }
+            }
+        }
+
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
+            sprint_constraints(&constraints),
+            sprint_subst(&subst)
+        );
+
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Uint => Type::Int)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Uint(id, span, x)) => {
+                            Value::Expr(Expr::Int(*id, *span, -(*x as i64)))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Int => Type::Int)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Int(id, span, x)) => {
+                            Value::Expr(Expr::Int(*id, *span, -*x))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Float => Type::Float)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Float(id, span, x)) => {
+                            Value::Expr(Expr::Float(*id, *span, -*x))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+
+        println!("RES: {:#?}", res);
+    }
+
+    #[tokio::test]
+    async fn test_let_polymorphism_overloading() {
+        let mut parser =
+            Parser::new(Token::tokenize("let f = \\x -> negate x in (f 6.9, f 420)").unwrap());
+        let expr = parser.parse_expr().unwrap();
+        let state = ();
+
+        println!("PARSED: {}\n", expr);
+
+        let mut id_dispenser = parser.id_dispenser;
+
+        let mut ftable = Ftable(Default::default());
+
+        let mut scope = Scope::default();
+        let neg_op_id = id_dispenser.next();
+        scope.vars.insert("negate".to_string(), neg_op_id);
+
+        let mut type_env = TypeEnv::new();
+
+        let neg_op_typeid = id_dispenser.next();
+        type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
+
+        let mut global_constraints = vec![Constraint::OneOf(
+            Type::Var(neg_op_typeid),
+            vec![
+                arrow!(Type::Uint =>  Type::Int),
+                arrow!(Type::Int =>  Type::Int),
+                arrow!(Type::Float => Type::Float),
+            ],
+        )];
+        let mut constraints = global_constraints.clone();
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        println!(
+            "EXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
+            sprint_expr_with_type(&expr, &expr_type_env, None),
+            sprint_type_env(&type_env),
+            sprint_constraints(&constraints),
+        );
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraints,
+            &mut global_constraints,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let mut subst = Subst::new();
+        for _ in 1..10 {
+            for constraint in &constraints {
+                match constraint {
+                    Constraint::Eq(t1, t2) => {
+                        unify::unify_eq(t1, t2, &mut subst);
+                    }
+                    Constraint::OneOf(..) => {}
+                }
+            }
+            for constraint in &constraints {
+                match constraint {
+                    Constraint::Eq(..) => {}
+                    Constraint::OneOf(t1, t2_possibilties) => {
+                        unify::unify_one_of(t1, t2_possibilties, &mut subst);
+                    }
+                }
+            }
+        }
+
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
+            sprint_constraints(&constraints),
+            sprint_subst(&subst)
+        );
+
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Uint => Type::Int)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Uint(id, span, x)) => {
+                            Value::Expr(Expr::Int(*id, *span, -(*x as i64)))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Int => Type::Int)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Int(id, span, x)) => {
+                            Value::Expr(Expr::Int(*id, *span, -*x))
+                        }
+                        _ => unreachable!(),
+                    }
+                })
+            }),
+        );
+        ftable.0.insert(
+            ("negate".to_string(), arrow!(Type::Float => Type::Float)),
+            Box::new(|_ftable, args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        Value::Expr(Expr::Float(id, span, x)) => {
+                            Value::Expr(Expr::Float(*id, *span, -*x))
+                        }
                         _ => unreachable!(),
                     }
                 })

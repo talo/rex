@@ -6,6 +6,7 @@ use crate::types::{ADTVariant, Type, ADT};
 
 pub type Subst = HashMap<Id, Type>;
 
+
 pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
@@ -60,7 +61,7 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
         }
 
         // Everything else fails
-        (t1, t2) => Err(format!("Cannot unify {:?} with {:?}", t1, t2)),
+        (t1, t2) => Err(format!("Cannot unify {} with {}", t1, t2)),
     }
 }
 
@@ -86,8 +87,13 @@ pub fn unify_one_of(
 
     match successes.len() {
         0 => Err(format!(
-            "Cannot unify {:?} with incompatible candidates {:?}",
-            t1, t2_possibilities
+            "Cannot unify {} with incompatible candidates [{}]",
+            t1,
+            t2_possibilities
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         )),
         1 => {
             // Use the successful substitution
@@ -95,8 +101,13 @@ pub fn unify_one_of(
             Ok(())
         }
         _ => Err(format!(
-            "Cannot unify {:?} with ambiguous candidates {:?}",
-            t1, t2_possibilities
+            "Cannot unify {} with ambiguous candidates [{}]",
+            t1,
+            t2_possibilities
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         )),
     }
 }
@@ -110,7 +121,9 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
                 t.clone()
             }
         }
-        Type::ForAll(id, ty) => Type::ForAll(*id, Box::new(apply_subst(ty, subst))),
+        Type::ForAll(id, ty, deps) => {
+            Type::ForAll(*id, Box::new(apply_subst(ty, subst)), deps.clone())
+        }
 
         Type::ADT(adt) => Type::ADT(ADT {
             name: adt.name.clone(),
@@ -147,7 +160,7 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
 pub fn occurs_check(var: Id, t: &Type) -> bool {
     match t {
         Type::Var(v) => *v == var,
-        Type::ForAll(id, ty) => {
+        Type::ForAll(id, ty, _deps) => {
             // If we're looking for the same variable that's quantified,
             // then it doesn't occur freely (it's bound)
             if *id == var {
@@ -367,7 +380,7 @@ mod tests {
         // Case 1: The variable we're looking for is bound by the ForAll
         assert!(!occurs_check(
             var,
-            &Type::ForAll(Id(0), Box::new(Type::Var(Id(0))))
+            &Type::ForAll(Id(0), Box::new(Type::Var(Id(0))), vec![])
         ));
 
         // Case 2: The variable we're looking for occurs freely in the body
@@ -379,7 +392,8 @@ mod tests {
                 Box::new(Type::Arrow(
                     Box::new(Type::Var(Id(1))),
                     Box::new(Type::Var(Id(0)))
-                ))
+                )),
+                vec![]
             )
         ));
     }
