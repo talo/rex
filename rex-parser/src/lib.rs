@@ -594,7 +594,7 @@ impl Parser {
             return Ok(Expr::Dict(
                 self.id_dispenser.next(),
                 Span::from_begin_end(span_begin, span.end),
-                vec![],
+                Default::default(),
             ));
         }
 
@@ -654,7 +654,7 @@ impl Parser {
                 return Ok(Expr::Dict(
                     self.id_dispenser.next(),
                     Span::from_begin_end(span_begin, Position::new(0, 0)),
-                    kvs,
+                    kvs.into_iter().collect(),
                 ));
             }
             _ => {
@@ -662,7 +662,7 @@ impl Parser {
                 return Ok(Expr::Dict(
                     self.id_dispenser.next(),
                     Span::from_begin_end(span_begin, Position::new(0, 0)),
-                    kvs,
+                    kvs.into_iter().collect(),
                 ));
             }
         };
@@ -670,7 +670,7 @@ impl Parser {
         Ok(Expr::Dict(
             self.id_dispenser.next(),
             Span::from_begin_end(span_begin, span_end),
-            kvs,
+            kvs.into_iter().collect(),
         ))
     }
 

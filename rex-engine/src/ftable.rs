@@ -7,7 +7,6 @@ use std::{
 
 use futures::{stream, StreamExt, TryStreamExt};
 use rex_ast::id::{Id, IdDispenser};
-use rex_resolver::Scope;
 use rex_type_system::{
     arrow, list, tuple,
     types::{ExprTypeEnv, Type, ADT},
@@ -1267,13 +1266,5 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 trace: Default::default(),
             }),
         }
-    }
-
-    pub fn scope(&self) -> Scope {
-        let mut scope = Scope::new();
-        for (id, (f, _)) in &self.ftable {
-            scope.vars.insert(f.name.clone(), *id);
-        }
-        scope
     }
 }

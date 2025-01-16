@@ -1,4 +1,7 @@
-use std::fmt::{self, Display, Formatter};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display, Formatter},
+};
 
 use rex_lexer::span::{Position, Span};
 
@@ -52,9 +55,9 @@ pub enum Expr {
     Float(Id, Span, f64),     // 3.14
     String(Id, Span, String), // "hello"
 
-    Tuple(Id, Span, Vec<Expr>),          // (e1, e2, e3)
-    List(Id, Span, Vec<Expr>),           // [e1, e2, e3]
-    Dict(Id, Span, Vec<(String, Expr)>), // {k1 = v1, k2 = v2}
+    Tuple(Id, Span, Vec<Expr>),             // (e1, e2, e3)
+    List(Id, Span, Vec<Expr>),              // [e1, e2, e3]
+    Dict(Id, Span, BTreeMap<String, Expr>), // {k1 = v1, k2 = v2}
 
     Var(Var),                                       // x
     App(Id, Span, Box<Expr>, Box<Expr>),            // f x

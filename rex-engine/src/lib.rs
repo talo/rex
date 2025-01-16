@@ -140,7 +140,7 @@ async fn eval_dict<S: Send + Sync + 'static>(
     ctx: &Context,
     ftable: &Ftable<S>,
     state: &S,
-    dict: Vec<(String, Expr)>,
+    dict: BTreeMap<String, Expr>,
 ) -> Result<Value, Error> {
     let mut result = BTreeMap::new();
     let mut keys = Vec::with_capacity(dict.len());
@@ -243,7 +243,6 @@ mod test {
     use rex_ast::id::IdDispenser;
     use rex_lexer::Token;
     use rex_parser::Parser;
-    use rex_resolver::resolve;
     use rex_type_system::{
         adt, arrow,
         constraint::{self, Constraint},

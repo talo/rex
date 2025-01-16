@@ -597,7 +597,6 @@ dependencies = [
  "rex-engine",
  "rex-lexer",
  "rex-parser",
- "rex-resolver",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -628,7 +627,6 @@ dependencies = [
  "rex-ast",
  "rex-lexer",
  "rex-parser",
- "rex-resolver",
  "rex-type-system",
  "serde",
  "serde_json",
@@ -651,15 +649,6 @@ name = "rex-parser"
 version = "0.1.0"
 dependencies = [
  "regex",
- "rex-ast",
- "rex-lexer",
- "thiserror",
-]
-
-[[package]]
-name = "rex-resolver"
-version = "0.1.0"
-dependencies = [
  "rex-ast",
  "rex-lexer",
  "thiserror",

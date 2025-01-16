@@ -1,4 +1,10 @@
-use std::{collections::HashMap, future::Future, pin::Pin};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::{self, Display, Formatter},
+    future::Future,
+    hash::Hash,
+    pin::Pin,
+};
 
 use futures::future;
 use rex_ast::{
@@ -21,6 +27,17 @@ pub struct Extern {
 pub enum Value {
     Expr(Expr),
     Closure(Var, Vec<Value>),
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Expr(e) => e.fmt(f),
+            Value::Closure(var, args) => {
+                write!(f, "Closure({} {})", var.name, args.len())
+            }
+        }
+    }
 }
 
 pub trait F<'r>:
@@ -53,28 +70,43 @@ impl Clone for Box<dyn for<'r> F<'r>> {
     }
 }
 
+pub type Scope = HashMap<String, Value>;
+
 #[async_recursion::async_recursion]
-pub async fn eval(ftable: &Ftable, env: &ExprTypeEnv, subst: &Subst, expr: Expr) -> Value {
+pub async fn eval(
+    scope: &Scope,
+    ftable: &Ftable,
+    env: &ExprTypeEnv,
+    subst: &Subst,
+    expr: Expr,
+) -> Value {
     match expr {
         Expr::Bool(..) => Value::Expr(expr),
         Expr::Uint(..) => Value::Expr(expr),
         Expr::Int(..) => Value::Expr(expr),
         Expr::Float(..) => Value::Expr(expr),
         Expr::String(..) => Value::Expr(expr),
-        Expr::Tuple(id, span, tuple) => eval_tuple(ftable, env, subst, id, span, tuple).await,
-        Expr::List(id, span, list) => eval_list(ftable, env, subst, id, span, list).await,
-        Expr::Var(..) => Value::Expr(expr),
-        Expr::App(id, span, f, x) => eval_app(ftable, env, subst, id, span, *f, *x).await,
-        Expr::Lam(..) => unimplemented!(),
-        Expr::Let(id, span, var, def, body) => {
-            eval_let(ftable, env, subst, id, span, var, *def, *body).await
+        Expr::Tuple(id, span, tuple) => {
+            eval_tuple(scope, ftable, env, subst, id, span, tuple).await
         }
-        Expr::Ite(..) => unimplemented!(),
-        _ => unimplemented!(),
+        Expr::List(id, span, list) => eval_list(scope, ftable, env, subst, id, span, list).await,
+        Expr::Dict(id, span, dict) => eval_dict(scope, ftable, env, subst, id, span, dict).await,
+        Expr::Var(var) => eval_var(scope, ftable, env, subst, var).await,
+        Expr::App(id, span, f, x) => eval_app(scope, ftable, env, subst, id, span, *f, *x).await,
+        Expr::Lam(id, span, param, body) => {
+            eval_lam(scope, ftable, env, subst, id, span, param, *body).await
+        }
+        Expr::Let(id, span, var, def, body) => {
+            eval_let(scope, ftable, env, subst, id, span, var, *def, *body).await
+        }
+        Expr::Ite(id, span, cond, then, r#else) => {
+            eval_ite(scope, ftable, env, subst, id, span, *cond, *then, *r#else).await
+        }
     }
 }
 
 pub async fn eval_tuple(
+    scope: &Scope,
     ftable: &Ftable,
     env: &ExprTypeEnv,
     subst: &Subst,
@@ -84,7 +116,7 @@ pub async fn eval_tuple(
 ) -> Value {
     let mut result = Vec::with_capacity(tuple.len());
     for v in tuple {
-        result.push(eval(ftable, env, subst, v));
+        result.push(eval(scope, ftable, env, subst, v));
     }
     Value::Expr(Expr::Tuple(
         id,
@@ -101,6 +133,7 @@ pub async fn eval_tuple(
 }
 
 pub async fn eval_list(
+    scope: &Scope,
     ftable: &Ftable,
     env: &ExprTypeEnv,
     subst: &Subst,
@@ -110,7 +143,7 @@ pub async fn eval_list(
 ) -> Value {
     let mut result = Vec::with_capacity(list.len());
     for v in list {
-        result.push(eval(ftable, env, subst, v));
+        result.push(eval(scope, ftable, env, subst, v));
     }
     Value::Expr(Expr::List(
         id,
@@ -126,7 +159,65 @@ pub async fn eval_list(
     ))
 }
 
+pub async fn eval_dict(
+    scope: &Scope,
+    ftable: &Ftable,
+    env: &ExprTypeEnv,
+    subst: &Subst,
+    id: Id,
+    span: Span,
+    dict: BTreeMap<String, Expr>,
+) -> Value {
+    let mut keys = Vec::with_capacity(dict.len());
+    let mut vals = Vec::with_capacity(dict.len());
+    for (k, v) in dict {
+        keys.push(k);
+        vals.push(eval(scope, ftable, env, subst, v));
+    }
+
+    let mut result = BTreeMap::new();
+    for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
+        result.insert(
+            k,
+            match v {
+                Value::Expr(e) => e,
+                _ => unimplemented!(),
+            },
+        );
+    }
+    Value::Expr(Expr::Dict(id, span, result))
+}
+
+pub async fn eval_var(
+    scope: &Scope,
+    ftable: &Ftable,
+    env: &ExprTypeEnv,
+    subst: &Subst,
+    var: Var,
+) -> Value {
+    let val = match scope.get(&var.name) {
+        Some(val) => val,
+        None => &Value::Expr(Expr::Var(var)),
+    };
+
+    match val {
+        Value::Expr(Expr::Var(var)) => {
+            let var_type = env.get(&var.id).unwrap();
+            let var_type = unify::apply_subst(var_type, subst);
+            let f = ftable.0.get(&(var.name.clone(), var_type.clone()));
+            if let Some(f) = f {
+                if var_type.num_params() == 0 {
+                    return f(ftable, &vec![]).await;
+                }
+            }
+            Value::Expr(Expr::Var(var.clone()))
+        }
+        _ => val.clone(),
+    }
+}
+
 pub async fn eval_app(
+    scope: &Scope,
     ftable: &Ftable,
     env: &ExprTypeEnv,
     subst: &Subst,
@@ -135,8 +226,8 @@ pub async fn eval_app(
     f: Expr,
     x: Expr,
 ) -> Value {
-    let f = eval(ftable, env, subst, f).await;
-    let x = eval(ftable, env, subst, x).await;
+    let f = eval(scope, ftable, env, subst, f).await;
+    let x = eval(scope, ftable, env, subst, x).await;
 
     match f {
         Value::Expr(Expr::Var(var)) => {
@@ -152,6 +243,11 @@ pub async fn eval_app(
             } else {
                 panic!("Function not found: {}:{}", var.name, var_type)
             }
+        }
+        Value::Expr(Expr::Lam(_id, _span, param, body)) => {
+            let mut scope = scope.clone();
+            scope.insert(param.name, x);
+            eval(&scope, ftable, env, subst, *body).await
         }
         Value::Closure(var, mut args) => {
             args.push(x);
@@ -174,7 +270,21 @@ pub async fn eval_app(
     }
 }
 
+pub async fn eval_lam(
+    scope: &Scope,
+    ftable: &Ftable,
+    env: &ExprTypeEnv,
+    subst: &Subst,
+    id: Id,
+    span: Span,
+    param: Var,
+    body: Expr,
+) -> Value {
+    Value::Expr(Expr::Lam(id, span, param, Box::new(body)))
+}
+
 pub async fn eval_let(
+    scope: &Scope,
     ftable: &Ftable,
     env: &ExprTypeEnv,
     subst: &Subst,
@@ -184,14 +294,35 @@ pub async fn eval_let(
     def: Expr,
     body: Expr,
 ) -> Value {
-    unimplemented!()
+    let def = eval(scope, ftable, env, subst, def).await;
+    let mut scope = scope.clone();
+    scope.insert(var.name, def);
+    eval(&scope, ftable, env, subst, body).await
+}
+
+pub async fn eval_ite(
+    scope: &Scope,
+    ftable: &Ftable,
+    env: &ExprTypeEnv,
+    subst: &Subst,
+    id: Id,
+    span: Span,
+    cond: Expr,
+    then: Expr,
+    r#else: Expr,
+) -> Value {
+    let cond = eval(scope, ftable, env, subst, cond).await;
+    match cond {
+        Value::Expr(Expr::Bool(_, _, true)) => eval(scope, ftable, env, subst, then).await,
+        Value::Expr(Expr::Bool(_, _, false)) => eval(scope, ftable, env, subst, r#else).await,
+        _ => unimplemented!(),
+    }
 }
 
 #[cfg(test)]
 pub mod test {
     use rex_lexer::Token;
     use rex_parser::Parser;
-    use rex_resolver::Scope;
     use rex_type_system::{
         arrow,
         constraint::{self, generate_constraints, Constraint, ConstraintSystem},
@@ -206,20 +337,11 @@ pub mod test {
     async fn test_simple() {
         let mut parser = Parser::new(Token::tokenize("1").unwrap());
         let expr = parser.parse_expr().unwrap();
-        let state = ();
 
         let mut id_dispenser = parser.id_dispenser;
 
         let mut ftable = Ftable(Default::default());
-
-        let mut scope = Scope::default();
-        let add_op_id = id_dispenser.next();
-        scope.vars.insert("+".to_string(), add_op_id);
-
         let mut type_env = TypeEnv::new();
-
-        let app_op_type_id = id_dispenser.next();
-        // type_env.insert("+".to_string(), Type::Var(app_op_type_id));
 
         let mut constraint_system = ConstraintSystem::new();
         let mut expr_type_env = ExprTypeEnv::new();
@@ -257,7 +379,7 @@ pub mod test {
         println!("EXPRS: {:#?}", expr);
         println!("SUBSTS: {:#?}", subst);
 
-        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr).await;
 
         println!("RES: {:#?}", res);
     }
@@ -266,16 +388,9 @@ pub mod test {
     async fn test_negate() {
         let mut parser = Parser::new(Token::tokenize("- 3.14").unwrap());
         let expr = parser.parse_expr().unwrap();
-        let state = ();
 
         let mut id_dispenser = parser.id_dispenser;
-
         let mut ftable = Ftable(Default::default());
-
-        let mut scope = Scope::default();
-        let neg_op_id = id_dispenser.next();
-        scope.vars.insert("negate".to_string(), neg_op_id);
-
         let mut type_env = TypeEnv::new();
 
         let neg_op_typeid = id_dispenser.next();
@@ -364,7 +479,7 @@ pub mod test {
                 })
             }),
         );
-        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr).await;
 
         println!("RES: {:#?}", res);
     }
@@ -373,20 +488,11 @@ pub mod test {
     async fn test_negate_tuple() {
         let mut parser = Parser::new(Token::tokenize("(negate 6.9, negate 420)").unwrap());
         let expr = parser.parse_expr().unwrap();
-        let state = ();
 
         println!("PARSED: {}", expr);
 
         let mut id_dispenser = parser.id_dispenser;
-
         let mut ftable = Ftable(Default::default());
-
-        let mut scope = Scope::default();
-        let neg_op_id = id_dispenser.next();
-        scope.vars.insert("negate".to_string(), neg_op_id);
-
-        // let expr = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-
         let mut type_env = TypeEnv::new();
 
         let neg_op_typeid = id_dispenser.next();
@@ -479,7 +585,7 @@ pub mod test {
                 })
             }),
         );
-        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr).await;
 
         println!("RES: {:#?}", res);
     }
@@ -493,13 +599,7 @@ pub mod test {
         println!("PARSED: {}", expr);
 
         let mut id_dispenser = parser.id_dispenser;
-
         let mut ftable = Ftable(Default::default());
-
-        let mut scope = Scope::default();
-        let neg_op_id = id_dispenser.next();
-        scope.vars.insert("negate".to_string(), neg_op_id);
-
         let mut type_env = TypeEnv::new();
 
         let neg_op_typeid = id_dispenser.next();
@@ -592,7 +692,7 @@ pub mod test {
                 })
             }),
         );
-        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr).await;
 
         println!("RES: {:#?}", res);
     }
@@ -604,13 +704,7 @@ pub mod test {
         let state = ();
 
         let mut id_dispenser = parser.id_dispenser;
-
         let mut ftable = Ftable(Default::default());
-
-        let mut scope = Scope::default();
-        let neg_op_id = id_dispenser.next();
-        scope.vars.insert("+".to_string(), neg_op_id);
-
         let mut type_env = TypeEnv::new();
 
         let neg_op_typeid = id_dispenser.next();
@@ -723,23 +817,17 @@ pub mod test {
                 })
             }),
         );
-        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr).await;
 
         println!("RES: {:#?}", res);
     }
 
     #[tokio::test]
-    async fn test_add_tuple() {
+    async fn test_add_tuple() -> Result<(), String> {
         let mut parser = Parser::new(Token::tokenize("(6.9 + 4.20, 6 + 9)").unwrap());
         let expr = parser.parse_expr().unwrap();
-        let state = ();
 
         let mut id_dispenser = parser.id_dispenser;
-
-        let mut scope = Scope::default();
-        let add_op_id = id_dispenser.next();
-        scope.vars.insert("+".to_string(), add_op_id);
-
         let mut type_env = TypeEnv::new();
 
         let add_op_typeid = id_dispenser.next();
@@ -764,25 +852,7 @@ pub mod test {
         )
         .unwrap();
 
-        let mut subst = Subst::new();
-        for _ in 1..10 {
-            for constraint in constraint_system.constraints() {
-                match constraint {
-                    Constraint::Eq(t1, t2) => {
-                        unify::unify_eq(t1, t2, &mut subst);
-                    }
-                    Constraint::OneOf(..) => {}
-                }
-            }
-            for constraint in constraint_system.constraints() {
-                match constraint {
-                    Constraint::Eq(..) => {}
-                    Constraint::OneOf(t1, t2_possibilties) => {
-                        unify::unify_one_of(t1, t2_possibilties, &mut subst);
-                    }
-                }
-            }
-        }
+        let subst = unify::unify_constraints(&constraint_system)?;
 
         let final_type = unify::apply_subst(&ty, &subst);
 
@@ -856,13 +926,15 @@ pub mod test {
                 })
             }),
         );
-        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr).await;
 
-        println!("RES: {:#?}", res);
+        println!("RES: {}", res);
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_let_polymorphism() {
+    async fn test_let_polymorphism() -> Result<(), String> {
         let mut parser =
             Parser::new(Token::tokenize("let id = \\x -> x in (id 6.9, id 420)").unwrap());
         let expr = parser.parse_expr().unwrap();
@@ -873,11 +945,6 @@ pub mod test {
         let mut id_dispenser = parser.id_dispenser;
 
         let mut ftable = Ftable(Default::default());
-
-        let mut scope = Scope::default();
-        let neg_op_id = id_dispenser.next();
-        scope.vars.insert("negate".to_string(), neg_op_id);
-
         let mut type_env = TypeEnv::new();
 
         let neg_op_typeid = id_dispenser.next();
@@ -902,25 +969,7 @@ pub mod test {
         )
         .unwrap();
 
-        let mut subst = Subst::new();
-        for _ in 1..10 {
-            for constraint in constraint_system.constraints() {
-                match constraint {
-                    Constraint::Eq(t1, t2) => {
-                        unify::unify_eq(t1, t2, &mut subst);
-                    }
-                    Constraint::OneOf(..) => {}
-                }
-            }
-            for constraint in constraint_system.constraints() {
-                match constraint {
-                    Constraint::Eq(..) => {}
-                    Constraint::OneOf(t1, t2_possibilties) => {
-                        unify::unify_one_of(t1, t2_possibilties, &mut subst);
-                    }
-                }
-            }
-        }
+        let subst = unify::unify_constraints(&constraint_system)?;
 
         let final_type = unify::apply_subst(&ty, &subst);
 
@@ -970,28 +1019,24 @@ pub mod test {
                 })
             }),
         );
-        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr).await;
 
-        println!("RES: {:#?}", res);
+        println!("RES: {}", res);
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_let_polymorphism_overloading() {
+    async fn test_let_polymorphism_overloading() -> Result<(), String> {
         let mut parser =
             Parser::new(Token::tokenize("let f = \\x -> negate x in (f 6.9, f 420)").unwrap());
         let expr = parser.parse_expr().unwrap();
-        let state = ();
 
         println!("PARSED: {}\n", expr);
 
         let mut id_dispenser = parser.id_dispenser;
 
         let mut ftable = Ftable(Default::default());
-
-        let mut scope = Scope::default();
-        let neg_op_id = id_dispenser.next();
-        scope.vars.insert("negate".to_string(), neg_op_id);
-
         let mut type_env = TypeEnv::new();
 
         let neg_op_typeid = id_dispenser.next();
@@ -1024,27 +1069,7 @@ pub mod test {
         )
         .unwrap();
 
-        let mut subst = Subst::new();
-        for _ in 1..10 {
-            for constraint in constraint_system.constraints() {
-                match constraint {
-                    Constraint::Eq(t1, t2) => {
-                        unify::unify_eq(t1, t2, &mut subst);
-                    }
-                    Constraint::OneOf(..) => {}
-                }
-            }
-            for constraint in constraint_system.constraints() {
-                match constraint {
-                    Constraint::Eq(..) => {}
-                    Constraint::OneOf(t1, t2_possibilties) => {
-                        unify::unify_one_of(t1, t2_possibilties, &mut subst);
-                    }
-                }
-            }
-        }
-
-        let final_type = unify::apply_subst(&ty, &subst);
+        let subst = unify::unify_constraints(&constraint_system)?;
 
         println!(
             "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
@@ -1092,8 +1117,10 @@ pub mod test {
                 })
             }),
         );
-        let res = eval(&ftable, &expr_type_env, &subst, expr).await;
+        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr).await;
 
         println!("RES: {:#?}", res);
+
+        Ok(())
     }
 }
