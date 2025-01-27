@@ -8,7 +8,7 @@ use crate::value::Value;
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Context {
-    vars: HashTrieMapSync<Id, Value>,
+    pub vars: HashTrieMapSync<Id, Value>,
 }
 
 impl Default for Context {

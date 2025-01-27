@@ -66,6 +66,7 @@ pub enum Token {
     BracketL(Span),
     BracketR(Span),
     Colon(Span),
+    ColonColon(Span),
     Comma(Span),
     CommentL(Span),
     CommentR(Span),
@@ -150,6 +151,8 @@ impl Token {
                     Token::BracketL(span)
                 } else if capture.name("BracketR").is_some() {
                     Token::BracketR(span)
+                } else if capture.name("ColonColon").is_some() {
+                    Token::ColonColon(span)
                 } else if capture.name("Colon").is_some() {
                     Token::Colon(span)
                 } else if capture.name("Comma").is_some() {
@@ -268,6 +271,7 @@ impl Token {
             r"(?P<BraceR>\})|",
             r"(?P<BracketL>\[)|",
             r"(?P<BracketR>\])|",
+            r"(?P<ColonColon>::)|", // Must go before :
             r"(?P<Colon>:)|",
             r"(?P<Comma>,)|",
             r"(?P<DotDot>\.\.)|",
@@ -355,6 +359,7 @@ impl Spanned for Token {
             BracketL(span, ..) => span,
             BracketR(span, ..) => span,
             Colon(span, ..) => span,
+            ColonColon(span, ..) => span,
             Comma(span, ..) => span,
             CommentL(span, ..) => span,
             CommentR(span, ..) => span,
@@ -419,6 +424,7 @@ impl Spanned for Token {
             BracketL(span, ..) => span,
             BracketR(span, ..) => span,
             Colon(span, ..) => span,
+            ColonColon(span, ..) => span,
             Comma(span, ..) => span,
             CommentL(span, ..) => span,
             CommentR(span, ..) => span,
@@ -485,6 +491,7 @@ impl Display for Token {
             BracketL(..) => write!(f, "["),
             BracketR(..) => write!(f, "]"),
             Colon(..) => write!(f, ":"),
+            ColonColon(..) => write!(f, "::"),
             Comma(..) => write!(f, ","),
             CommentL(..) => write!(f, "{{-"),
             CommentR(..) => write!(f, "-}}"),

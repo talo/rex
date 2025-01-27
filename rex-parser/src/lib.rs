@@ -65,6 +65,14 @@ impl Parser {
         }
     }
 
+    pub fn peek_token(&self, n: usize) -> Option<Token> {
+        if self.token_cursor + n < self.tokens.len() {
+            Some(self.tokens[self.token_cursor + n].clone())
+        } else {
+            None
+        }
+    }
+
     pub fn next_token(&mut self) {
         self.token_cursor += 1;
     }
@@ -90,6 +98,81 @@ impl Parser {
                 }
             }
         }
+    }
+
+    // pub fn parse(&mut self) -> Result<AST, Error> {
+    //     match (self.peek_token(0), self.peek_token(1)) {
+    //         (Some(Token::Ident(..)), Some(Token::ColonColon(..))) => self.parse_fn_forward_decl(),
+    //         _ => self.parse_expr(),
+    //     }
+    // }
+
+    pub fn parse_fn_forward_decl(&mut self) -> Result<(String, Vec<String>), Error> {
+        // Parse the function name
+        let ident = match self.current_token() {
+            Some(Token::Ident(ident, ..)) => {
+                self.next_token();
+                ident
+            }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    *token.span(),
+                    format!("expected `ident` got {}", token),
+                ));
+                return Err(Error::Parser(self.errors.clone()));
+            }
+            _ => {
+                return Err(vec!["expected `ident`".to_string().into()].into());
+            }
+        };
+        // Eat the `::`
+        match self.current_token() {
+            Some(Token::ColonColon(span, ..)) => {
+                self.next_token();
+                span
+            }
+            Some(token) => {
+                self.errors.push(ParserErr::new(
+                    *token.span(),
+                    format!("expected `::` got {}", token),
+                ));
+                return Err(Error::Parser(self.errors.clone()));
+            }
+            _ => {
+                return Err(vec!["expected `::`".to_string().into()].into());
+            }
+        };
+        let mut params = vec![];
+        let mut param_is_expected = true;
+        while param_is_expected {
+            // Parse the next param
+            match self.current_token() {
+                Some(Token::Ident(ident, ..)) => {
+                    self.next_token();
+                    params.push(ident);
+                }
+                Some(token) => {
+                    self.errors.push(ParserErr::new(
+                        *token.span(),
+                        format!("expected `param` got {}", token),
+                    ));
+                    return Err(Error::Parser(self.errors.clone()));
+                }
+                _ => {
+                    return Err(vec!["expected `param`".to_string().into()].into());
+                }
+            };
+            // Eat the `->`
+            param_is_expected = match self.current_token() {
+                Some(Token::ArrowR(..)) => {
+                    self.next_token();
+                    true
+                }
+                _ => false,
+            };
+        }
+        // Return the function definition
+        Ok((ident, params))
     }
 
     pub fn parse_expr(&mut self) -> Result<AST, Error> {
@@ -234,7 +317,6 @@ impl Parser {
                 Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
                 Some(Token::Let(..)) => self.parse_let_expr(),
                 Some(Token::If(..)) => self.parse_if_expr(),
-                Some(Token::Sub(..)) => self.parse_neg_expr(),
                 _ => break,
             }?;
             call_arg_exprs.push_back(call_arg_expr);
@@ -324,7 +406,21 @@ impl Parser {
             }
             Some(Token::Sub(span, ..)) => {
                 self.next_token();
-                AST::Var(Var::new(span, self.id_dispenser.next(), "-"))
+                if let Some(Token::ParenR(..)) = self.current_token() {
+                    // In the case of the `-` operator we need to explicitly
+                    // check for the closing right parenthesis, because it is
+                    // valid to have an expressions like `(- 69)`. This is
+                    // different from other operators, because it is not valid
+                    // to have an expression like `(+ 69)`` or `(>= 3)``.
+                    //
+                    // It would not be a crazy idea to explicitly check for the
+                    // closing right parenthesis in other operators. Although we
+                    // do not want to allow expressions like `(+ 420)` the
+                    // explicit check will allow for better error messages.
+                    AST::Var(Var::new(span, self.id_dispenser.next(), "-"))
+                } else {
+                    self.parse_expr()?
+                }
             }
             _ => self.parse_expr()?,
         };

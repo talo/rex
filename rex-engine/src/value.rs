@@ -8,19 +8,14 @@ use rex_ast::{
     id::Id,
     types::{ADTVariantFields, Type, ADT},
 };
-#[cfg(feature = "serde")]
 use serde::ser::Error;
-#[cfg(feature = "serde")]
 use serde_json::json;
 
 use crate::Context;
 
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Value {
     // Basics
     Null,
@@ -154,12 +149,8 @@ impl Display for Value {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct Function {
     pub id: Id,
     pub name: String,
@@ -196,23 +187,15 @@ impl Display for Function {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FunctionLike {
     Function(Function),
     Lambda(Lambda),
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct Closure {
     pub captured_ctx: Context,
     pub captured_args: Vec<Value>,
@@ -252,12 +235,8 @@ impl Display for Closure {
     }
 }
 
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct Data {
     pub name: String,
     pub fields: Option<DataFields>,
@@ -338,12 +317,8 @@ impl Display for Data {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DataFields {
     Named(NamedDataFields),
     Unnamed(UnnamedDataFields),
@@ -370,12 +345,8 @@ impl Display for DataFields {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct NamedDataFields {
     pub fields: BTreeMap<String, Value>,
 }
@@ -403,12 +374,8 @@ impl Display for NamedDataFields {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "lowercase")
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct UnnamedDataFields {
     pub fields: Vec<Value>,
 }
@@ -433,7 +400,6 @@ impl Display for UnnamedDataFields {
     }
 }
 
-#[cfg(feature = "serde")]
 impl From<serde_json::Value> for Value {
     fn from(value: serde_json::Value) -> Self {
         match value {
@@ -457,7 +423,6 @@ impl From<serde_json::Value> for Value {
     }
 }
 
-#[cfg(feature = "serde")]
 impl TryFrom<Value> for serde_json::Value {
     type Error = serde_json::Error;
 

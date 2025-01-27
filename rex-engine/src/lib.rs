@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use context::Context;
+pub use context::Context;
 use futures::future;
 use rex_ast::{
     ast::{Call, Ctor, Fields, IfThenElse, Lambda, LetIn, NamedFields, UnnamedFields, Var, AST},
