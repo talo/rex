@@ -1,12 +1,9 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::{self, Display, Formatter},
-};
+use std::collections::BTreeMap;
 
+pub use context::Context;
 use futures::future;
 use rex_ast::{
     ast::{Call, Ctor, Fields, IfThenElse, Lambda, LetIn, NamedFields, UnnamedFields, Var, AST},
-    id::Id,
     types::Type,
 };
 
@@ -17,47 +14,10 @@ use crate::{
 };
 
 pub mod apply;
+pub mod context;
 pub mod error;
 pub mod ftable;
 pub mod value;
-
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub struct Context {
-    pub vars: HashMap<Id, Value>,
-}
-
-impl Default for Context {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Context {
-    pub fn new() -> Self {
-        Self {
-            vars: HashMap::new(),
-        }
-    }
-
-    pub fn extend(&mut self, rhs: Context) {
-        self.vars.extend(rhs.vars)
-    }
-}
-
-impl Display for Context {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for (i, (k, v)) in self.vars.iter().enumerate() {
-            k.fmt(f)?;
-            "←".fmt(f)?;
-            v.fmt(f)?;
-            if i + 1 < self.vars.len() {
-                "; ".fmt(f)?;
-            }
-        }
-        Ok(())
-    }
-}
 
 #[async_recursion::async_recursion]
 pub async fn eval<S>(ctx: &Context, ftable: &Ftable<S>, state: &S, ast: AST) -> Result<Value, Error>
@@ -151,7 +111,7 @@ async fn eval_var<S: Send + Sync + 'static>(
     state: &S,
     var: Var,
 ) -> Result<Value, Error> {
-    match ctx.vars.get(&var.id) {
+    match ctx.get(&var.id) {
         Some(value) => Ok(value.clone()),
         _ => match ftable.lookup(ctx, &var.id).await {
             Ok(Value::Function(function)) if function.params.is_empty() => {
@@ -199,9 +159,7 @@ async fn eval_let_in<S: Send + Sync + 'static>(
     let_in: LetIn,
 ) -> Result<Value, Error> {
     let mut new_ctx = ctx.clone();
-    new_ctx
-        .vars
-        .insert(let_in.var.id, eval(ctx, ftable, state, *let_in.def).await?);
+    new_ctx.insert(let_in.var.id, eval(ctx, ftable, state, *let_in.def).await?);
     eval(&new_ctx, ftable, state, *let_in.body).await
 }
 

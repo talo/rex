@@ -111,7 +111,7 @@ pub async fn main() -> anyhow::Result<()> {
                 if fn_params.len() == 1 {
                     let id = id_dispenser.next();
                     let val = rex_hmts::gen_random_value(&mut id_dispenser, &fn_params[0]);
-                    ctx.vars.insert(id, val);
+                    ctx.vars = ctx.vars.insert(id, val);
                     scope.vars.insert(fn_ident, id);
                     continue;
                 }
@@ -134,7 +134,7 @@ pub async fn main() -> anyhow::Result<()> {
 
                 let id = id_dispenser.next();
                 let val = rex_hmts::gen_random_value(&mut id_dispenser, &arrow);
-                ctx.vars.insert(id, val);
+                ctx.vars = ctx.vars.insert(id, val);
                 scope.vars.insert(fn_ident, id);
             }
 

@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 use futures::future;
 
 use crate::{
+    context::Context,
     error::Error,
     eval,
     ftable::Ftable,
     value::{Closure, Data, DataFields, FunctionLike, NamedDataFields, UnnamedDataFields, Value},
-    Context,
 };
 
 pub async fn apply<S: Send + Sync + 'static>(
@@ -45,8 +45,8 @@ pub async fn apply<S: Send + Sync + 'static>(
             }
             FunctionLike::Lambda(lam) => {
                 let mut new_ctx = ctx.clone();
-                new_ctx.vars.insert(lam.var.id, arg);
-                new_ctx.extend(closure.captured_ctx);
+                new_ctx.insert(lam.var.id, arg);
+                new_ctx.extend(&closure.captured_ctx);
                 eval(&new_ctx, ftable, state, *lam.body.clone()).await
             }
         },
@@ -128,7 +128,7 @@ where
         },
         // Id
         Value::Id(id) => {
-            match ctx.vars.get(&id) {
+            match ctx.get(&id) {
                 Some(Value::Id(id)) => Ok(Value::Id(*id)), // We do not want to recurse infinitely
                 _ => match ftable.lookup(ctx, &id).await {
                     Ok(v) => Ok(apply0(ctx, ftable, state, v).await?),
