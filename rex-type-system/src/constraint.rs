@@ -128,9 +128,7 @@ impl ConstraintSystem {
             }
             Constraint::OneOf(t, ts) => {
                 *t = unify::apply_subst(&t, subst);
-                for t in ts {
-                    *t = unify::apply_subst(&t, subst);
-                }
+                *ts = ts.iter().map(|t| unify::apply_subst(&t, subst)).collect();
             }
         });
     }
@@ -158,7 +156,7 @@ impl Display for ConstraintSystem {
 #[derive(Debug, Clone)]
 pub enum Constraint {
     Eq(Type, Type),
-    OneOf(Type, Vec<Type>),
+    OneOf(Type, HashSet<Type>),
 }
 
 impl Display for Constraint {
@@ -1408,7 +1406,9 @@ mod tests {
                         Box::new(Type::Int),
                         Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))),
                     ),
-                ],
+                ]
+                .into_iter()
+                .collect(),
             )]);
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
@@ -1511,7 +1511,9 @@ mod tests {
                         Box::new(Type::Int),
                         Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))),
                     ),
-                ],
+                ]
+                .into_iter()
+                .collect(),
             )]);
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
@@ -1588,7 +1590,7 @@ mod tests {
         let mut constraint_system =
             ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
                 Type::Var(rand_type_id),
-                vec![Type::Int, Type::Bool],
+                vec![Type::Int, Type::Bool].into_iter().collect(),
             )]);
         let mut expr_env = ExprTypeEnv::new();
         let ty = generate_constraints(
@@ -1620,7 +1622,7 @@ mod tests {
         let mut constraint_system =
             ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
                 Type::Var(rand_type_id),
-                vec![Type::Int, Type::Bool],
+                vec![Type::Int, Type::Bool].into_iter().collect(),
             )]);
         let mut expr_env = ExprTypeEnv::new();
         let _ty = generate_constraints(

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use rex_ast::expr::{Expr, Var};
 
 use crate::{

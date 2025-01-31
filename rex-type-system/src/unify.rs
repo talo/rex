@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rex_ast::id::Id;
 
@@ -90,7 +90,7 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
 
 pub fn unify_one_of(
     t1: &Type,
-    t2_possibilities: &Vec<Type>,
+    t2_possibilities: &HashSet<Type>,
     subst: &mut Subst,
 ) -> Result<(), String> {
     // First apply any existing substitutions

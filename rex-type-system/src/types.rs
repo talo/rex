@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fmt::{self, Display, Formatter},
 };
 
@@ -35,6 +35,88 @@ impl Type {
         match self {
             Type::Arrow(_, b) => 1 + b.num_params(),
             _ => 0,
+        }
+    }
+
+    pub fn maybe_compatible(&self, other: &Type) -> Result<(), String> {
+        match (self, other) {
+            (Self::Bool, Self::Bool) => Ok(()),
+            (Self::Uint, Self::Uint) => Ok(()),
+            (Self::Int, Self::Int) => Ok(()),
+            (Self::Float, Self::Float) => Ok(()),
+            (Self::String, Self::String) => Ok(()),
+
+            (Self::Arrow(a1, b1), Self::Arrow(a2, b2)) => {
+                a1.maybe_compatible(a2)?;
+                b1.maybe_compatible(b2)
+            }
+            (Self::Result(t1, e1), Self::Result(t2, e2)) => {
+                t1.maybe_compatible(t2)?;
+                e1.maybe_compatible(e2)
+            }
+            (Self::Option(t1), Self::Option(t2)) => t1.maybe_compatible(t2),
+            (Self::List(t1), Self::List(t2)) => t1.maybe_compatible(t2),
+            (Self::Dict(d1), Self::Dict(d2)) => {
+                for (k, v1) in d1 {
+                    if let Some(v2) = d2.get(k) {
+                        v1.maybe_compatible(v2)?;
+                    } else {
+                        return Err(format!("Incompatible types: {} and {}", self, other));
+                    }
+                }
+                Ok(())
+            }
+            (Self::Tuple(e1), Self::Tuple(e2)) => {
+                if e1.len() != e2.len() {
+                    return Err(format!("Incompatible types: {} and {}", self, other));
+                }
+                for (t1, t2) in e1.iter().zip(e2) {
+                    t1.maybe_compatible(t2)?;
+                }
+                Ok(())
+            }
+
+            (Self::ADT(adt1), Self::ADT(adt2)) => {
+                if adt1.name != adt2.name {
+                    return Err(format!("Incompatible types: {} and {}", self, other));
+                }
+                if adt1.variants.len() != adt2.variants.len() {
+                    return Err(format!("Incompatible types: {} and {}", self, other));
+                }
+                for (v1, v2) in adt1.variants.iter().zip(&adt2.variants) {
+                    if v1.name != v2.name {
+                        return Err(format!("Incompatible types: {} and {}", self, other));
+                    }
+                    if let (Some(t1), Some(t2)) = (&v1.t, &v2.t) {
+                        t1.maybe_compatible(t2)?;
+                    }
+                }
+                Ok(())
+            }
+
+            // NOTE(loong): I am not sure this is actually correct. My thinking
+            // is that we don't have to validate inconsistencies in type
+            // assigments for the various type variables, because this should
+            // have been handled during type inference. Type compatibility
+            // checking should only be used for looking up functions during
+            // execution. For example, `a -> a` and `int -> string` are
+            // compatible because we have said that a type variable is always
+            // compatible with any other type (without considering constraints).
+            //
+            // We can think about "type compatibility" as a necessary but not
+            // sufficient condition for type correctness. This check could be
+            // used before full type inference to catch any quick and obvious
+            // errors. And then again, after type inference, to disambiguate
+            // overloaded functions in the ftable.
+            //
+            // This is needed because the ftable will store a function like `map
+            // : (a -> b) -> [a] -> [b]` but during actual execution this will
+            // be executed like something concrete `map : (int -> string) ->
+            // [int] -> [string]`.
+            (Self::Var(_), _) => Ok(()),
+            (Self::ForAll(_, t, _), _) => t.maybe_compatible(other),
+
+            _ => Err(format!("Incompatible types: {} and {}", self, other)),
         }
     }
 }
@@ -156,5 +238,344 @@ impl Display for Type {
             }
             Type::ADT(x) => x.fmt(f),
         }
+    }
+}
+
+pub trait ToType {
+    fn to_type() -> Type;
+}
+
+impl ToType for bool {
+    fn to_type() -> Type {
+        Type::Bool
+    }
+}
+
+impl ToType for u8 {
+    fn to_type() -> Type {
+        Type::Uint
+    }
+}
+
+impl ToType for u16 {
+    fn to_type() -> Type {
+        Type::Uint
+    }
+}
+
+impl ToType for u32 {
+    fn to_type() -> Type {
+        Type::Uint
+    }
+}
+
+impl ToType for u64 {
+    fn to_type() -> Type {
+        Type::Uint
+    }
+}
+
+impl ToType for u128 {
+    fn to_type() -> Type {
+        Type::Uint
+    }
+}
+
+impl ToType for i8 {
+    fn to_type() -> Type {
+        Type::Int
+    }
+}
+
+impl ToType for i16 {
+    fn to_type() -> Type {
+        Type::Int
+    }
+}
+
+impl ToType for i32 {
+    fn to_type() -> Type {
+        Type::Int
+    }
+}
+
+impl ToType for i64 {
+    fn to_type() -> Type {
+        Type::Int
+    }
+}
+
+impl ToType for i128 {
+    fn to_type() -> Type {
+        Type::Int
+    }
+}
+
+impl ToType for f32 {
+    fn to_type() -> Type {
+        Type::Float
+    }
+}
+
+impl ToType for f64 {
+    fn to_type() -> Type {
+        Type::Float
+    }
+}
+
+impl ToType for str {
+    fn to_type() -> Type {
+        Type::String
+    }
+}
+
+impl ToType for String {
+    fn to_type() -> Type {
+        Type::String
+    }
+}
+
+impl<A0, B> ToType for fn(A0) -> B
+where
+    A0: ToType,
+    B: ToType,
+{
+    fn to_type() -> Type {
+        Type::Arrow(Box::new(A0::to_type()), Box::new(B::to_type()))
+    }
+}
+
+impl<A0, A1, B> ToType for fn(A0, A1) -> B
+where
+    A0: ToType,
+    A1: ToType,
+    B: ToType,
+{
+    fn to_type() -> Type {
+        Type::Arrow(
+            Box::new(A0::to_type()),
+            Box::new(Type::Arrow(Box::new(A1::to_type()), Box::new(B::to_type()))),
+        )
+    }
+}
+
+impl<A0, A1, A2, B> ToType for fn(A0, A1, A2) -> B
+where
+    A0: ToType,
+    A1: ToType,
+    A2: ToType,
+    B: ToType,
+{
+    fn to_type() -> Type {
+        Type::Arrow(
+            Box::new(A0::to_type()),
+            Box::new(Type::Arrow(
+                Box::new(A1::to_type()),
+                Box::new(Type::Arrow(Box::new(A2::to_type()), Box::new(B::to_type()))),
+            )),
+        )
+    }
+}
+
+impl<A0, A1, A2, A3, B> ToType for fn(A0, A1, A2, A3) -> B
+where
+    A0: ToType,
+    A1: ToType,
+    A2: ToType,
+    A3: ToType,
+    B: ToType,
+{
+    fn to_type() -> Type {
+        Type::Arrow(
+            Box::new(A0::to_type()),
+            Box::new(Type::Arrow(
+                Box::new(A1::to_type()),
+                Box::new(Type::Arrow(
+                    Box::new(A2::to_type()),
+                    Box::new(Type::Arrow(Box::new(A3::to_type()), Box::new(B::to_type()))),
+                )),
+            )),
+        )
+    }
+}
+
+impl<T, E> ToType for Result<T, E>
+where
+    T: ToType,
+    E: ToType,
+{
+    fn to_type() -> Type {
+        Type::Result(Box::new(T::to_type()), Box::new(E::to_type()))
+    }
+}
+
+impl<T> ToType for Option<T>
+where
+    T: ToType,
+{
+    fn to_type() -> Type {
+        Type::Option(Box::new(T::to_type()))
+    }
+}
+
+impl<T> ToType for [T]
+where
+    T: ToType,
+{
+    fn to_type() -> Type {
+        Type::List(Box::new(T::to_type()))
+    }
+}
+
+impl<T> ToType for Vec<T>
+where
+    T: ToType,
+{
+    fn to_type() -> Type {
+        Type::List(Box::new(T::to_type()))
+    }
+}
+
+impl<T> ToType for VecDeque<T>
+where
+    T: ToType,
+{
+    fn to_type() -> Type {
+        Type::List(Box::new(T::to_type()))
+    }
+}
+
+impl<T0> ToType for (T0,)
+where
+    T0: ToType,
+{
+    fn to_type() -> Type {
+        Type::Tuple(vec![T0::to_type()])
+    }
+}
+
+impl<T0, T1> ToType for (T0, T1)
+where
+    T0: ToType,
+    T1: ToType,
+{
+    fn to_type() -> Type {
+        Type::Tuple(vec![T0::to_type(), T1::to_type()])
+    }
+}
+
+impl<T0, T1, T2> ToType for (T0, T1, T2)
+where
+    T0: ToType,
+    T1: ToType,
+    T2: ToType,
+{
+    fn to_type() -> Type {
+        Type::Tuple(vec![T0::to_type(), T1::to_type(), T2::to_type()])
+    }
+}
+
+impl<T0, T1, T2, T3> ToType for (T0, T1, T2, T3)
+where
+    T0: ToType,
+    T1: ToType,
+    T2: ToType,
+    T3: ToType,
+{
+    fn to_type() -> Type {
+        Type::Tuple(vec![
+            T0::to_type(),
+            T1::to_type(),
+            T2::to_type(),
+            T3::to_type(),
+        ])
+    }
+}
+
+impl<T0, T1, T2, T3, T4> ToType for (T0, T1, T2, T3, T4)
+where
+    T0: ToType,
+    T1: ToType,
+    T2: ToType,
+    T3: ToType,
+    T4: ToType,
+{
+    fn to_type() -> Type {
+        Type::Tuple(vec![
+            T0::to_type(),
+            T1::to_type(),
+            T2::to_type(),
+            T3::to_type(),
+            T4::to_type(),
+        ])
+    }
+}
+
+impl<T0, T1, T2, T3, T4, T5> ToType for (T0, T1, T2, T3, T4, T5)
+where
+    T0: ToType,
+    T1: ToType,
+    T2: ToType,
+    T3: ToType,
+    T4: ToType,
+    T5: ToType,
+{
+    fn to_type() -> Type {
+        Type::Tuple(vec![
+            T0::to_type(),
+            T1::to_type(),
+            T2::to_type(),
+            T3::to_type(),
+            T4::to_type(),
+            T5::to_type(),
+        ])
+    }
+}
+
+impl<T0, T1, T2, T3, T4, T5, T6> ToType for (T0, T1, T2, T3, T4, T5, T6)
+where
+    T0: ToType,
+    T1: ToType,
+    T2: ToType,
+    T3: ToType,
+    T4: ToType,
+    T5: ToType,
+    T6: ToType,
+{
+    fn to_type() -> Type {
+        Type::Tuple(vec![
+            T0::to_type(),
+            T1::to_type(),
+            T2::to_type(),
+            T3::to_type(),
+            T4::to_type(),
+            T5::to_type(),
+            T6::to_type(),
+        ])
+    }
+}
+
+impl<T0, T1, T2, T3, T4, T5, T6, T7> ToType for (T0, T1, T2, T3, T4, T5, T6, T7)
+where
+    T0: ToType,
+    T1: ToType,
+    T2: ToType,
+    T3: ToType,
+    T4: ToType,
+    T5: ToType,
+    T6: ToType,
+    T7: ToType,
+{
+    fn to_type() -> Type {
+        Type::Tuple(vec![
+            T0::to_type(),
+            T1::to_type(),
+            T2::to_type(),
+            T3::to_type(),
+            T4::to_type(),
+            T5::to_type(),
+            T6::to_type(),
+            T7::to_type(),
+        ])
     }
 }

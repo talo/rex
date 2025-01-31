@@ -8,3 +8,4 @@ rand = "0.8.5"
 rex-ast = { path = "../rex-ast" }
 rex-lexer = { path = "../rex-lexer" }
 serde = { version = "1.0", features = ["derive"] }
+thiserror = { version = "1.0" }

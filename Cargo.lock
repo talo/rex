@@ -662,6 +662,7 @@ dependencies = [
  "rex-ast",
  "rex-lexer",
  "serde",
+ "thiserror",
 ]
 
 [[package]]
