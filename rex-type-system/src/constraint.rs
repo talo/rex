@@ -9,7 +9,6 @@ use rex_ast::{
 };
 
 use crate::{
-    trace::{sprint_expr_with_type, sprint_type_env},
     types::{ADTVariant, ExprTypeEnv, Type, TypeEnv, ADT},
     unify::{self, Subst},
 };
@@ -314,13 +313,6 @@ pub fn generate_constraints(
 
             constraint_system.add_local_constraint(Constraint::Eq(f_type, expected_f_type));
 
-            println!(
-                "APP:\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
-                sprint_expr_with_type(&expr, &expr_env, None),
-                sprint_type_env(&env),
-                constraint_system,
-            );
-
             expr_env.insert(*id, result_type.clone());
             Ok(result_type)
         }
@@ -332,24 +324,10 @@ pub fn generate_constraints(
             new_env.insert(param.name.clone(), param_type.clone());
             expr_env.insert(param.id, param_type.clone());
 
-            println!(
-                "LAM (before):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
-                sprint_expr_with_type(&expr, &expr_env, None),
-                sprint_type_env(&new_env),
-                constraint_system,
-            );
-
             // TODO(loong): do we need to clone `expr_env` in the same way that
             // we do for `env`?
             let body_type =
                 generate_constraints(body, &new_env, expr_env, constraint_system, id_dispenser)?;
-
-            println!(
-                "LAM (after):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
-                sprint_expr_with_type(&expr, &expr_env, None),
-                sprint_type_env(&env),
-                constraint_system,
-            );
 
             let result_type = Type::Arrow(Box::new(param_type), Box::new(body_type));
             expr_env.insert(*id, result_type.clone());
@@ -384,14 +362,6 @@ pub fn generate_constraints(
             let solved_def_type = unify::apply_subst(&def_type, &def_subst);
             constraint_system.extend(def_constraint_system.clone());
 
-            println!(
-                "LET (before):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\nDEF_TYPE: {}\n",
-                sprint_expr_with_type(&expr, &expr_env, None),
-                sprint_type_env(&env),
-                constraint_system,
-                solved_def_type,
-            );
-
             // Generalize the type
             let gen_deps = def_constraint_system
                 .constraints()
@@ -413,13 +383,6 @@ pub fn generate_constraints(
             let result_type =
                 generate_constraints(body, &new_env, expr_env, constraint_system, id_dispenser)?;
             expr_env.insert(*id, result_type.clone());
-
-            println!(
-                "LET (after):\nEXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
-                sprint_expr_with_type(&expr, &expr_env, None),
-                sprint_type_env(&new_env),
-                constraint_system,
-            );
 
             Ok(result_type)
         }
@@ -558,11 +521,6 @@ fn instantiate(
 ) -> Type {
     let mut subst = HashMap::new();
 
-    println!(
-        "INSTANTIATE (before):\nCONSTRAINTS: {}\nTYPE: {}\n",
-        &constraint_system, ty,
-    );
-
     fn inst_helper(
         ty: &Type,
         subst: &mut HashMap<Id, Type>,
@@ -675,11 +633,6 @@ fn instantiate(
 
     let res = inst_helper(ty, &mut subst, id_dispenser, constraint_system);
     // let res = unify::apply_subst(&res, &subst);
-
-    println!(
-        "INSTANTIATE (after):\nCONSTRAINTS: {}\nDTYPE: {}\n",
-        &constraint_system, res,
-    );
 
     res
 }

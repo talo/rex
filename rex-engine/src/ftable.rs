@@ -43,7 +43,7 @@ where
 pub type FtableFn = Box<dyn for<'r> F<'r>>;
 
 #[derive(Clone)]
-pub struct Ftable(pub HashMap<(String, Type), FtableFn>);
+pub struct Ftable(pub HashMap<String, Vec<(Type, FtableFn)>>);
 
 impl Ftable {
     pub fn with_prelude() -> Self {
@@ -75,13 +75,28 @@ impl Ftable {
     where
         F: CallFn<A, B> + Clone + Sync + Send + 'static,
     {
-        self.0.insert(
-            (n.to_string(), arrow!(F::a_type() => F::b_type())),
+        self.0.entry(n.to_string()).or_default().push((
+            arrow!(F::a_type() => F::b_type()),
             Box::new(move |_ftable, args| {
                 let f = f.clone();
                 Box::pin(async move { f.call(Id(u64::MAX), Span::default(), args).await })
             }),
-        );
+        ));
+    }
+
+    pub fn lookup_fns(&self, n: &str, t: Type) -> impl Iterator<Item = &FtableFn> {
+        self.0
+            .get(n)
+            .map(|v| v.iter())
+            .into_iter()
+            .flatten()
+            .filter_map(move |(ftype, f)| match ftype.maybe_compatible(&t) {
+                Ok(()) => Some(f),
+                Err(e) => {
+                    println!("bad lookup: {}", e);
+                    None
+                }
+            })
     }
 }
 

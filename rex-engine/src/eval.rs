@@ -169,7 +169,7 @@ pub async fn eval_var(
         Value::Expr(Expr::Var(var)) => {
             let var_type = env.get(&var.id).unwrap();
             let var_type = unify::apply_subst(var_type, subst);
-            let f = ftable.0.get(&(var.name.clone(), var_type.clone()));
+            let f = ftable.lookup_fns(&var.name, var_type.clone()).next();
             if let Some(f) = f {
                 if var_type.num_params() == 0 {
                     return f(ftable, &vec![]).await;
@@ -198,7 +198,7 @@ pub async fn eval_app(
         Value::Expr(Expr::Var(var)) => {
             let var_type = env.get(&var.id).unwrap();
             let var_type = unify::apply_subst(var_type, subst);
-            let f = ftable.0.get(&(var.name.clone(), var_type.clone()));
+            let f = ftable.lookup_fns(&var.name, var_type.clone()).next();
             if let Some(f) = f {
                 match var_type.num_params() {
                     0 => panic!("Function application on non-function type"),
@@ -218,7 +218,7 @@ pub async fn eval_app(
             args.push(x);
             let var_type = env.get(&var.id).unwrap();
             let var_type = unify::apply_subst(var_type, subst);
-            let f = ftable.0.get(&(var.name.clone(), var_type.clone()));
+            let f = ftable.lookup_fns(&var.name, var_type.clone()).next();
             if let Some(f) = f {
                 if var_type.num_params() < args.len() {
                     panic!("Too many arguments");
@@ -594,11 +594,11 @@ pub mod test {
 
         let mut ftable = Ftable::with_prelude();
         ftable.0.insert(
-            (
-                "id".to_string(),
+            "id".to_string(),
+            vec![(
                 arrow!(Type::Var(id_op_a0) => Type::Var(id_op_a0)),
-            ),
-            Box::new(|_ftable, args| Box::pin(async move { Ok(args[0].clone()) })),
+                Box::new(|_ftable, args| Box::pin(async move { Ok(args[0].clone()) })),
+            )],
         );
         let mut type_env = TypeEnv::new();
 
@@ -625,12 +625,6 @@ pub mod test {
 
         let final_type = unify::apply_subst(&ty, &subst);
 
-        println!(
-            "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
-            &constraint_system,
-            sprint_subst(&subst)
-        );
         let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr)
             .await
             .unwrap();
@@ -682,12 +676,6 @@ pub mod test {
 
         let final_type = unify::apply_subst(&ty, &subst);
 
-        println!(
-            "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
-            &constraint_system,
-            sprint_subst(&subst)
-        );
         let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr)
             .await
             .unwrap();
@@ -726,13 +714,6 @@ pub mod test {
             )]);
         let mut expr_type_env = ExprTypeEnv::new();
 
-        println!(
-            "EXPR: {}\nTYPE_ENV: {}\nCONSTRAINTS: {}\n",
-            sprint_expr_with_type(&expr, &expr_type_env, None),
-            sprint_type_env(&type_env),
-            &constraint_system,
-        );
-
         let ty = generate_constraints(
             &expr,
             &type_env,
@@ -743,13 +724,6 @@ pub mod test {
         .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
-
-        println!(
-            "EXPR: {}\nCONSTRAINTS: {}\nSUBST: {}",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst)),
-            &constraint_system,
-            sprint_subst(&subst)
-        );
 
         let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr).await;
 

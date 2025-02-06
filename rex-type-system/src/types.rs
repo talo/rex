@@ -115,6 +115,8 @@ impl Type {
             // [int] -> [string]`.
             (Self::Var(_), _) => Ok(()),
             (Self::ForAll(_, t, _), _) => t.maybe_compatible(other),
+            (_, Self::Var(_)) => Ok(()),
+            (_, Self::ForAll(_, t, _)) => t.maybe_compatible(other),
 
             _ => Err(format!("Incompatible types: {} and {}", self, other)),
         }
