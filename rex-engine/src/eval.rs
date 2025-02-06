@@ -287,6 +287,7 @@ pub async fn eval_ite(
 pub mod test {
     use std::collections::BTreeSet;
 
+    use rex_ast::id::IdDispenser;
     use rex_lexer::Token;
     use rex_parser::Parser;
     use rex_type_system::{
@@ -300,9 +301,9 @@ pub mod test {
 
     #[tokio::test]
     async fn test_simple() {
+        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("1").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let mut id_dispenser = parser.id_dispenser;
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let ftable = Ftable::with_prelude();
         let type_env = TypeEnv::new();
@@ -331,9 +332,9 @@ pub mod test {
 
     #[tokio::test]
     async fn test_negate() {
+        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("negate 3.14").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let mut id_dispenser = parser.id_dispenser;
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let ftable = Ftable::with_prelude();
 
@@ -376,9 +377,9 @@ pub mod test {
 
     #[tokio::test]
     async fn test_negate_tuple() {
+        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("(negate 6.9, negate 420)").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let mut id_dispenser = parser.id_dispenser;
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let ftable = Ftable::with_prelude();
 
@@ -428,9 +429,9 @@ pub mod test {
 
     #[tokio::test]
     async fn test_negate_list() {
+        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("[negate 6.9, negate 3.14]").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let mut id_dispenser = parser.id_dispenser;
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let ftable = Ftable::with_prelude();
 
@@ -480,9 +481,9 @@ pub mod test {
 
     #[tokio::test]
     async fn test_add() {
+        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("6.9 + 4.20").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let mut id_dispenser = parser.id_dispenser;
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let ftable = Ftable::with_prelude();
 
@@ -528,9 +529,9 @@ pub mod test {
 
     #[tokio::test]
     async fn test_add_tuple() {
+        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("(6.9 + 4.20, 6 + 9)").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let mut id_dispenser = parser.id_dispenser;
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let ftable = Ftable::with_prelude();
 
@@ -580,13 +581,12 @@ pub mod test {
 
     #[tokio::test]
     async fn test_polymorphism() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("(id 6.9, id 420)").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
         let state = ();
 
         println!("PARSED: {}", expr);
-
-        let mut id_dispenser = parser.id_dispenser;
 
         let id_op_a0 = id_dispenser.next();
 
@@ -634,14 +634,13 @@ pub mod test {
 
     #[tokio::test]
     async fn test_let_polymorphism() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
         let mut parser =
             Parser::new(Token::tokenize("let id = \\x -> x in (id 6.9, id 420)").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
         let state = ();
 
         println!("PARSED: {}", expr);
-
-        let mut id_dispenser = parser.id_dispenser;
 
         let mut ftable = Ftable::with_prelude();
         let mut type_env = TypeEnv::new();
@@ -685,13 +684,10 @@ pub mod test {
 
     #[tokio::test]
     async fn test_let_polymorphism_overloading() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
         let mut parser =
             Parser::new(Token::tokenize("let f = \\x -> negate x in (f 6.9, f 420)").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        println!("PARSED: {}\n", expr);
-
-        let mut id_dispenser = parser.id_dispenser;
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let mut ftable = Ftable::with_prelude();
         let mut type_env = TypeEnv::new();
