@@ -1288,7 +1288,7 @@ impl<S: Send + Sync + 'static> Ftable<S> {
     pub fn scope(&self) -> Scope {
         let mut scope = Scope::new();
         for (id, (f, _)) in &self.ftable {
-            scope.vars.insert(f.name.clone(), *id);
+            scope.vars.insert_mut(f.name.clone(), *id);
         }
         scope
     }

@@ -5,6 +5,7 @@ use rex_ast::{
     id::{Id, IdDispenser},
 };
 use rex_lexer::span::Span;
+use rpds::HashTrieMapSync;
 
 use crate::error::Error;
 
@@ -12,7 +13,7 @@ pub mod error;
 
 #[derive(Clone, Debug)]
 pub struct Scope {
-    pub vars: HashMap<String, Id>,
+    pub vars: HashTrieMapSync<String, Id>,
 }
 
 impl Default for Scope {
@@ -24,7 +25,7 @@ impl Default for Scope {
 impl Scope {
     pub fn new() -> Self {
         Self {
-            vars: HashMap::new(),
+            vars: HashTrieMapSync::new_sync(),
         }
     }
 }
@@ -127,9 +128,8 @@ fn resolve_lambda(
     lam: Lambda,
 ) -> Result<AST, Error> {
     let mut new_scope = Scope {
-        vars: scope.vars.clone(),
+        vars: scope.vars.insert(lam.var.name.clone(), lam.var.id),
     };
-    new_scope.vars.insert(lam.var.name.clone(), lam.var.id);
     Ok(AST::Lambda(Lambda::new(
         lam.span,
         id_dispenser.next(),
@@ -144,11 +144,8 @@ fn resolve_let_in(
     let_in: LetIn,
 ) -> Result<AST, Error> {
     let mut new_scope = Scope {
-        vars: scope.vars.clone(),
+        vars: scope.vars.insert(let_in.var.name.clone(), let_in.var.id),
     };
-    new_scope
-        .vars
-        .insert(let_in.var.name.clone(), let_in.var.id);
     Ok(AST::LetIn(LetIn::new(
         let_in.span,
         id_dispenser.next(),
