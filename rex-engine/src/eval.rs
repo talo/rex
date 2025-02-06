@@ -13,6 +13,7 @@ use rex_type_system::{
     types::ExprTypeEnv,
     unify::{self, Subst},
 };
+use rpds::HashTrieMapSync;
 
 use crate::{error::Error, ftable::Ftable};
 
@@ -33,7 +34,7 @@ impl Display for Value {
     }
 }
 
-pub type Scope = HashMap<String, Value>;
+pub type Scope = HashTrieMapSync<String, Value>;
 
 #[async_recursion::async_recursion]
 pub async fn eval(
@@ -210,8 +211,7 @@ pub async fn eval_app(
             }
         }
         Value::Expr(Expr::Lam(_id, _span, param, body)) => {
-            let mut scope = scope.clone();
-            scope.insert(param.name, x);
+            let scope = scope.insert(param.name, x);
             eval(&scope, ftable, env, subst, *body).await
         }
         Value::Closure(var, mut args) => {
@@ -260,8 +260,7 @@ pub async fn eval_let(
     body: Expr,
 ) -> Result<Value, Error> {
     let def = eval(scope, ftable, env, subst, def).await?;
-    let mut scope = scope.clone();
-    scope.insert(var.name, def);
+    let scope = scope.insert(var.name, def);
     eval(&scope, ftable, env, subst, body).await
 }
 
@@ -293,9 +292,8 @@ pub mod test {
     use rex_type_system::{
         arrow,
         constraint::{generate_constraints, Constraint, ConstraintSystem},
-        trace::{sprint_expr_with_type, sprint_subst, sprint_type_env},
         types::{Type, TypeEnv},
-        unify::{self, Subst},
+        unify::{self},
     };
 
     use super::*;
@@ -325,7 +323,7 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::Uint);
 
-        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr)
+        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
             .await
             .unwrap();
         assert!(matches!(res, Value::Expr(Expr::Uint(_, _, 1))));
@@ -370,7 +368,7 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::Float);
 
-        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr)
+        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
             .await
             .unwrap();
         assert!(matches!(res, Value::Expr(Expr::Float(_, _, -3.14))));
@@ -415,7 +413,7 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::Tuple(vec![Type::Float, Type::Int]));
 
-        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr)
+        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
             .await
             .unwrap();
         match res {
@@ -467,7 +465,7 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::List(Type::Float.into()));
 
-        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr)
+        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
             .await
             .unwrap();
         match res {
@@ -519,7 +517,7 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::Float);
 
-        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr)
+        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
             .await
             .unwrap();
         assert!(matches!(
@@ -567,7 +565,7 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::Tuple(vec![Type::Float, Type::Uint]));
 
-        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr)
+        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
             .await
             .unwrap();
         match res {
@@ -625,7 +623,7 @@ pub mod test {
 
         let final_type = unify::apply_subst(&ty, &subst);
 
-        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr)
+        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
             .await
             .unwrap();
 
@@ -676,7 +674,7 @@ pub mod test {
 
         let final_type = unify::apply_subst(&ty, &subst);
 
-        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr)
+        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
             .await
             .unwrap();
 
@@ -725,7 +723,7 @@ pub mod test {
 
         let subst = unify::unify_constraints(&constraint_system)?;
 
-        let res = eval(&Scope::new(), &ftable, &expr_type_env, &subst, expr).await;
+        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr).await;
 
         println!("RES: {:#?}", res);
 
