@@ -43,7 +43,7 @@ impl Parser {
     }
 
     pub fn with_dispenser(id_dispenser: IdDispenser, tokens: Tokens) -> Parser {
-        Parser {
+        let mut parser = Parser {
             id_dispenser,
             token_cursor: 0,
             tokens: tokens
@@ -54,7 +54,10 @@ impl Parser {
                 })
                 .collect(),
             errors: Vec::new(),
-        }
+        };
+
+        parser.strip_comments();
+        parser
     }
 
     pub fn current_token(&self) -> Option<Token> {
