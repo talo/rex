@@ -60,21 +60,14 @@ pub async fn main() -> anyhow::Result<()> {
                     );
 
                     let mut fn_forward_decls = vec![];
-                    loop {
-                        match parser.parse_fn_forward_decl() {
-                            Ok((fn_ident, type_vars)) => {
-                                fn_forward_decls.push((
-                                    fn_ident,
-                                    type_vars
-                                        .into_iter()
-                                        .map(|tv| rex_hmts::resolve_type_var(&tv))
-                                        .collect::<Vec<_>>(),
-                                ));
-                            }
-                            Err(_e) => {
-                                break;
-                            }
-                        }
+                    while let Ok((fn_ident, type_vars)) = parser.parse_fn_forward_decl() {
+                        fn_forward_decls.push((
+                            fn_ident,
+                            type_vars
+                                .into_iter()
+                                .map(|tv| rex_hmts::resolve_type_var(&tv))
+                                .collect::<Vec<_>>(),
+                        ));
                     }
                     fn_forward_decls
                 }
@@ -105,7 +98,7 @@ pub async fn main() -> anyhow::Result<()> {
             let mut scope = ftable.scope();
 
             for (fn_ident, fn_params) in fn_forward_decls {
-                if fn_params.len() == 0 {
+                if fn_params.is_empty() {
                     panic!("interface function never returns");
                 }
                 if fn_params.len() == 1 {
@@ -120,13 +113,11 @@ pub async fn main() -> anyhow::Result<()> {
                     Box::new(fn_params[0].clone()),
                     Box::new(fn_params[1].clone()),
                 );
-                for i in 2..fn_params.len() {
+                for item in fn_params.iter().skip(2) {
                     match arrow {
                         Type::Arrow(a, b) => {
-                            arrow = Type::Arrow(
-                                a,
-                                Box::new(Type::Arrow(b, Box::new(fn_params[i].clone()))),
-                            );
+                            arrow =
+                                Type::Arrow(a, Box::new(Type::Arrow(b, Box::new(item.clone()))));
                         }
                         _ => unreachable!(),
                     }

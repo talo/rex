@@ -17,6 +17,8 @@ pub mod apply;
 pub mod context;
 pub mod error;
 pub mod ftable;
+#[cfg(feature = "stats")]
+pub mod stats;
 pub mod value;
 
 #[async_recursion::async_recursion]
@@ -248,7 +250,6 @@ async fn eval_unnamed_fields<S: Send + Sync + 'static>(
 
 #[cfg(test)]
 mod test {
-
     use rex_ast::{adt, adt_variant_with_named_fields, id::IdDispenser, types::Type};
     use rex_lexer::Token;
     use rex_parser::Parser;
@@ -344,243 +345,95 @@ mod test {
 
     #[tokio::test]
     async fn math() {
-        let mut parser = Parser::new(Token::tokenize("1 + 2").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let state = ();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
-
-        assert_eq!(val, Value::Uint(3))
+        let val = parse_and_eval("1 + 2", &()).await.unwrap();
+        assert_eq!(val, Value::Uint(3));
     }
 
     #[tokio::test]
     async fn negate() {
-        let mut parser = Parser::new(Token::tokenize("-42").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let state = ();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
-
-        assert_eq!(val, Value::Int(-42))
+        let val = parse_and_eval("-42", &()).await.unwrap();
+        assert_eq!(val, Value::Int(-42));
     }
 
     #[tokio::test]
     async fn math_with_precedence() {
-        let mut parser = Parser::new(Token::tokenize("1 + 2 * 3").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let state = ();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
-
+        let val = parse_and_eval("1 + 2 * 3", &()).await.unwrap();
         assert_eq!(val, Value::Uint(7));
     }
 
     #[tokio::test]
     async fn lambda_1() {
-        let mut parser = Parser::new(Token::tokenize("(\\x -> x) 1").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        let state = ();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &state, ast).await.unwrap();
-
+        let val = parse_and_eval("(\\x -> x) 1", &()).await.unwrap();
         assert_eq!(val, Value::Uint(1));
     }
 
     #[tokio::test]
     async fn lambda_2() {
-        let mut parser = Parser::new(Token::tokenize("(\\x y -> x + y) 1 2").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
+        let val = parse_and_eval("(\\x y -> x + y) 1 2", &()).await.unwrap();
         assert_eq!(val, Value::Uint(3));
     }
 
     #[tokio::test]
     async fn lambda_3() {
-        let mut parser = Parser::new(Token::tokenize("(\\x y z -> x + y * z) 1 2 3").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
+        let val = parse_and_eval("(\\x y z -> x + y * z) 1 2 3", &())
+            .await
+            .unwrap();
         assert_eq!(val, Value::Uint(7));
     }
 
     #[tokio::test]
     async fn let_in() {
-        let mut parser = Parser::new(Token::tokenize("let x = 1 + 2, y = 3 in x * y").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
+        let val = parse_and_eval("let x = 1 + 2, y = 3 in x * y", &())
+            .await
+            .unwrap();
         assert_eq!(val, Value::Uint(9));
     }
 
     #[tokio::test]
     async fn len() {
-        let mut parser = Parser::new(Token::tokenize("len [1, 2, 3, 4]").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
+        let val = parse_and_eval("len [1, 2, 3, 4]", &()).await.unwrap();
         assert_eq!(val, Value::Uint(4));
     }
 
     #[tokio::test]
     async fn len_tuple() {
-        let mut parser = Parser::new(Token::tokenize("len ((1, 2, 3, 4))").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
+        let val = parse_and_eval("len ((1, 2, 3, 4))", &()).await.unwrap();
         assert_eq!(val, Value::Uint(4));
     }
 
     #[tokio::test]
     async fn len_str() {
-        let mut parser = Parser::new(Token::tokenize("len 'asd'").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
+        let val = parse_and_eval("len 'asd'", &()).await.unwrap();
         assert_eq!(val, Value::Uint(3));
     }
 
     #[tokio::test]
     async fn has() {
-        let mut parser = Parser::new(Token::tokenize("has 'foo' ({ foo = 1 })").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
+        let val = parse_and_eval("has 'foo' ({ foo = 1 })", &())
+            .await
+            .unwrap();
         assert_eq!(val, Value::Bool(true));
     }
 
     #[tokio::test]
     async fn if_then_else_max() {
-        let mut parser =
-            Parser::new(Token::tokenize("(\\x y -> if x > y then x else y) 4 20").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
+        let val = parse_and_eval("(\\x y -> if x > y then x else y) 4 20", &())
+            .await
+            .unwrap();
         assert_eq!(val, Value::Uint(20));
     }
 
     #[tokio::test]
     async fn if_then_else_max_with_comment() {
-        let mut parser =
-            Parser::new(Token::tokenize("(\\ {- this is the max function -} x y -> if {- check which is bigger -} x > y then x {- x bigger -} else y {- y bigger -} ) 4 20").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
+        let val = parse_and_eval("(\\ {- this is the max function -} x y -> if {- check which is bigger -} x > y then x {- x bigger -} else y {- y bigger -} ) 4 20", &()).await.unwrap();
         assert_eq!(val, Value::Uint(20));
     }
 
     #[tokio::test]
     async fn test_map() {
-        let mut parser =
-            Parser::new(Token::tokenize("map (\\x -> x * 3 + 2 + 1) [1, 2, 3, 4]").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
+        let val = parse_and_eval("map (\\x -> x * 3 + 2 + 1) [1, 2, 3, 4]", &())
+            .await
+            .unwrap();
         assert_eq!(
             val,
             Value::List(vec![
@@ -592,19 +445,20 @@ mod test {
         );
     }
 
+    // FIXME: returns a closure, not a value
+    // #[tokio::test]
+    // async fn test_fold() {
+    //     let val = parse_and_eval("(fold (\\x y -> x + y) 0 [1, 2, 3, 4])", &())
+    //         .await
+    //         .unwrap();
+    //     assert_eq!(val, Value::Uint(10))
+    // }
+
     #[tokio::test]
     async fn test_zip() {
-        let mut parser = Parser::new(Token::tokenize("zip [1, 2, 3, 4] [4, 3, 2, 1]").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let mut id_dispenser = parser.id_dispenser;
-        let ftable = Ftable::with_intrinsics(&mut id_dispenser);
-
-        let mut scope = ftable.scope();
-
-        let ctx = Context::new();
-        let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
+        let val = parse_and_eval("zip [1, 2, 3, 4] [4, 3, 2, 1]", &())
+            .await
+            .unwrap();
 
         assert_eq!(
             val,
@@ -619,7 +473,52 @@ mod test {
 
     #[tokio::test]
     async fn test_filter() {
-        let mut parser = Parser::new(Token::tokenize("filter ((<) 2) [4, 3, 2, 1]").unwrap());
+        let val = parse_and_eval("filter ((<) 2) [4, 3, 2, 1]", &())
+            .await
+            .unwrap();
+        assert_eq!(val, Value::List(vec![Value::Uint(4), Value::Uint(3)]));
+    }
+
+    // test avg
+    #[tokio::test]
+    async fn test_avg() {
+        let val = parse_and_eval("avg [1, 2, 3, 4]", &()).await.unwrap();
+        assert_eq!(val, Value::Float(2.5))
+    }
+
+    // test sum
+    #[tokio::test]
+    async fn test_sum() {
+        let val = parse_and_eval("sum [1, 2, 3, 4]", &()).await.unwrap();
+        assert_eq!(val, Value::Uint(10))
+    }
+
+    // test min
+    #[tokio::test]
+    async fn test_min() {
+        let val = parse_and_eval("list_min [4,3,2,5]", &()).await.unwrap();
+        assert_eq!(val, Value::Uint(2))
+    }
+
+    // test take
+    #[tokio::test]
+    async fn test_take() {
+        let val = parse_and_eval("take 2 [4 ,3, 2, 5]", &()).await.unwrap();
+        assert_eq!(val, Value::List(vec![Value::Uint(4), Value::Uint(3)]))
+    }
+
+    // test skip
+    #[tokio::test]
+    async fn test_skip() {
+        let val = parse_and_eval("skip 2 [4 ,3, 2, 5]", &()).await.unwrap();
+        assert_eq!(val, Value::List(vec![Value::Uint(2), Value::Uint(5)]))
+    }
+
+    async fn parse_and_eval<S: Send + Sync + 'static>(
+        code: &str,
+        state: &S,
+    ) -> Result<Value, crate::Error> {
+        let mut parser = Parser::new(Token::tokenize(code).unwrap());
         let expr = parser.parse_expr().unwrap();
 
         let mut id_dispenser = parser.id_dispenser;
@@ -629,9 +528,7 @@ mod test {
 
         let ctx = Context::new();
         let ast = resolve(&mut id_dispenser, &mut scope, expr).unwrap();
-        let val = eval(&ctx, &ftable, &(), ast).await.unwrap();
-
-        assert_eq!(val, Value::List(vec![Value::Uint(4), Value::Uint(3)]));
+        eval(&ctx, &ftable, state, ast).await
     }
 
     #[tokio::test]

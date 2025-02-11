@@ -47,6 +47,18 @@ impl<T> Trace for Result<T, Error> {
                     trace
                 },
             }),
+            Err(Error::ExpectedTuple {
+                expected,
+                got,
+                mut trace,
+            }) => Err(Error::ExpectedTuple {
+                expected,
+                got,
+                trace: {
+                    trace.push_front(node);
+                    trace
+                },
+            }),
             Err(Error::ExpectedKeyable { got, mut trace }) => Err(Error::ExpectedKeyable {
                 got,
                 trace: {
@@ -142,6 +154,13 @@ pub enum Error {
     #[error("expected indexable, got `{got}`")]
     ExpectedIndexable { got: Value, trace: VecDeque<AST> },
 
+    #[error("expected tuple with len {expected}, got `{got}`")]
+    ExpectedTuple {
+        expected: usize,
+        got: usize,
+        trace: VecDeque<AST>,
+    },
+
     #[error("expected keyable, got `{got}`")]
     ExpectedKeyable { got: Value, trace: VecDeque<AST> },
 
@@ -189,6 +208,7 @@ impl Error {
             Self::ExpectedCmp { trace, .. } => trace,
             Self::ExpectedConcat { trace, .. } => trace,
             Self::ExpectedIndexable { trace, .. } => trace,
+            Self::ExpectedTuple { trace, .. } => trace,
             Self::ExpectedKeyable { trace, .. } => trace,
             Self::ExpectedArguments { trace, .. } => trace,
             Self::UnexpectedType { trace, .. } => trace,
