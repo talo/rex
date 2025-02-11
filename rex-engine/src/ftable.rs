@@ -301,6 +301,37 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 })
             }),
         );
+        // 'sqrt'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "sqrt".to_string(),
+                params: vec![a!()],
+                ret: a!(),
+            },
+            Box::new(|_ctx, _runner, _state, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        Some(Value::Uint(x)) => Ok(Value::Float((*x as f64).sqrt())),
+                        Some(Value::Int(x)) => Ok(Value::Float((*x as f64).sqrt())),
+                        Some(Value::Float(x)) => Ok(Value::Float(x.sqrt())),
+                        // Bad types
+                        Some(y) => Err(Error::UnexpectedType {
+                            expected: Type::Uint,
+                            got: y.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
 
         // inequalities
         this.register_function(
@@ -643,6 +674,48 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 })
             }),
         );
+        // 'fold'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "fold".to_string(),
+                params: vec![arrow!(tuple!(b!(), a!()) => b!()), b!(), list!(a!())],
+                ret: b!(),
+            },
+            Box::new(|ctx, runner, state, args| {
+                Box::pin(async move {
+                    match (args.first(), args.get(1), args.get(2)) {
+                        // Implementation
+                        (Some(f), Some(z), Some(Value::List(xs))) => {
+                            let mut acc = z.clone();
+                            for x in xs {
+                                acc = apply::apply(
+                                    ctx,
+                                    runner,
+                                    state,
+                                    f.clone(),
+                                    Value::Tuple(vec![acc.clone(), x.clone()]),
+                                )
+                                .await?;
+                            }
+                            Ok(acc)
+                        }
+                        // Everything else
+                        (Some(_), Some(_), Some(x)) => Err(Error::UnexpectedType {
+                            expected: list!(a!()),
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                        _ => Err(Error::ExpectedArguments {
+                            expected: 3,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
         // 'filter'
         this.register_function(
             Function {
@@ -723,6 +796,42 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 })
             }),
         );
+        // 'skip'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "skip".to_string(),
+                params: vec![Type::Uint, list!(a!())],
+                ret: list!(a!()),
+            },
+            Box::new(|_ctx, _runner, _state, args| {
+                Box::pin(async move {
+                    match (args.first(), args.get(1)) {
+                        // Wrong number of arguments
+                        (_, None) | (None, _) => Err(Error::ExpectedArguments {
+                            expected: 2,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        (Some(Value::Uint(n)), Some(Value::List(xs))) => {
+                            Ok(Value::List(xs.iter().skip(*n as usize).cloned().collect()))
+                        }
+                        // Bad types
+                        (Some(Value::Uint(_)), Some(x)) => Err(Error::UnexpectedType {
+                            expected: list!(a!()),
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                        (Some(n), _) => Err(Error::UnexpectedType {
+                            expected: Type::Uint,
+                            got: n.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
         // 'zip'
         this.register_function(
             Function {
@@ -763,6 +872,60 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 })
             }),
         );
+        // unzip a list of tuples
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "unzip".to_string(),
+                params: vec![Type::List(Box::new(Type::Tuple(vec![a!(), a!()])))],
+                ret: Type::Tuple(vec![Type::List(Box::new(a!())), Type::List(Box::new(a!()))]),
+            },
+            Box::new(|_ctx, _ftable, _state, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Wrong number of arguments
+                        None => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: 0,
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        Some(Value::List(xs)) => {
+                            let mut ys = Vec::with_capacity(xs.len());
+                            let mut zs = Vec::with_capacity(xs.len());
+                            for x in xs {
+                                match x {
+                                    Value::Tuple(xs) => match xs.as_slice() {
+                                        [x, y] => {
+                                            ys.push(x.clone());
+                                            zs.push(y.clone());
+                                        }
+                                        _ => Err(Error::ExpectedTuple {
+                                            expected: 2,
+                                            got: xs.len(),
+                                            trace: Default::default(),
+                                        })?,
+                                    },
+                                    x => Err(Error::UnexpectedType {
+                                        expected: Type::Tuple(vec![a!(), a!()]),
+                                        got: x.clone(),
+                                        trace: Default::default(),
+                                    })?,
+                                }
+                            }
+                            Ok(Value::Tuple(vec![Value::List(ys), Value::List(zs)]))
+                        }
+                        // Everything else
+                        Some(x) => Err(Error::UnexpectedType {
+                            expected: Type::List(Box::new(Type::Tuple(vec![a!(), a!()]))),
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
         // Option
         // `some`
         this.register_function(
@@ -1033,6 +1196,550 @@ impl<S: Send + Sync + 'static> Ftable<S> {
             }),
         );
 
+        // casts
+        // int cast
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "int".to_string(),
+                params: vec![a!()],
+                ret: Type::Int,
+            },
+            Box::new(|ctx, ftable, state, args| {
+                Box::pin(async move { cast_to(ctx, state, ftable, args, Type::Int).await })
+            }),
+        );
+
+        // uint cast
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "uint".to_string(),
+                params: vec![a!()],
+                ret: Type::Uint,
+            },
+            Box::new(|ctx, ftable, state, args| {
+                Box::pin(async move { cast_to(ctx, state, ftable, args, Type::Uint).await })
+            }),
+        );
+
+        // float cast
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "float".to_string(),
+                params: vec![a!()],
+                ret: Type::Uint,
+            },
+            Box::new(|ctx, ftable, state, args| {
+                Box::pin(async move { cast_to(ctx, state, ftable, args, Type::Float).await })
+            }),
+        );
+
+        // list cast dict to key value pairss
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "list".to_string(),
+                params: vec![a!()],
+                ret: Type::List(Box::new(a!())),
+            },
+            Box::new(|_ctx, _ftable, _state, args| {
+                Box::pin(async move {
+                    if args.len() != 1 {
+                        return Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: args.len(),
+                            trace: Default::default(),
+                        });
+                    }
+
+                    let dict = match &args[0] {
+                        Value::Dict(data) => data,
+                        _ => {
+                            return Err(Error::UnexpectedType {
+                                expected: Type::Dict(BTreeMap::new()),
+                                got: args[0].clone(),
+                                trace: Default::default(),
+                            })
+                        }
+                    };
+
+                    Ok(Value::List(
+                        dict.iter()
+                            .map(|(k, v)| {
+                                Value::Tuple(vec![Value::String(k.to_string()), v.clone()])
+                            })
+                            .collect(),
+                    ))
+                })
+            }),
+        );
+
+        // downcast adts to dicts
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "dict".to_string(),
+                params: vec![a!()],
+                ret: Type::List(Box::new(a!())),
+            },
+            Box::new(|_ctx, _ftable, _state, args| {
+                Box::pin(async move {
+                    if args.len() != 1 {
+                        return Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: args.len(),
+                            trace: Default::default(),
+                        });
+                    }
+
+                    let adt = match &args[0] {
+                        Value::Data(data) => data,
+                        Value::Dict(dict) => return Ok(Value::Dict(dict.clone())),
+                        _ => {
+                            return Err(Error::UnexpectedType {
+                                expected: Type::Dict(BTreeMap::new()),
+                                got: args[0].clone(),
+                                trace: Default::default(),
+                            })
+                        }
+                    };
+
+                    let fields = match &adt.fields {
+                        Some(DataFields::Named(fields)) => fields,
+                        _ => {
+                            return Err(Error::Custom {
+                                error: "Expected named fields in adt".to_string(),
+                                trace: Default::default(),
+                            })
+                        }
+                    };
+
+                    let dict = fields.fields.clone().into_iter().collect();
+
+                    Ok(Value::Dict(dict))
+                })
+            }),
+        );
+
+        // sum function
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "sum".to_string(),
+                params: vec![list!(a!())],
+                ret: a!(),
+            },
+            Box::new(|_ctx, _ftable, _state, args| {
+                Box::pin(async move {
+                    if args.len() != 1 {
+                        return Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: args.len(),
+                            trace: Default::default(),
+                        });
+                    }
+
+                    let list = match &args[0] {
+                        Value::List(l) => l,
+                        _ => {
+                            return Err(Error::UnexpectedType {
+                                expected: list!(a!()),
+                                got: args[0].clone(),
+                                trace: Default::default(),
+                            })
+                        }
+                    };
+
+                    let mut sum = 0.0;
+                    let mut t = Type::Float;
+
+                    for value in list {
+                        match value {
+                            Value::Int(n) => {
+                                t = Type::Int;
+                                sum += *n as f64
+                            }
+                            Value::Uint(n) => {
+                                t = Type::Uint;
+                                sum += *n as f64
+                            }
+                            Value::Float(n) => sum += *n,
+                            _ => {
+                                return Err(Error::UnexpectedType {
+                                    expected: Type::Float,
+                                    got: value.clone(),
+                                    trace: Default::default(),
+                                })
+                            }
+                        }
+                    }
+                    // cast back
+                    match t {
+                        Type::Int => Ok(Value::Int(sum as i64)),
+                        Type::Uint => Ok(Value::Uint(sum as u64)),
+                        Type::Float => Ok(Value::Float(sum)),
+                        _ => Err(Error::Custom {
+                            error: "Invalid type".to_string(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
+        // avg function
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "avg".to_string(),
+                params: vec![list!(a!())],
+                ret: a!(),
+            },
+            Box::new(|_ctx, _ftable, _state, args| {
+                Box::pin(async move {
+                    if args.len() != 1 {
+                        return Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: args.len(),
+                            trace: Default::default(),
+                        });
+                    }
+
+                    let list = match &args[0] {
+                        Value::List(l) => l,
+                        _ => {
+                            return Err(Error::UnexpectedType {
+                                expected: list!(a!()),
+                                got: args[0].clone(),
+                                trace: Default::default(),
+                            })
+                        }
+                    };
+
+                    let mut sum = 0.0;
+
+                    for value in list {
+                        match value {
+                            Value::Int(n) => sum += *n as f64,
+                            Value::Uint(n) => sum += *n as f64,
+                            Value::Float(n) => sum += *n,
+                            _ => {
+                                return Err(Error::UnexpectedType {
+                                    expected: Type::Float,
+                                    got: value.clone(),
+                                    trace: Default::default(),
+                                })
+                            }
+                        }
+                    }
+
+                    Ok(Value::Float(sum / list.len() as f64))
+                })
+            }),
+        );
+
+        // min function
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "list_min".to_string(),
+                params: vec![list!(a!())],
+                ret: a!(),
+            },
+            Box::new(|_ctx, _ftable, _state, args| {
+                Box::pin(async move {
+                    if args.len() != 1 {
+                        return Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: args.len(),
+                            trace: Default::default(),
+                        });
+                    }
+
+                    let list = match &args[0] {
+                        Value::List(l) => l,
+                        _ => {
+                            return Err(Error::UnexpectedType {
+                                expected: list!(a!()),
+                                got: args[0].clone(),
+                                trace: Default::default(),
+                            })
+                        }
+                    };
+
+                    let mut min = f64::INFINITY;
+                    let mut t = Type::Float;
+
+                    for value in list {
+                        match value {
+                            Value::Int(n) => {
+                                t = Type::Int;
+                                min = min.min(*n as f64)
+                            }
+                            Value::Uint(n) => {
+                                t = Type::Uint;
+                                min = min.min(*n as f64);
+                            }
+                            Value::Float(n) => min = min.min(*n),
+                            _ => {
+                                return Err(Error::UnexpectedType {
+                                    expected: Type::Float,
+                                    got: value.clone(),
+                                    trace: Default::default(),
+                                })
+                            }
+                        }
+                    }
+                    // cast back
+                    match t {
+                        Type::Int => Ok(Value::Int(min as i64)),
+                        Type::Uint => Ok(Value::Uint(min as u64)),
+                        Type::Float => Ok(Value::Float(min)),
+                        _ => Err(Error::Custom {
+                            error: "Invalid type".to_string(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
+        // min_by function
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "list_min_by".to_string(),
+                params: vec![arrow!(a!() => b!()), Type::List(Box::new(a!()))],
+                ret: a!(),
+            },
+            Box::new(|ctx, ftable, state, args| {
+                Box::pin(async move { list_by(ctx, state, ftable, args, |a, b| a < b).await })
+            }),
+        );
+
+        // max function
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "list_max".to_string(),
+                params: vec![Type::List(Box::new(a!()))],
+                ret: a!(),
+            },
+            Box::new(|_ctx, _ftable, _state, args| {
+                Box::pin(async move {
+                    if args.len() != 1 {
+                        return Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: args.len(),
+                            trace: Default::default(),
+                        });
+                    }
+
+                    let list = match &args[0] {
+                        Value::List(l) => l,
+                        _ => {
+                            return Err(Error::UnexpectedType {
+                                expected: list!(a!()),
+                                got: args[0].clone(),
+                                trace: Default::default(),
+                            })
+                        }
+                    };
+
+                    let mut max = f64::NEG_INFINITY;
+
+                    for value in list {
+                        match value {
+                            Value::Int(n) => max = max.max(*n as f64),
+                            Value::Uint(n) => max = max.max(*n as f64),
+                            Value::Float(n) => max = max.max(*n),
+                            _ => {
+                                return Err(Error::Custom {
+                                    error: "List must contain only numbers".to_string(),
+                                    trace: Default::default(),
+                                })
+                            }
+                        }
+                    }
+
+                    Ok(Value::Float(max))
+                })
+            }),
+        );
+
+        // max_by function
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "list_max_by".to_string(),
+                params: vec![arrow!(a!() => b!()), list!(a!())],
+                ret: a!(),
+            },
+            Box::new(|ctx, ftable, state, args| {
+                Box::pin(async move { list_by(ctx, state, ftable, args, |a, b| a > b).await })
+            }),
+        );
+
+        // mae function
+        #[cfg(feature = "stats")]
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "mae".to_string(),
+                params: vec![
+                    Type::List(Box::new(Type::Float)),
+                    Type::List(Box::new(Type::Float)),
+                ],
+                ret: Type::Float,
+            },
+            Box::new(|ctx, ftable, state, args| {
+                Box::pin(async move { crate::stats::mae(ctx, state, ftable, args).await })
+            }),
+        );
+
+        // rmse function
+        #[cfg(feature = "stats")]
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "rmse".to_string(),
+                params: vec![
+                    Type::List(Box::new(Type::Float)),
+                    Type::List(Box::new(Type::Float)),
+                ],
+                ret: Type::Float,
+            },
+            Box::new(|ctx, ftable, state, args| {
+                Box::pin(async move { crate::stats::rmse(ctx, state, ftable, args).await })
+            }),
+        );
+
+        // pearson_corr function
+        #[cfg(feature = "stats")]
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "pearson_corr".to_string(),
+                params: vec![
+                    Type::List(Box::new(Type::Float)),
+                    Type::List(Box::new(Type::Float)),
+                ],
+                ret: Type::Float,
+            },
+            Box::new(|ctx, ftable, state, args| {
+                Box::pin(async move { crate::stats::pearson_corr(ctx, state, ftable, args).await })
+            }),
+        );
+
+        // spearman_corr function
+        #[cfg(feature = "stats")]
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "spearman_corr".to_string(),
+                params: vec![
+                    Type::List(Box::new(Type::Float)),
+                    Type::List(Box::new(Type::Float)),
+                ],
+                ret: Type::Float,
+            },
+            Box::new(|ctx, ftable, state, args| {
+                Box::pin(async move { crate::stats::spearman_corr(ctx, state, ftable, args).await })
+            }),
+        );
+
+        // range function
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "range".to_string(),
+                params: vec![Type::Int, Type::Int, Type::Option(Box::new(Type::Int))],
+                ret: Type::List(Box::new(Type::Int)),
+            },
+            Box::new(|_, _, _, args| {
+                Box::pin(async move {
+                    if args.len() < 2 || args.len() > 3 {
+                        return Err(Error::ExpectedArguments {
+                            expected: 2,
+                            got: args.len(),
+                            trace: Default::default(),
+                        });
+                    }
+
+                    let start = match &args[0] {
+                        Value::Int(n) => *n,
+                        _ => {
+                            return Err(Error::UnexpectedType {
+                                expected: Type::Int,
+                                got: args[0].clone(),
+                                trace: Default::default(),
+                            })
+                        }
+                    };
+
+                    let end = match &args[1] {
+                        Value::Int(n) => *n,
+                        _ => {
+                            return Err(Error::UnexpectedType {
+                                expected: Type::Int,
+                                got: args[1].clone(),
+                                trace: Default::default(),
+                            })
+                        }
+                    };
+
+                    let step = if args.len() == 3 {
+                        match &args[2] {
+                            Value::Option(Some(n)) => match **n {
+                                Value::Int(n) => n,
+                                _ => {
+                                    return Err(Error::UnexpectedType {
+                                        expected: Type::Int,
+                                        got: (**n).clone(),
+                                        trace: Default::default(),
+                                    })
+                                }
+                            },
+                            Value::Option(None) => 1,
+                            _ => {
+                                return Err(Error::UnexpectedType {
+                                    expected: Type::Option(Box::new(Type::Int)),
+                                    got: args[2].clone(),
+                                    trace: Default::default(),
+                                })
+                            }
+                        }
+                    } else {
+                        1
+                    };
+
+                    if step == 0 {
+                        return Err(Error::Custom {
+                            error: "Step cannot be zero".to_string(),
+                            trace: Default::default(),
+                        });
+                    }
+
+                    let range: Vec<Value> = if step > 0 {
+                        (start..end)
+                            .step_by(step as usize)
+                            .map(Value::Int)
+                            .collect()
+                    } else {
+                        (end..start)
+                            .rev()
+                            .step_by((-step) as usize)
+                            .map(Value::Int)
+                            .collect()
+                    };
+
+                    Ok(Value::List(range))
+                })
+            }),
+        );
+
         this
     }
 
@@ -1291,5 +1998,118 @@ impl<S: Send + Sync + 'static> Ftable<S> {
             scope.vars.insert(f.name.clone(), *id);
         }
         scope
+    }
+}
+
+// list_by
+async fn list_by<S: Send + Sync + 'static>(
+    ctx: &Context,
+    state: &S,
+    ftable: &Ftable<S>,
+    args: &[Value],
+    f: impl Fn(f64, f64) -> bool,
+) -> Result<Value, Error> {
+    if args.len() != 2 {
+        return Err(Error::Custom {
+            error: "list_by function expects 2 arguments: a function and a list of values"
+                .to_string(),
+            trace: Default::default(),
+        });
+    }
+
+    let func = &args[0];
+
+    let list = match &args[1] {
+        Value::List(l) => l,
+        _ => {
+            return Err(Error::Custom {
+                error: "Second argument must be a list".to_string(),
+                trace: Default::default(),
+            })
+        }
+    };
+
+    let mut x = f64::INFINITY;
+    let mut x_value = Value::Null;
+
+    for value in list {
+        let result = apply::apply(ctx, ftable, state, func.clone(), value.clone()).await?;
+
+        match result {
+            Value::Int(n) => {
+                if f(n as f64, x) {
+                    x = n as f64;
+                    x_value = value.clone();
+                }
+            }
+            Value::Uint(n) => {
+                if f(n as f64, x) {
+                    x = n as f64;
+                    x_value = value.clone();
+                }
+            }
+            Value::Float(n) => {
+                if f(n, x) {
+                    x = n;
+                    x_value = value.clone();
+                }
+            }
+            _ => {
+                return Err(Error::Custom {
+                    error: "List must contain only numbers".to_string(),
+                    trace: Default::default(),
+                })
+            }
+        }
+    }
+
+    Ok(x_value)
+}
+
+async fn cast_to<S: Send + Sync + 'static>(
+    _ctx: &Context,
+    _state: &S,
+    _ftable: &Ftable<S>,
+    args: &[Value],
+    t: Type,
+) -> Result<Value, Error> {
+    match (args.first(), t) {
+        (Some(Value::String(s)), Type::Int) => match s.parse() {
+            Ok(i) => Ok(Value::Int(i)),
+            Err(e) => Err(Error::Custom {
+                error: format!("Failed to parse int: {}", e),
+                trace: Default::default(),
+            }),
+        },
+        (Some(Value::String(s)), Type::Uint) => match s.parse() {
+            Ok(i) => Ok(Value::Uint(i)),
+            Err(e) => Err(Error::Custom {
+                error: format!("Failed to parse uint: {}", e),
+                trace: Default::default(),
+            }),
+        },
+        (Some(Value::String(s)), Type::Float) => match s.parse() {
+            Ok(i) => Ok(Value::Float(i)),
+            Err(e) => Err(Error::Custom {
+                error: format!("Failed to parse float: {}", e),
+                trace: Default::default(),
+            }),
+        },
+        (Some(Value::Float(s)), Type::Int) => Ok(Value::Int(*s as i64)),
+        (Some(Value::Uint(s)), Type::Int) => Ok(Value::Int(*s as i64)),
+        (Some(Value::Float(s)), Type::Uint) => Ok(Value::Uint(*s as u64)),
+        (Some(Value::Int(s)), Type::Uint) => Ok(Value::Uint(*s as u64)),
+        (Some(Value::Int(s)), Type::Float) => Ok(Value::Float(*s as f64)),
+        (Some(Value::Uint(s)), Type::Float) => Ok(Value::Float(*s as f64)),
+        (Some(v), _) => Err(Error::UnexpectedType {
+            expected: Type::String,
+            got: v.clone(),
+            trace: Default::default(),
+        }),
+        (None, _) => Err(Error::UnexpectedType {
+            expected: Type::String,
+            got: Value::Null,
+            trace: Default::default(),
+        }),
     }
 }

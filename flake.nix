@@ -2,7 +2,7 @@
   description = "QDX Rust Crates";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/24.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     rust-flake-parts.url = "github:talo/qdx-rust-flake-parts";
     rust-flake-parts.inputs.nixpkgs.follows = "nixpkgs";
   };

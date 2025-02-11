@@ -58,7 +58,7 @@ impl Value {
                 xs.len() == ts.len()
                     && xs
                         .iter()
-                        .all(|(k, v)| ts.get(k).map_or(false, |t| v.implements(t)))
+                        .all(|(k, v)| ts.get(k).is_some_and(|t| v.implements(t)))
             }
             (Self::Option(Some(x)), Type::Option(t)) => x.implements(t),
             (Self::Option(None), Type::Option(_)) => true,
