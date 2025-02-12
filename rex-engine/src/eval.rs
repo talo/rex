@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::{self, Display, Formatter},
-};
+use std::collections::BTreeMap;
 
 use futures::future;
 use rex_ast::{
@@ -17,215 +14,159 @@ use rpds::HashTrieMapSync;
 
 use crate::{error::Error, ftable::Ftable};
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Value {
-    Expr(Expr),
-    Closure(Var, Vec<Value>),
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Expr(e) => e.fmt(f),
-            Value::Closure(var, args) => {
-                write!(f, "Closure({} {})", var.name, args.len())
-            }
-        }
-    }
-}
-
-pub type Scope = HashTrieMapSync<String, Value>;
+pub type Scope = HashTrieMapSync<String, Expr>;
 
 #[async_recursion::async_recursion]
-pub async fn eval(
-    scope: &Scope,
-    ftable: &Ftable,
-    env: &ExprTypeEnv,
-    subst: &Subst,
-    expr: Expr,
-) -> Result<Value, Error> {
+pub async fn eval(ctx: &Context, env: &ExprTypeEnv, expr: Expr) -> Result<Expr, Error> {
     match expr {
-        Expr::Bool(..) => Ok(Value::Expr(expr)),
-        Expr::Uint(..) => Ok(Value::Expr(expr)),
-        Expr::Int(..) => Ok(Value::Expr(expr)),
-        Expr::Float(..) => Ok(Value::Expr(expr)),
-        Expr::String(..) => Ok(Value::Expr(expr)),
-        Expr::Tuple(id, span, tuple) => {
-            eval_tuple(scope, ftable, env, subst, id, span, tuple).await
-        }
-        Expr::List(id, span, list) => eval_list(scope, ftable, env, subst, id, span, list).await,
-        Expr::Dict(id, span, dict) => eval_dict(scope, ftable, env, subst, id, span, dict).await,
-        Expr::Var(var) => eval_var(scope, ftable, env, subst, var).await,
-        Expr::App(id, span, f, x) => eval_app(scope, ftable, env, subst, id, span, *f, *x).await,
-        Expr::Lam(id, span, param, body) => {
-            eval_lam(scope, ftable, env, subst, id, span, param, *body).await
-        }
-        Expr::Let(id, span, var, def, body) => {
-            eval_let(scope, ftable, env, subst, id, span, var, *def, *body).await
-        }
+        Expr::Bool(..) => Ok(expr),
+        Expr::Uint(..) => Ok(expr),
+        Expr::Int(..) => Ok(expr),
+        Expr::Float(..) => Ok(expr),
+        Expr::String(..) => Ok(expr),
+        Expr::Tuple(id, span, tuple) => eval_tuple(ctx, env, id, span, tuple).await,
+        Expr::List(id, span, list) => eval_list(ctx, env, id, span, list).await,
+        Expr::Dict(id, span, dict) => eval_dict(ctx, env, id, span, dict).await,
+        Expr::Var(var) => eval_var(ctx, env, var).await,
+        Expr::App(id, span, f, x) => eval_app(ctx, env, id, span, *f, *x).await,
+        Expr::Lam(id, span, param, body) => eval_lam(ctx, env, id, span, param, *body).await,
+        Expr::Let(id, span, var, def, body) => eval_let(ctx, env, id, span, var, *def, *body).await,
         Expr::Ite(id, span, cond, then, r#else) => {
-            eval_ite(scope, ftable, env, subst, id, span, *cond, *then, *r#else).await
+            eval_ite(ctx, env, id, span, *cond, *then, *r#else).await
         }
+
+        Expr::Curry(id, span, f, args) => todo!("eval the curry by checking if it has enough args"),
     }
 }
 
 pub async fn eval_tuple(
-    scope: &Scope,
-    ftable: &Ftable,
+    ctx: &Context,
     env: &ExprTypeEnv,
-    subst: &Subst,
     id: Id,
     span: Span,
     tuple: Vec<Expr>,
-) -> Result<Value, Error> {
+) -> Result<Expr, Error> {
     let mut result = Vec::with_capacity(tuple.len());
     for v in tuple {
-        result.push(eval(scope, ftable, env, subst, v));
+        result.push(eval(ctx, env, v));
     }
-    Ok(Value::Expr(Expr::Tuple(
+    Ok(Expr::Tuple(
         id,
         span,
         future::join_all(result)
             .await
             .into_iter()
-            .map(|v| match v {
-                Ok(Value::Expr(e)) => Ok(e),
-                Err(e) => Err(e),
-                _ => todo!(),
-            })
             .collect::<Result<Vec<_>, _>>()?,
-    )))
+    ))
 }
 
 pub async fn eval_list(
-    scope: &Scope,
-    ftable: &Ftable,
+    ctx: &Context,
     env: &ExprTypeEnv,
-    subst: &Subst,
     id: Id,
     span: Span,
     list: Vec<Expr>,
-) -> Result<Value, Error> {
+) -> Result<Expr, Error> {
     let mut result = Vec::with_capacity(list.len());
     for v in list {
-        result.push(eval(scope, ftable, env, subst, v));
+        result.push(eval(ctx, env, v));
     }
-    Ok(Value::Expr(Expr::List(
+    Ok(Expr::List(
         id,
         span,
         future::join_all(result)
             .await
             .into_iter()
-            .map(|v| match v {
-                Ok(Value::Expr(e)) => Ok(e),
-                Err(e) => Err(e),
-                _ => todo!(),
-            })
             .collect::<Result<Vec<_>, _>>()?,
-    )))
+    ))
 }
 
 pub async fn eval_dict(
-    scope: &Scope,
-    ftable: &Ftable,
+    ctx: &Context,
     env: &ExprTypeEnv,
-    subst: &Subst,
     id: Id,
     span: Span,
     dict: BTreeMap<String, Expr>,
-) -> Result<Value, Error> {
+) -> Result<Expr, Error> {
     let mut keys = Vec::with_capacity(dict.len());
     let mut vals = Vec::with_capacity(dict.len());
     for (k, v) in dict {
         keys.push(k);
-        vals.push(eval(scope, ftable, env, subst, v));
+        vals.push(eval(ctx, env, v));
     }
 
     let mut result = BTreeMap::new();
     for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
-        result.insert(
-            k,
-            match v {
-                Ok(Value::Expr(e)) => e,
-                _ => unimplemented!(),
-            },
-        );
+        result.insert(k, v?);
     }
-    Ok(Value::Expr(Expr::Dict(id, span, result)))
+    Ok(Expr::Dict(id, span, result))
 }
 
-pub async fn eval_var(
-    scope: &Scope,
-    ftable: &Ftable,
-    env: &ExprTypeEnv,
-    subst: &Subst,
-    var: Var,
-) -> Result<Value, Error> {
-    let val = match scope.get(&var.name) {
+pub async fn eval_var(ctx: &Context, env: &ExprTypeEnv, var: Var) -> Result<Expr, Error> {
+    let val = match ctx.scope.get(&var.name) {
         Some(val) => val,
-        None => &Value::Expr(Expr::Var(var)),
+        None => &Expr::Var(var),
     };
 
     match val {
-        Value::Expr(Expr::Var(var)) => {
+        Expr::Var(var) => {
             let var_type = env.get(&var.id).unwrap();
-            let var_type = unify::apply_subst(var_type, subst);
-            let f = ftable.lookup_fns(&var.name, var_type.clone()).next();
+            let var_type = unify::apply_subst(var_type, &ctx.subst);
+            let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
             if let Some(f) = f {
                 if var_type.num_params() == 0 {
-                    return f(ftable, &vec![]).await;
+                    return f(&ctx.ftable, &vec![]).await;
                 }
             }
-            Ok(Value::Expr(Expr::Var(var.clone())))
+            Ok(Expr::Var(var.clone()))
         }
         _ => Ok(val.clone()),
     }
 }
 
 pub async fn eval_app(
-    scope: &Scope,
-    ftable: &Ftable,
+    ctx: &Context,
     env: &ExprTypeEnv,
-    subst: &Subst,
     id: Id,
     span: Span,
     f: Expr,
     x: Expr,
-) -> Result<Value, Error> {
-    let f = eval(scope, ftable, env, subst, f).await?;
-    let x = eval(scope, ftable, env, subst, x).await?;
+) -> Result<Expr, Error> {
+    let f = eval(ctx, env, f).await?;
+    let x = eval(ctx, env, x).await?;
 
     match f {
-        Value::Expr(Expr::Var(var)) => {
+        Expr::Var(var) => {
             let var_type = env.get(&var.id).unwrap();
-            let var_type = unify::apply_subst(var_type, subst);
-            let f = ftable.lookup_fns(&var.name, var_type.clone()).next();
+            let var_type = unify::apply_subst(var_type, &ctx.subst);
+            let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
             if let Some(f) = f {
                 match var_type.num_params() {
                     0 => panic!("Function application on non-function type"),
-                    1 => f(ftable, &vec![x]).await,
-                    _ => Ok(Value::Closure(var, vec![x])),
+                    1 => f(&ctx.ftable, &vec![x]).await,
+                    _ => Ok(Expr::Curry(var.id, var.span, var, vec![x])), // TODO(loong): fix the ID and the span.
                 }
             } else {
                 panic!("Function not found: {}:{}", var.name, var_type)
             }
         }
-        Value::Expr(Expr::Lam(_id, _span, param, body)) => {
-            let scope = scope.insert(param.name, x);
-            eval(&scope, ftable, env, subst, *body).await
+        Expr::Lam(_id, _span, param, body) => {
+            let mut ctx = ctx.clone();
+            ctx.scope = ctx.scope.insert(param.name, x);
+            eval(&ctx, env, *body).await
         }
-        Value::Closure(var, mut args) => {
+        Expr::Curry(id, span, var, mut args) => {
             args.push(x);
             let var_type = env.get(&var.id).unwrap();
-            let var_type = unify::apply_subst(var_type, subst);
-            let f = ftable.lookup_fns(&var.name, var_type.clone()).next();
+            let var_type = unify::apply_subst(var_type, &ctx.subst);
+            let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
             if let Some(f) = f {
                 if var_type.num_params() < args.len() {
                     panic!("Too many arguments");
                 } else if var_type.num_params() == args.len() {
-                    f(ftable, &args).await
+                    f(&ctx.ftable, &args).await
                 } else {
-                    Ok(Value::Closure(var, args))
+                    Ok(Expr::Curry(id, span, var, args)) // TODO(loong): fix the ID and the span.
                 }
             } else {
                 panic!("Function not found: {}", var.name)
@@ -235,50 +176,52 @@ pub async fn eval_app(
     }
 }
 
+#[derive(Clone)]
+pub struct Context {
+    scope: Scope,
+    ftable: Ftable,
+    subst: Subst,
+}
+
 pub async fn eval_lam(
-    scope: &Scope,
-    ftable: &Ftable,
+    ctx: &Context,
     env: &ExprTypeEnv,
-    subst: &Subst,
     id: Id,
     span: Span,
     param: Var,
     body: Expr,
-) -> Result<Value, Error> {
-    Ok(Value::Expr(Expr::Lam(id, span, param, Box::new(body))))
+) -> Result<Expr, Error> {
+    Ok(Expr::Lam(id, span, param, Box::new(body)))
 }
 
 pub async fn eval_let(
-    scope: &Scope,
-    ftable: &Ftable,
+    ctx: &Context,
     env: &ExprTypeEnv,
-    subst: &Subst,
     id: Id,
     span: Span,
     var: Var,
     def: Expr,
     body: Expr,
-) -> Result<Value, Error> {
-    let def = eval(scope, ftable, env, subst, def).await?;
-    let scope = scope.insert(var.name, def);
-    eval(&scope, ftable, env, subst, body).await
+) -> Result<Expr, Error> {
+    let def = eval(ctx, env, def).await?;
+    let mut ctx = ctx.clone();
+    ctx.scope = ctx.scope.insert(var.name, def);
+    eval(&ctx, env, body).await
 }
 
 pub async fn eval_ite(
-    scope: &Scope,
-    ftable: &Ftable,
+    ctx: &Context,
     env: &ExprTypeEnv,
-    subst: &Subst,
     id: Id,
     span: Span,
     cond: Expr,
     then: Expr,
     r#else: Expr,
-) -> Result<Value, Error> {
-    let cond = eval(scope, ftable, env, subst, cond).await?;
+) -> Result<Expr, Error> {
+    let cond = eval(ctx, env, cond).await?;
     match cond {
-        Value::Expr(Expr::Bool(_, _, true)) => eval(scope, ftable, env, subst, then).await,
-        Value::Expr(Expr::Bool(_, _, false)) => eval(scope, ftable, env, subst, r#else).await,
+        Expr::Bool(_, _, true) => eval(ctx, env, then).await,
+        Expr::Bool(_, _, false) => eval(ctx, env, r#else).await,
         _ => unimplemented!(),
     }
 }
@@ -324,10 +267,18 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::Uint);
 
-        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
-            .await
-            .unwrap();
-        assert!(matches!(res, Value::Expr(Expr::Uint(_, _, 1))));
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+            },
+            &expr_type_env,
+            expr,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(res, Expr::Uint(_, _, 1)));
     }
 
     #[tokio::test]
@@ -369,10 +320,18 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::Float);
 
-        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
-            .await
-            .unwrap();
-        assert!(matches!(res, Value::Expr(Expr::Float(_, _, -3.14))));
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+            },
+            &expr_type_env,
+            expr,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(res, Expr::Float(_, _, -3.14)));
     }
 
     #[tokio::test]
@@ -414,11 +373,19 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::Tuple(vec![Type::Float, Type::Int]));
 
-        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
-            .await
-            .unwrap();
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+            },
+            &expr_type_env,
+            expr,
+        )
+        .await
+        .unwrap();
         match res {
-            Value::Expr(Expr::Tuple(_, _, res)) => {
+            Expr::Tuple(_, _, res) => {
                 assert!(res.len() == 2);
                 assert!(matches!(res[0], Expr::Float(_, _, -6.9)));
                 assert!(matches!(res[1], Expr::Int(_, _, -420)));
@@ -466,11 +433,19 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::List(Type::Float.into()));
 
-        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
-            .await
-            .unwrap();
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+            },
+            &expr_type_env,
+            expr,
+        )
+        .await
+        .unwrap();
         match res {
-            Value::Expr(Expr::List(_, _, res)) => {
+            Expr::List(_, _, res) => {
                 assert!(res.len() == 2);
                 assert!(matches!(res[0], Expr::Float(_, _, -6.9)));
                 assert!(matches!(res[1], Expr::Float(_, _, -3.14)));
@@ -518,13 +493,18 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::Float);
 
-        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
-            .await
-            .unwrap();
-        assert!(matches!(
-            res,
-            Value::Expr(Expr::Float(_, _, 11.100000000000001))
-        ));
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+            },
+            &expr_type_env,
+            expr,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(res, Expr::Float(_, _, 11.100000000000001)));
     }
 
     #[tokio::test]
@@ -566,11 +546,19 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
         assert!(final_type == Type::Tuple(vec![Type::Float, Type::Uint]));
 
-        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
-            .await
-            .unwrap();
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+            },
+            &expr_type_env,
+            expr,
+        )
+        .await
+        .unwrap();
         match res {
-            Value::Expr(Expr::Tuple(_, _, res)) => {
+            Expr::Tuple(_, _, res) => {
                 assert!(res.len() == 2);
                 assert!(matches!(res[0], Expr::Float(_, _, 11.100000000000001)));
                 assert!(matches!(res[1], Expr::Uint(_, _, 15)));
@@ -585,8 +573,6 @@ pub mod test {
         let mut parser = Parser::new(Token::tokenize("(id 6.9, id 420)").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
         let state = ();
-
-        println!("PARSED: {}", expr);
 
         let id_op_a0 = id_dispenser.next();
 
@@ -623,11 +609,17 @@ pub mod test {
 
         let final_type = unify::apply_subst(&ty, &subst);
 
-        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
-            .await
-            .unwrap();
-
-        println!("RES: {}", res);
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+            },
+            &expr_type_env,
+            expr,
+        )
+        .await
+        .unwrap();
 
         Ok(())
     }
@@ -639,8 +631,6 @@ pub mod test {
             Parser::new(Token::tokenize("let id = \\x -> x in (id 6.9, id 420)").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
         let state = ();
-
-        println!("PARSED: {}", expr);
 
         let mut ftable = Ftable::with_prelude();
         let mut type_env = TypeEnv::new();
@@ -673,11 +663,17 @@ pub mod test {
 
         let final_type = unify::apply_subst(&ty, &subst);
 
-        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr)
-            .await
-            .unwrap();
-
-        println!("RES: {}", res);
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+            },
+            &expr_type_env,
+            expr,
+        )
+        .await
+        .unwrap();
 
         Ok(())
     }
@@ -719,9 +715,65 @@ pub mod test {
 
         let subst = unify::unify_constraints(&constraint_system)?;
 
-        let res = eval(&Scope::new_sync(), &ftable, &expr_type_env, &subst, expr).await;
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+            },
+            &expr_type_env,
+            expr,
+        )
+        .await;
 
-        println!("RES: {:#?}", res);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_parametric_ftable() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser =
+            Parser::new(Token::tokenize("let f = \\x -> id x in (f 6.9, f 420, f true)").unwrap());
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let id_param_typeid = id_dispenser.next();
+
+        let ftable = Ftable::with_prelude();
+
+        let mut type_env = TypeEnv::new();
+        type_env.insert(
+            "id".to_string(),
+            Type::ForAll(
+                id_param_typeid.into(),
+                arrow!(Type::Var(id_param_typeid) =>  Type::Var(id_param_typeid)).into(),
+                Default::default(),
+            ),
+        );
+
+        let mut constraint_system = ConstraintSystem::with_global_constraints(vec![]);
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system)?;
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+            },
+            &expr_type_env,
+            expr,
+        )
+        .await;
 
         Ok(())
     }

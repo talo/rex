@@ -176,7 +176,9 @@ impl Display for Constraint {
     }
 }
 
-// Generate constraints from an expression
+// NOTE(loong): We do not support overloaded parametric polymorphism.
+//
+// Generate constraints from an expression.
 pub fn generate_constraints(
     expr: &Expr,
     env: &TypeEnv,
@@ -355,6 +357,7 @@ pub fn generate_constraints(
                 match constraint {
                     Constraint::Eq(..) => {}
                     Constraint::OneOf(t1, t2_possibilties) => {
+                        // TODO(loong): is there a reason we don't unwrap the result?
                         unify::unify_one_of(t1, t2_possibilties, &mut def_subst);
                     }
                 }
@@ -425,12 +428,17 @@ pub fn generate_constraints(
             expr_env.insert(*id, Type::String);
             Ok(Type::String)
         }
+
+        Expr::Curry(..) => {
+            todo!("generate_constraints for Expr::Curry just like we do for Expr::App")
+        }
     }
 }
 
 // For generalization, we need to find free type variables in a type
 fn free_vars(ty: &Type) -> HashSet<Id> {
     match ty {
+        Type::UnresolvedVar(_) => todo!("free_vars should return a result"),
         Type::Var(id) => {
             let mut set = HashSet::new();
             set.insert(*id);
@@ -528,6 +536,7 @@ fn instantiate(
         constraint_system: &mut ConstraintSystem,
     ) -> Type {
         let result = match ty {
+            Type::UnresolvedVar(_) => todo!("instantiate/inst_helper should return a result"),
             Type::Var(id) => match subst.get(id) {
                 Some(t) => t.clone(),
                 None => Type::Var(*id),
@@ -537,15 +546,12 @@ fn instantiate(
                 let fresh_id = id_dispenser.next();
                 subst.insert(*id, Type::Var(fresh_id));
 
-                println!("  INSTANTIATE: {} -> {}", id, fresh_id);
-
                 // Create fresh vars for dependencies
                 let mut new_constraint_sytem = ConstraintSystem::new();
                 for dep_id in deps {
                     let fresh_dep_id = id_dispenser.next();
                     // Add equality constraint between old and new var
                     subst.insert(*dep_id, Type::Var(fresh_dep_id));
-                    println!("    DEP: {} -> {}", dep_id, fresh_dep_id);
 
                     for constraint in constraint_system.constraints() {
                         match constraint {
@@ -572,8 +578,6 @@ fn instantiate(
 
                 new_constraint_sytem.apply_subst(&subst);
                 constraint_system.extend(new_constraint_sytem);
-
-                println!("  NEW_FIXED_DEP_CONSTRAINTS: {}", constraint_system);
 
                 inst_helper(ty, subst, id_dispenser, constraint_system)
             }

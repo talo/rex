@@ -64,60 +64,65 @@ pub enum Expr {
     Lam(Id, Span, Var, Box<Expr>),                  // λx → e
     Let(Id, Span, Var, Box<Expr>, Box<Expr>),       // let x = e1 in e2
     Ite(Id, Span, Box<Expr>, Box<Expr>, Box<Expr>), // if e1 then e2 else e3
+
+    Curry(Id, Span, Var, Vec<Expr>), // f x y z {- for currying external functions -}
 }
 
 impl Expr {
     pub fn id(&self) -> &Id {
         match self {
-            Self::Bool(id, _, _)
-            | Self::Uint(id, _, _)
-            | Self::Int(id, _, _)
-            | Self::Float(id, _, _)
-            | Self::String(id, _, _)
-            | Self::Tuple(id, _, _)
-            | Self::List(id, _, _)
-            | Self::Dict(id, _, _)
+            Self::Bool(id, ..)
+            | Self::Uint(id, ..)
+            | Self::Int(id, ..)
+            | Self::Float(id, ..)
+            | Self::String(id, ..)
+            | Self::Tuple(id, ..)
+            | Self::List(id, ..)
+            | Self::Dict(id, ..)
             | Self::Var(Var { id, .. })
-            | Self::App(id, _, _, _)
-            | Self::Lam(id, _, _, _)
-            | Self::Let(id, _, _, _, _)
-            | Self::Ite(id, _, _, _, _) => id,
+            | Self::App(id, ..)
+            | Self::Lam(id, ..)
+            | Self::Let(id, ..)
+            | Self::Ite(id, ..)
+            | Self::Curry(id, ..) => id,
         }
     }
 
     pub fn span(&self) -> &Span {
         match self {
-            Self::Bool(_, span, _)
-            | Self::Uint(_, span, _)
-            | Self::Int(_, span, _)
-            | Self::Float(_, span, _)
-            | Self::String(_, span, _)
-            | Self::Tuple(_, span, _)
-            | Self::List(_, span, _)
-            | Self::Dict(_, span, _)
+            Self::Bool(_, span, ..)
+            | Self::Uint(_, span, ..)
+            | Self::Int(_, span, ..)
+            | Self::Float(_, span, ..)
+            | Self::String(_, span, ..)
+            | Self::Tuple(_, span, ..)
+            | Self::List(_, span, ..)
+            | Self::Dict(_, span, ..)
             | Self::Var(Var { span, .. })
-            | Self::App(_, span, _, _)
-            | Self::Lam(_, span, _, _)
-            | Self::Let(_, span, _, _, _)
-            | Self::Ite(_, span, _, _, _) => span,
+            | Self::App(_, span, ..)
+            | Self::Lam(_, span, ..)
+            | Self::Let(_, span, ..)
+            | Self::Ite(_, span, ..)
+            | Self::Curry(_, span, ..) => span,
         }
     }
 
     pub fn span_mut(&mut self) -> &mut Span {
         match self {
-            Self::Bool(_, span, _)
-            | Self::Uint(_, span, _)
-            | Self::Int(_, span, _)
-            | Self::Float(_, span, _)
-            | Self::String(_, span, _)
-            | Self::Tuple(_, span, _)
-            | Self::List(_, span, _)
-            | Self::Dict(_, span, _)
+            Self::Bool(_, span, ..)
+            | Self::Uint(_, span, ..)
+            | Self::Int(_, span, ..)
+            | Self::Float(_, span, ..)
+            | Self::String(_, span, ..)
+            | Self::Tuple(_, span, ..)
+            | Self::List(_, span, ..)
+            | Self::Dict(_, span, ..)
             | Self::Var(Var { span, .. })
-            | Self::App(_, span, _, _)
-            | Self::Lam(_, span, _, _)
-            | Self::Let(_, span, _, _, _)
-            | Self::Ite(_, span, _, _, _) => span,
+            | Self::App(_, span, ..)
+            | Self::Lam(_, span, ..)
+            | Self::Let(_, span, ..)
+            | Self::Ite(_, span, ..)
+            | Self::Curry(_, span, ..) => span,
         }
     }
 
@@ -218,6 +223,31 @@ impl Display for Expr {
                 then.fmt(f)?;
                 " else ".fmt(f)?;
                 r#else.fmt(f)
+            }
+            Self::Curry(_id, _span, g, args) => {
+                g.fmt(f)?;
+                for arg in args {
+                    ' '.fmt(f)?;
+                    match arg {
+                        Self::Bool(..)
+                        | Self::Uint(..)
+                        | Self::Int(..)
+                        | Self::Float(..)
+                        | Self::String(..)
+                        | Self::List(..)
+                        | Self::Tuple(..)
+                        | Self::Dict(..)
+                        | Self::Var(..) => {
+                            arg.fmt(f)?;
+                        }
+                        _ => {
+                            '('.fmt(f)?;
+                            arg.fmt(f)?;
+                            ')'.fmt(f)?;
+                        }
+                    }
+                }
+                Ok(())
             }
         }
     }

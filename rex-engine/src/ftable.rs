@@ -1,6 +1,6 @@
 use std::{collections::HashMap, future::Future, pin::Pin};
 
-use rex_ast::id::Id;
+use rex_ast::{expr::Expr, id::Id};
 use rex_lexer::span::Span;
 use rex_type_system::{
     arrow,
@@ -10,26 +10,63 @@ use rex_type_system::{
 use crate::{
     codec::{Decode, Encode},
     error::Error,
-    eval::Value,
 };
 
+macro_rules! define_parametrically_polymorphic_types {
+    ($($ty:ident),*) => {
+        $(
+
+            pub struct $ty(::rex_ast::expr::Expr);
+
+            impl ToType for $ty {
+                fn to_type() -> ::rex_type_system::types::Type {
+                    Type::UnresolvedVar(stringify!($ty).to_string())
+                }
+            }
+
+            impl Encode for $ty {
+                fn try_encode(self, _id: Id, _span: Span) -> Result<::rex_ast::expr::Expr, Error> {
+                    Ok(self.0)
+                }
+            }
+
+            impl Decode for $ty {
+                fn try_decode(v: &::rex_ast::expr::Expr) -> Result<Self, Error> {
+                    Ok(Self(v.clone()))
+                }
+            }
+        )*
+    };
+}
+
+define_parametrically_polymorphic_types![A, B, C, T, U, V];
+define_parametrically_polymorphic_types![A0, A1, A2];
+define_parametrically_polymorphic_types![B0, B1, B2];
+define_parametrically_polymorphic_types![C0, C1, C2];
+define_parametrically_polymorphic_types![T0, T1, T2];
+define_parametrically_polymorphic_types![U0, U1, U2];
+define_parametrically_polymorphic_types![V0, V1, V2];
+
 pub trait F<'r>:
-    Fn(
-        &'r Ftable,
-        &'r Vec<Value>,
-    ) -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'r>>
+    Fn(&'r Ftable, &'r Vec<Expr>) -> Pin<Box<dyn Future<Output = Result<Expr, Error>> + Send + 'r>>
     + Sync
     + Send
 {
     fn clone_box(&self) -> FtableFn;
 }
 
+impl Clone for Box<dyn for<'r> F<'r>> {
+    fn clone(&self) -> Self {
+        (**self).clone_box()
+    }
+}
+
 impl<'r, G> F<'r> for G
 where
     for<'q> G: Fn(
             &'q Ftable,
-            &'q Vec<Value>,
-        ) -> Pin<Box<dyn Future<Output = Result<Value, Error>> + Send + 'q>>
+            &'q Vec<Expr>,
+        ) -> Pin<Box<dyn Future<Output = Result<Expr, Error>> + Send + 'q>>
         + Sync
         + Send
         + Clone
@@ -68,6 +105,33 @@ impl Ftable {
         ftable.register_fn("sqrt", |x: f64| x.sqrt());
         ftable.register_fn("pow", |x: f64, y: i32| x.powi(y));
         ftable.register_fn("pow", |x: f64, y: f64| x.powf(y));
+
+        ftable.register_fn("uint", |x: i64| x as u64);
+        ftable.register_fn("uint", |x: f64| x as u64);
+        ftable.register_fn("int", |x: u64| x as i64);
+        ftable.register_fn("int", |x: f64| x as i64);
+        ftable.register_fn("float", |x: u64| x as f64);
+        ftable.register_fn("float", |x: i64| x as f64);
+
+        ftable.register_fn("id", |x: A| x);
+        ftable.register_fn("take", |n: u64, xs: Vec<A>| {
+            xs.into_iter().take(n as usize).collect::<Vec<_>>()
+        });
+        ftable.register_fn("skip", |n: u64, xs: Vec<A>| {
+            xs.into_iter().take(n as usize).collect::<Vec<_>>()
+        });
+        ftable.register_fn("zip", |xs: Vec<A>, ys: Vec<B>| {
+            xs.into_iter().zip(ys.into_iter()).collect::<Vec<_>>()
+        });
+        ftable.register_fn("unzip", |zs: Vec<(A, B)>| {
+            let mut xs = Vec::with_capacity(zs.len());
+            let mut ys = Vec::with_capacity(zs.len());
+            for (x, y) in zs {
+                xs.push(x);
+                ys.push(y);
+            }
+            (xs, ys)
+        });
         ftable
     }
 
@@ -84,6 +148,7 @@ impl Ftable {
         ));
     }
 
+    // NOTE(loong): We do not support overloaded parametric polymorphism.
     pub fn lookup_fns(&self, n: &str, t: Type) -> impl Iterator<Item = &FtableFn> {
         self.0
             .get(n)
@@ -92,21 +157,12 @@ impl Ftable {
             .flatten()
             .filter_map(move |(ftype, f)| match ftype.maybe_compatible(&t) {
                 Ok(()) => Some(f),
-                Err(e) => {
-                    println!("bad lookup: {}", e);
-                    None
-                }
+                Err(_e) => None,
             })
     }
 }
 
-impl Clone for Box<dyn for<'r> F<'r>> {
-    fn clone(&self) -> Self {
-        (**self).clone_box()
-    }
-}
-
-pub fn decode_arg<A>(args: &Vec<Value>, i: usize) -> Result<A, Error>
+pub fn decode_arg<A>(args: &Vec<Expr>, i: usize) -> Result<A, Error>
 where
     A: Decode,
 {
@@ -120,8 +176,8 @@ pub trait CallFn<A0, B> {
         &self,
         id: Id,
         span: Span,
-        args: &Vec<Value>,
-    ) -> impl Future<Output = Result<Value, Error>> + Send + Sync + '_;
+        args: &Vec<Expr>,
+    ) -> impl Future<Output = Result<Expr, Error>> + Send + Sync + '_;
     fn a_type() -> Type;
     fn b_type() -> Type;
 }
@@ -136,8 +192,8 @@ where
         &self,
         id: Id,
         span: Span,
-        args: &Vec<Value>,
-    ) -> impl Future<Output = Result<Value, Error>> + Send + Sync + '_ {
+        args: &Vec<Expr>,
+    ) -> impl Future<Output = Result<Expr, Error>> + Send + Sync + '_ {
         let a0 = decode_arg(args, 0);
         async move {
             let (a0,) = (a0?,);
@@ -165,8 +221,8 @@ where
         &self,
         id: Id,
         span: Span,
-        args: &Vec<Value>,
-    ) -> impl Future<Output = Result<Value, Error>> + Send + Sync + '_ {
+        args: &Vec<Expr>,
+    ) -> impl Future<Output = Result<Expr, Error>> + Send + Sync + '_ {
         let a0 = decode_arg(args, 0);
         let a1 = decode_arg(args, 1);
         async move {
@@ -196,8 +252,8 @@ where
         &self,
         id: Id,
         span: Span,
-        args: &Vec<Value>,
-    ) -> impl Future<Output = Result<Value, Error>> + Send + Sync + '_ {
+        args: &Vec<Expr>,
+    ) -> impl Future<Output = Result<Expr, Error>> + Send + Sync + '_ {
         let a0 = decode_arg(args, 0);
         let a1 = decode_arg(args, 1);
         let a2 = decode_arg(args, 2);
@@ -229,8 +285,8 @@ where
         &self,
         id: Id,
         span: Span,
-        args: &Vec<Value>,
-    ) -> impl Future<Output = Result<Value, Error>> + Send + Sync + '_ {
+        args: &Vec<Expr>,
+    ) -> impl Future<Output = Result<Expr, Error>> + Send + Sync + '_ {
         let a0 = decode_arg(args, 0);
         let a1 = decode_arg(args, 1);
         let a2 = decode_arg(args, 2);

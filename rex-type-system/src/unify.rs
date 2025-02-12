@@ -9,6 +9,7 @@ use crate::{
 
 pub type Subst = HashMap<Id, Type>;
 
+// NOTE(loong): We do not support overloaded parametric polymorphism.
 pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, String> {
     let mut subst = Subst::new();
     for constraint in constraint_system.constraints() {
@@ -129,6 +130,7 @@ pub fn unify_one_of(
 
 pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
     match t {
+        Type::UnresolvedVar(_) => todo!("apply_subst should return a result"),
         Type::Var(v) => {
             if let Some(t2) = subst.get(v) {
                 apply_subst(t2, subst)
@@ -174,6 +176,7 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
 
 pub fn occurs_check(var: Id, t: &Type) -> bool {
     match t {
+        Type::UnresolvedVar(_) => false, // TODO(loong): should this function return a result?
         Type::Var(v) => *v == var,
         Type::ForAll(id, ty, _deps) => {
             // If we're looking for the same variable that's quantified,

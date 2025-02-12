@@ -198,5 +198,23 @@ pub fn sprint_expr_with_type(expr: &Expr, env: &ExprTypeEnv, subst: Option<&Subs
             s.push_str(&sprint_expr_with_type(r#else, env, subst));
             s
         }
+        Expr::Curry(id, _, g, args) => {
+            let mut s = String::new();
+            s.push('(');
+            s.push_str(&format!(
+                "{}:{}",
+                g,
+                env.get(id)
+                    .map(|t| t.to_string())
+                    .unwrap_or("_".to_string())
+            ));
+            s.push(')');
+            for arg in args {
+                s.push_str(" (");
+                s.push_str(&sprint_expr_with_type(arg, env, subst));
+                s.push(')');
+            }
+            s
+        }
     }
 }

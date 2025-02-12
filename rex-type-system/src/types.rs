@@ -12,6 +12,7 @@ pub type ExprTypeEnv = HashMap<Id, Type>;
 #[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Type {
+    UnresolvedVar(String),
     Var(Id),
     ForAll(Id, Box<Type>, BTreeSet<Id>),
 
@@ -113,6 +114,9 @@ impl Type {
             // : (a -> b) -> [a] -> [b]` but during actual execution this will
             // be executed like something concrete `map : (int -> string) ->
             // [int] -> [string]`.
+            //
+            // NOTE(loong): We do not support overloaded parametric
+            // polymorphism.
             (Self::Var(_), _) => Ok(()),
             (Self::ForAll(_, t, _), _) => t.maybe_compatible(other),
             (_, Self::Var(_)) => Ok(()),
@@ -120,48 +124,6 @@ impl Type {
 
             _ => Err(format!("Incompatible types: {} and {}", self, other)),
         }
-    }
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub struct ADT {
-    pub name: String,
-    pub variants: Vec<ADTVariant>,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub struct ADTVariant {
-    pub name: String,
-    pub t: Option<Box<Type>>,
-}
-
-impl Display for ADT {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.name.fmt(f)?;
-        if !self.variants.is_empty() {
-            " ∈ ".fmt(f)?;
-            for (i, v) in self.variants.iter().enumerate() {
-                v.fmt(f)?;
-                if i + 1 < self.variants.len() {
-                    " | ".fmt(f)?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-impl Display for ADTVariant {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.name.fmt(f)?;
-        if let Some(t) = &self.t {
-            " (".fmt(f)?;
-            t.fmt(f)?;
-            ')'.fmt(f)?;
-        }
-        Ok(())
     }
 }
 
@@ -212,6 +174,10 @@ impl Display for Type {
                 " → ".fmt(f)?;
                 b.fmt(f)
             }
+            Type::UnresolvedVar(x) => {
+                'τ'.fmt(f)?;
+                x.fmt(f)
+            }
             Type::Var(x) => {
                 'τ'.fmt(f)?;
                 x.fmt(f)
@@ -240,6 +206,48 @@ impl Display for Type {
             }
             Type::ADT(x) => x.fmt(f),
         }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub struct ADT {
+    pub name: String,
+    pub variants: Vec<ADTVariant>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub struct ADTVariant {
+    pub name: String,
+    pub t: Option<Box<Type>>,
+}
+
+impl Display for ADT {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.name.fmt(f)?;
+        if !self.variants.is_empty() {
+            " ∈ ".fmt(f)?;
+            for (i, v) in self.variants.iter().enumerate() {
+                v.fmt(f)?;
+                if i + 1 < self.variants.len() {
+                    " | ".fmt(f)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Display for ADTVariant {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.name.fmt(f)?;
+        if let Some(t) = &self.t {
+            " (".fmt(f)?;
+            t.fmt(f)?;
+            ')'.fmt(f)?;
+        }
+        Ok(())
     }
 }
 
