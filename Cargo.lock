@@ -671,6 +671,7 @@ dependencies = [
  "rand",
  "rex-ast",
  "rex-lexer",
+ "rpds",
  "serde",
  "thiserror",
 ]

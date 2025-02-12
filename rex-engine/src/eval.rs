@@ -19,11 +19,9 @@ pub type Scope = HashTrieMapSync<String, Expr>;
 #[async_recursion::async_recursion]
 pub async fn eval(ctx: &Context, env: &ExprTypeEnv, expr: Expr) -> Result<Expr, Error> {
     match expr {
-        Expr::Bool(..) => Ok(expr),
-        Expr::Uint(..) => Ok(expr),
-        Expr::Int(..) => Ok(expr),
-        Expr::Float(..) => Ok(expr),
-        Expr::String(..) => Ok(expr),
+        Expr::Bool(..) | Expr::Uint(..) | Expr::Int(..) | Expr::Float(..) | Expr::String(..) => {
+            Ok(expr)
+        }
         Expr::Tuple(id, span, tuple) => eval_tuple(ctx, env, id, span, tuple).await,
         Expr::List(id, span, list) => eval_list(ctx, env, id, span, list).await,
         Expr::Dict(id, span, dict) => eval_dict(ctx, env, id, span, dict).await,
@@ -34,7 +32,6 @@ pub async fn eval(ctx: &Context, env: &ExprTypeEnv, expr: Expr) -> Result<Expr, 
         Expr::Ite(id, span, cond, then, r#else) => {
             eval_ite(ctx, env, id, span, *cond, *then, *r#else).await
         }
-
         Expr::Curry(id, span, f, args) => todo!("eval the curry by checking if it has enough args"),
     }
 }
@@ -228,8 +225,6 @@ pub async fn eval_ite(
 
 #[cfg(test)]
 pub mod test {
-    use std::collections::BTreeSet;
-
     use rex_ast::id::IdDispenser;
     use rex_lexer::Token;
     use rex_parser::Parser;
@@ -574,25 +569,18 @@ pub mod test {
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
         let state = ();
 
-        let id_op_a0 = id_dispenser.next();
-
-        let mut ftable = Ftable::with_prelude();
-        ftable.0.insert(
-            "id".to_string(),
-            vec![(
-                arrow!(Type::Var(id_op_a0) => Type::Var(id_op_a0)),
-                Box::new(|_ftable, args| Box::pin(async move { Ok(args[0].clone()) })),
-            )],
-        );
+        let ftable = Ftable::with_prelude();
         let mut type_env = TypeEnv::new();
 
-        let id_op_a0_forall = id_dispenser.next();
-        let id_op_type = Type::ForAll(
-            id_op_a0_forall,
-            Box::new(arrow!(Type::Var(id_op_a0_forall) => Type::Var(id_op_a0_forall))),
-            vec![id_op_a0].into_iter().collect::<BTreeSet<_>>(),
+        let id_param_typeid = id_dispenser.next();
+        type_env.insert(
+            "id".to_string(),
+            Type::ForAll(
+                id_param_typeid.into(),
+                arrow!(Type::Var(id_param_typeid) =>  Type::Var(id_param_typeid)).into(),
+                Default::default(),
+            ),
         );
-        type_env.insert("id".to_string(), id_op_type);
 
         let mut constraint_system = ConstraintSystem::with_global_constraints(vec![]);
         let mut expr_type_env = ExprTypeEnv::new();
@@ -632,7 +620,7 @@ pub mod test {
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
         let state = ();
 
-        let mut ftable = Ftable::with_prelude();
+        let ftable = Ftable::with_prelude();
         let mut type_env = TypeEnv::new();
 
         let neg_op_typeid = id_dispenser.next();
@@ -685,7 +673,7 @@ pub mod test {
             Parser::new(Token::tokenize("let f = \\x -> negate x in (f 6.9, f 420)").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
-        let mut ftable = Ftable::with_prelude();
+        let ftable = Ftable::with_prelude();
         let mut type_env = TypeEnv::new();
 
         let neg_op_typeid = id_dispenser.next();
@@ -736,11 +724,11 @@ pub mod test {
             Parser::new(Token::tokenize("let f = \\x -> id x in (f 6.9, f 420, f true)").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
-        let id_param_typeid = id_dispenser.next();
-
         let ftable = Ftable::with_prelude();
 
         let mut type_env = TypeEnv::new();
+
+        let id_param_typeid = id_dispenser.next();
         type_env.insert(
             "id".to_string(),
             Type::ForAll(

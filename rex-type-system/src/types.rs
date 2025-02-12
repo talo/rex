@@ -117,8 +117,15 @@ impl Type {
             //
             // NOTE(loong): We do not support overloaded parametric
             // polymorphism.
+            //
+            // TODO(loong): We should not allow unresolved type variables at
+            // this point. Type variable resolution should have already
+            // happened, and unresolved type variables should be compatible with
+            // nothing.
+            (Self::UnresolvedVar(_), _) => Ok(()),
             (Self::Var(_), _) => Ok(()),
             (Self::ForAll(_, t, _), _) => t.maybe_compatible(other),
+            (_, Self::UnresolvedVar(_)) => Ok(()),
             (_, Self::Var(_)) => Ok(()),
             (_, Self::ForAll(_, t, _)) => t.maybe_compatible(other),
 
