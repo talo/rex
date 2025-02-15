@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use rex_ast::{expr::Expr, id::Id};
 use rex_lexer::span::Span;
 use rex_type_system::types::{ToType, Type};
@@ -464,5 +466,37 @@ where
                 got: v.clone(),
             }),
         }
+    }
+}
+
+pub struct Func<A, B> {
+    pub expr: Expr,
+    _a: PhantomData<A>,
+    _b: PhantomData<B>,
+}
+
+impl<A, B> Encode for Func<A, B> {
+    fn try_encode(self, _id: Id, _span: Span) -> Result<Expr, Error> {
+        Ok(self.expr)
+    }
+}
+
+impl<A, B> Decode for Func<A, B> {
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        Ok(Self {
+            expr: v.clone(),
+            _a: PhantomData,
+            _b: PhantomData,
+        })
+    }
+}
+
+impl<A, B> ToType for Func<A, B>
+where
+    A: ToType,
+    B: ToType,
+{
+    fn to_type() -> Type {
+        Type::Arrow(Box::new(A::to_type()), Box::new(B::to_type()))
     }
 }

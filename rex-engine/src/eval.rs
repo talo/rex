@@ -17,20 +17,20 @@ use crate::{error::Error, ftable::Ftable};
 pub type Scope = HashTrieMapSync<String, Expr>;
 
 #[async_recursion::async_recursion]
-pub async fn eval(ctx: &Context, env: &ExprTypeEnv, expr: Expr) -> Result<Expr, Error> {
+pub async fn eval(ctx: &Context, expr: Expr) -> Result<Expr, Error> {
     match expr {
         Expr::Bool(..) | Expr::Uint(..) | Expr::Int(..) | Expr::Float(..) | Expr::String(..) => {
             Ok(expr)
         }
-        Expr::Tuple(id, span, tuple) => eval_tuple(ctx, env, id, span, tuple).await,
-        Expr::List(id, span, list) => eval_list(ctx, env, id, span, list).await,
-        Expr::Dict(id, span, dict) => eval_dict(ctx, env, id, span, dict).await,
-        Expr::Var(var) => eval_var(ctx, env, var).await,
-        Expr::App(id, span, f, x) => eval_app(ctx, env, id, span, *f, *x).await,
-        Expr::Lam(id, span, param, body) => eval_lam(ctx, env, id, span, param, *body).await,
-        Expr::Let(id, span, var, def, body) => eval_let(ctx, env, id, span, var, *def, *body).await,
+        Expr::Tuple(id, span, tuple) => eval_tuple(ctx, id, span, tuple).await,
+        Expr::List(id, span, list) => eval_list(ctx, id, span, list).await,
+        Expr::Dict(id, span, dict) => eval_dict(ctx, id, span, dict).await,
+        Expr::Var(var) => eval_var(ctx, var).await,
+        Expr::App(id, span, f, x) => eval_app(ctx, id, span, *f, *x).await,
+        Expr::Lam(id, span, param, body) => eval_lam(ctx, id, span, param, *body).await,
+        Expr::Let(id, span, var, def, body) => eval_let(ctx, id, span, var, *def, *body).await,
         Expr::Ite(id, span, cond, then, r#else) => {
-            eval_ite(ctx, env, id, span, *cond, *then, *r#else).await
+            eval_ite(ctx, id, span, *cond, *then, *r#else).await
         }
         Expr::Curry(id, span, f, args) => todo!("eval the curry by checking if it has enough args"),
     }
@@ -38,14 +38,13 @@ pub async fn eval(ctx: &Context, env: &ExprTypeEnv, expr: Expr) -> Result<Expr, 
 
 pub async fn eval_tuple(
     ctx: &Context,
-    env: &ExprTypeEnv,
     id: Id,
     span: Span,
     tuple: Vec<Expr>,
 ) -> Result<Expr, Error> {
     let mut result = Vec::with_capacity(tuple.len());
     for v in tuple {
-        result.push(eval(ctx, env, v));
+        result.push(eval(ctx, v));
     }
     Ok(Expr::Tuple(
         id,
@@ -57,16 +56,10 @@ pub async fn eval_tuple(
     ))
 }
 
-pub async fn eval_list(
-    ctx: &Context,
-    env: &ExprTypeEnv,
-    id: Id,
-    span: Span,
-    list: Vec<Expr>,
-) -> Result<Expr, Error> {
+pub async fn eval_list(ctx: &Context, id: Id, span: Span, list: Vec<Expr>) -> Result<Expr, Error> {
     let mut result = Vec::with_capacity(list.len());
     for v in list {
-        result.push(eval(ctx, env, v));
+        result.push(eval(ctx, v));
     }
     Ok(Expr::List(
         id,
@@ -80,7 +73,6 @@ pub async fn eval_list(
 
 pub async fn eval_dict(
     ctx: &Context,
-    env: &ExprTypeEnv,
     id: Id,
     span: Span,
     dict: BTreeMap<String, Expr>,
@@ -89,7 +81,7 @@ pub async fn eval_dict(
     let mut vals = Vec::with_capacity(dict.len());
     for (k, v) in dict {
         keys.push(k);
-        vals.push(eval(ctx, env, v));
+        vals.push(eval(ctx, v));
     }
 
     let mut result = BTreeMap::new();
@@ -99,7 +91,7 @@ pub async fn eval_dict(
     Ok(Expr::Dict(id, span, result))
 }
 
-pub async fn eval_var(ctx: &Context, env: &ExprTypeEnv, var: Var) -> Result<Expr, Error> {
+pub async fn eval_var(ctx: &Context, var: Var) -> Result<Expr, Error> {
     let val = match ctx.scope.get(&var.name) {
         Some(val) => val,
         None => &Expr::Var(var),
@@ -107,12 +99,12 @@ pub async fn eval_var(ctx: &Context, env: &ExprTypeEnv, var: Var) -> Result<Expr
 
     match val {
         Expr::Var(var) => {
-            let var_type = env.get(&var.id).unwrap();
+            let var_type = ctx.env.get(&var.id).unwrap();
             let var_type = unify::apply_subst(var_type, &ctx.subst);
             let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
             if let Some(f) = f {
                 if var_type.num_params() == 0 {
-                    return f(&ctx.ftable, &vec![]).await;
+                    return f(ctx, &vec![]).await;
                 }
             }
             Ok(Expr::Var(var.clone()))
@@ -121,26 +113,19 @@ pub async fn eval_var(ctx: &Context, env: &ExprTypeEnv, var: Var) -> Result<Expr
     }
 }
 
-pub async fn eval_app(
-    ctx: &Context,
-    env: &ExprTypeEnv,
-    id: Id,
-    span: Span,
-    f: Expr,
-    x: Expr,
-) -> Result<Expr, Error> {
-    let f = eval(ctx, env, f).await?;
-    let x = eval(ctx, env, x).await?;
+pub async fn eval_app(ctx: &Context, id: Id, span: Span, f: Expr, x: Expr) -> Result<Expr, Error> {
+    let f = eval(ctx, f).await?;
+    let x = eval(ctx, x).await?;
 
     match f {
         Expr::Var(var) => {
-            let var_type = env.get(&var.id).unwrap();
+            let var_type = ctx.env.get(&var.id).unwrap();
             let var_type = unify::apply_subst(var_type, &ctx.subst);
             let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
             if let Some(f) = f {
                 match var_type.num_params() {
                     0 => panic!("Function application on non-function type"),
-                    1 => f(&ctx.ftable, &vec![x]).await,
+                    1 => f(ctx, &vec![x]).await,
                     _ => Ok(Expr::Curry(var.id, var.span, var, vec![x])), // TODO(loong): fix the ID and the span.
                 }
             } else {
@@ -150,18 +135,18 @@ pub async fn eval_app(
         Expr::Lam(_id, _span, param, body) => {
             let mut ctx = ctx.clone();
             ctx.scope = ctx.scope.insert(param.name, x);
-            eval(&ctx, env, *body).await
+            eval(&ctx, *body).await
         }
         Expr::Curry(id, span, var, mut args) => {
             args.push(x);
-            let var_type = env.get(&var.id).unwrap();
+            let var_type = ctx.env.get(&var.id).unwrap();
             let var_type = unify::apply_subst(var_type, &ctx.subst);
             let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
             if let Some(f) = f {
                 if var_type.num_params() < args.len() {
                     panic!("Too many arguments");
                 } else if var_type.num_params() == args.len() {
-                    f(&ctx.ftable, &args).await
+                    f(&ctx, &args).await
                 } else {
                     Ok(Expr::Curry(id, span, var, args)) // TODO(loong): fix the ID and the span.
                 }
@@ -178,11 +163,11 @@ pub struct Context {
     scope: Scope,
     ftable: Ftable,
     subst: Subst,
+    env: ExprTypeEnv,
 }
 
 pub async fn eval_lam(
     ctx: &Context,
-    env: &ExprTypeEnv,
     id: Id,
     span: Span,
     param: Var,
@@ -193,32 +178,30 @@ pub async fn eval_lam(
 
 pub async fn eval_let(
     ctx: &Context,
-    env: &ExprTypeEnv,
     id: Id,
     span: Span,
     var: Var,
     def: Expr,
     body: Expr,
 ) -> Result<Expr, Error> {
-    let def = eval(ctx, env, def).await?;
+    let def = eval(ctx, def).await?;
     let mut ctx = ctx.clone();
     ctx.scope = ctx.scope.insert(var.name, def);
-    eval(&ctx, env, body).await
+    eval(&ctx, body).await
 }
 
 pub async fn eval_ite(
     ctx: &Context,
-    env: &ExprTypeEnv,
     id: Id,
     span: Span,
     cond: Expr,
     then: Expr,
     r#else: Expr,
 ) -> Result<Expr, Error> {
-    let cond = eval(ctx, env, cond).await?;
+    let cond = eval(ctx, cond).await?;
     match cond {
-        Expr::Bool(_, _, true) => eval(ctx, env, then).await,
-        Expr::Bool(_, _, false) => eval(ctx, env, r#else).await,
+        Expr::Bool(_, _, true) => eval(ctx, then).await,
+        Expr::Bool(_, _, false) => eval(ctx, r#else).await,
         _ => unimplemented!(),
     }
 }
@@ -234,6 +217,8 @@ pub mod test {
         types::{Type, TypeEnv},
         unify::{self},
     };
+
+    use crate::engine::Builder;
 
     use super::*;
 
@@ -267,8 +252,8 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
+                env: expr_type_env,
             },
-            &expr_type_env,
             expr,
         )
         .await
@@ -281,6 +266,8 @@ pub mod test {
         let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("negate 3.14").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let mut builder = Builder::new();
 
         let ftable = Ftable::with_prelude();
 
@@ -320,8 +307,8 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
+                env: expr_type_env,
             },
-            &expr_type_env,
             expr,
         )
         .await
@@ -373,8 +360,8 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
+                env: expr_type_env,
             },
-            &expr_type_env,
             expr,
         )
         .await
@@ -433,8 +420,8 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
+                env: expr_type_env,
             },
-            &expr_type_env,
             expr,
         )
         .await
@@ -493,8 +480,8 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
+                env: expr_type_env,
             },
-            &expr_type_env,
             expr,
         )
         .await
@@ -546,8 +533,8 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
+                env: expr_type_env,
             },
-            &expr_type_env,
             expr,
         )
         .await
@@ -602,8 +589,8 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
+                env: expr_type_env,
             },
-            &expr_type_env,
             expr,
         )
         .await
@@ -656,8 +643,8 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
+                env: expr_type_env,
             },
-            &expr_type_env,
             expr,
         )
         .await
@@ -708,8 +695,8 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
+                env: expr_type_env,
             },
-            &expr_type_env,
             expr,
         )
         .await;
@@ -757,8 +744,8 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
+                env: expr_type_env,
             },
-            &expr_type_env,
             expr,
         )
         .await;

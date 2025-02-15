@@ -7,4 +7,8 @@ pub enum Error {
     ExpectedTypeGotValue { expected: Type, got: Expr },
     #[error("missing argument {argument}")]
     MissingArgument { argument: usize },
+    #[error("{0}")]
+    ParseIntError(#[from] std::num::ParseIntError),
+    #[error("{0}")]
+    ParseFloatError(#[from] std::num::ParseFloatError),
 }

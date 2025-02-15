@@ -2,20 +2,83 @@ use std::{collections::HashMap, future::Future, pin::Pin};
 
 use rex_ast::{expr::Expr, id::Id};
 use rex_lexer::span::Span;
-use rex_type_system::{
-    arrow,
-    types::{ToType, Type},
-};
+use rex_type_system::types::{ToType, Type};
 
 use crate::{
-    codec::{Decode, Encode},
+    codec::{Decode, Encode, Func},
     error::Error,
+    eval::{eval_app, Context},
 };
+
+macro_rules! impl_register_fn {
+    ($name:ident, $($param:ident),*) => {
+        pub fn $name <$($param,)* B, F>(
+            &mut self,
+            n: impl ToString,
+            f: F,
+        ) where
+            $($param : Decode + Send + ToType,)*
+            B: Encode + ToType,
+            F: 'static
+                + Clone
+                + Send
+                + Sync
+                + Fn(
+                    &Context,
+                    $($param,)*
+                ) -> Result<B, Error>
+        {
+            self.0.entry(n.to_string()).or_default().push((
+                <fn($($param,)*) -> B as ToType>::to_type(),
+                Box::new(move |ctx, args| {
+                    let f = f.clone();
+                    Box::pin(async move {
+                        let mut i: isize = -1;
+                        let r = f(ctx, $(decode_arg::<$param>(args, { i += 1; i as usize })?),*)?;
+                        r.try_encode(Id(u64::MAX), Span::default())
+                    })
+                }),
+            ))
+        }
+    };
+}
+
+macro_rules! impl_register_fn_async {
+    ($name:ident, $($param:ident),*) => {
+        pub fn $name <$($param,)* B, F>(
+            &mut self,
+            n: impl ToString,
+            f: F,
+        ) where
+            $($param : Decode + Send + ToType,)*
+            B: Encode + ToType,
+            F: 'static
+                + Clone
+                + Send
+                + Sync
+                + for<'c> Fn(
+                    &'c Context,
+                    $($param,)*
+                ) -> Pin<Box<dyn Future<Output = Result<B, Error>> + Send + 'c>>
+        {
+            self.0.entry(n.to_string()).or_default().push((
+                <fn($($param,)*) -> B as ToType>::to_type(),
+                Box::new(move |ctx, args| {
+                    let f = f.clone();
+                    Box::pin(async move {
+                        let mut i: isize = -1;
+                        let r = f(ctx, $(decode_arg::<$param>(args, { i += 1; i as usize })?),*).await?;
+                        r.try_encode(Id(u64::MAX), Span::default())
+                    })
+                }),
+            ))
+        }
+    };
+}
 
 macro_rules! define_parametrically_polymorphic_types {
     ($($ty:ident),*) => {
         $(
-
             pub struct $ty(::rex_ast::expr::Expr);
 
             impl ToType for $ty {
@@ -39,114 +102,182 @@ macro_rules! define_parametrically_polymorphic_types {
     };
 }
 
-define_parametrically_polymorphic_types![A, B, C, T, U, V];
-define_parametrically_polymorphic_types![A0, A1, A2];
-define_parametrically_polymorphic_types![B0, B1, B2];
-define_parametrically_polymorphic_types![C0, C1, C2];
-define_parametrically_polymorphic_types![T0, T1, T2];
-define_parametrically_polymorphic_types![U0, U1, U2];
-define_parametrically_polymorphic_types![V0, V1, V2];
+define_parametrically_polymorphic_types![
+    A, A0, A1, A2, A3, B, B0, B1, B2, B3, C, C0, C1, C2, C3, D, D0, D1, D2, D3, E, E0, E1, E2, E3,
+    F, F0, F1, F2, F3, G, G0, G1, G2, G3, H, H0, H1, H2, H3, I, I0, I1, I2, I3, J, J0, J1, J2, J3,
+    K, K0, K1, K2, K3, L, L0, L1, L2, L3, M, M0, M1, M2, M3, N, N0, N1, N2, N3, O, O0, O1, O2, O3,
+    P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3, R, R0, R1, R2, R3, S, S0, S1, S2, S3, T, T0, T1, T2, T3,
+    U, U0, U1, U2, U3, V, V0, V1, V2, V3, W, W0, W1, W2, W3, X, X0, X1, X2, X3, Y, Y0, Y1, Y2, Y3,
+    Z, Z0, Z1, Z2, Z3
+];
 
-pub trait F<'r>:
-    Fn(&'r Ftable, &'r Vec<Expr>) -> Pin<Box<dyn Future<Output = Result<Expr, Error>> + Send + 'r>>
+pub trait Fx<'r>:
+    Fn(&'r Context, &'r Vec<Expr>) -> Pin<Box<dyn Future<Output = Result<Expr, Error>> + Send + 'r>>
     + Sync
     + Send
 {
     fn clone_box(&self) -> FtableFn;
 }
 
-impl Clone for Box<dyn for<'r> F<'r>> {
+impl Clone for Box<dyn for<'r> Fx<'r>> {
     fn clone(&self) -> Self {
         (**self).clone_box()
     }
 }
 
-impl<'r, G> F<'r> for G
+impl<'r, G> Fx<'r> for G
 where
     for<'q> G: Fn(
-            &'q Ftable,
+            &'q Context,
             &'q Vec<Expr>,
         ) -> Pin<Box<dyn Future<Output = Result<Expr, Error>> + Send + 'q>>
         + Sync
         + Send
         + Clone
-        + 'r + 'q,
+        + 'q,
 {
     fn clone_box(&self) -> FtableFn {
         Box::new((*self).clone())
     }
 }
 
-pub type FtableFn = Box<dyn for<'r> F<'r>>;
+pub type FtableFn = Box<dyn for<'r> Fx<'r>>;
 
 #[derive(Clone)]
 pub struct Ftable(pub HashMap<String, Vec<(Type, FtableFn)>>);
 
 impl Ftable {
+    pub fn new() -> Self {
+        Self(Default::default())
+    }
+
     pub fn with_prelude() -> Self {
         let mut ftable = Self(Default::default());
-        ftable.register_fn("negate", |x: u64| -(x as i64));
-        ftable.register_fn("negate", |x: i64| -x);
-        ftable.register_fn("negate", |x: f64| -x);
-        ftable.register_fn("+", |x: u64, y: u64| x + y);
-        ftable.register_fn("+", |x: i64, y: i64| x + y);
-        ftable.register_fn("+", |x: f64, y: f64| x + y);
-        ftable.register_fn("-", |x: u64, y: u64| x - y);
-        ftable.register_fn("-", |x: i64, y: i64| x - y);
-        ftable.register_fn("-", |x: f64, y: f64| x - y);
-        ftable.register_fn("*", |x: u64, y: u64| x * y);
-        ftable.register_fn("*", |x: i64, y: i64| x * y);
-        ftable.register_fn("*", |x: f64, y: f64| x * y);
-        ftable.register_fn("/", |x: u64, y: u64| x / y);
-        ftable.register_fn("/", |x: i64, y: i64| x / y);
-        ftable.register_fn("/", |x: f64, y: f64| x / y);
-        ftable.register_fn("abs", |x: i64| x.abs());
-        ftable.register_fn("abs", |x: f64| x.abs());
-        ftable.register_fn("sqrt", |x: f64| x.sqrt());
-        ftable.register_fn("pow", |x: f64, y: i32| x.powi(y));
-        ftable.register_fn("pow", |x: f64, y: f64| x.powf(y));
 
-        ftable.register_fn("uint", |x: i64| x as u64);
-        ftable.register_fn("uint", |x: f64| x as u64);
-        ftable.register_fn("int", |x: u64| x as i64);
-        ftable.register_fn("int", |x: f64| x as i64);
-        ftable.register_fn("float", |x: u64| x as f64);
-        ftable.register_fn("float", |x: i64| x as f64);
+        ftable.register_fn1("uint", |_ctx: &Context, x: i64| Ok(x as u64));
+        ftable.register_fn1("uint", |_ctx: &Context, x: f64| Ok(x as u64));
+        ftable.register_fn1("uint", |_ctx: &Context, x: String| {
+            x.parse::<u64>().map_err(|e| e.into())
+        });
 
-        ftable.register_fn("id", |x: A| x);
-        ftable.register_fn("take", |n: u64, xs: Vec<A>| {
-            xs.into_iter().take(n as usize).collect::<Vec<_>>()
+        ftable.register_fn1("int", |_ctx: &Context, x: u64| Ok(x as i64));
+        ftable.register_fn1("int", |_ctx: &Context, x: f64| Ok(x as i64));
+        ftable.register_fn1("int", |_ctx: &Context, x: String| {
+            x.parse::<i64>().map_err(|e| e.into())
         });
-        ftable.register_fn("skip", |n: u64, xs: Vec<A>| {
-            xs.into_iter().take(n as usize).collect::<Vec<_>>()
+
+        ftable.register_fn1("float", |_ctx: &Context, x: u64| Ok(x as f64));
+        ftable.register_fn1("float", |_ctx: &Context, x: i64| Ok(x as f64));
+        ftable.register_fn1("float", |_ctx: &Context, x: String| {
+            x.parse::<f64>().map_err(|e| e.into())
         });
-        ftable.register_fn("zip", |xs: Vec<A>, ys: Vec<B>| {
-            xs.into_iter().zip(ys.into_iter()).collect::<Vec<_>>()
+
+        ftable.register_fn1("negate", |_ctx: &Context, x: u64| Ok(-(x as i64)));
+        ftable.register_fn1("negate", |_ctx: &Context, x: i64| Ok(-x));
+        ftable.register_fn1("negate", |_ctx: &Context, x: f64| Ok(-x));
+
+        ftable.register_fn2("+", |_ctx: &Context, x: u64, y: u64| Ok(x + y));
+        ftable.register_fn2("+", |_ctx: &Context, x: i64, y: i64| Ok(x + y));
+        ftable.register_fn2("+", |_ctx: &Context, x: f64, y: f64| Ok(x + y));
+
+        ftable.register_fn2("-", |_ctx: &Context, x: u64, y: u64| Ok(x - y));
+        ftable.register_fn2("-", |_ctx: &Context, x: i64, y: i64| Ok(x - y));
+        ftable.register_fn2("-", |_ctx: &Context, x: f64, y: f64| Ok(x - y));
+
+        ftable.register_fn2("*", |_ctx: &Context, x: u64, y: u64| Ok(x * y));
+        ftable.register_fn2("*", |_ctx: &Context, x: i64, y: i64| Ok(x * y));
+        ftable.register_fn2("*", |_ctx: &Context, x: f64, y: f64| Ok(x * y));
+
+        ftable.register_fn2("/", |_ctx: &Context, x: u64, y: u64| Ok(x / y));
+        ftable.register_fn2("/", |_ctx: &Context, x: i64, y: i64| Ok(x / y));
+        ftable.register_fn2("/", |_ctx: &Context, x: f64, y: f64| Ok(x / y));
+
+        ftable.register_fn1("abs", |_ctx: &Context, x: i64| Ok(x.abs()));
+        ftable.register_fn1("abs", |_ctx: &Context, x: f64| Ok(x.abs()));
+
+        ftable.register_fn1("sqrt", |_ctx: &Context, x: f64| Ok(x.sqrt()));
+
+        ftable.register_fn2("pow", |_ctx: &Context, x: f64, y: i32| Ok(x.powi(y)));
+        ftable.register_fn2("pow", |_ctx: &Context, x: f64, y: f64| Ok(x.powf(y)));
+
+        ftable.register_fn1("id", |_ctx: &Context, x: A| Ok(x));
+
+        ftable.register_fn2("take", |_ctx: &Context, n: u64, xs: Vec<A>| {
+            Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
         });
-        ftable.register_fn("unzip", |zs: Vec<(A, B)>| {
+
+        ftable.register_fn2("skip", |_ctx: &Context, n: u64, xs: Vec<A>| {
+            Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
+        });
+
+        ftable.register_fn2("zip", |_ctx: &Context, xs: Vec<A>, ys: Vec<B>| {
+            Ok(xs.into_iter().zip(ys.into_iter()).collect::<Vec<_>>())
+        });
+
+        ftable.register_fn1("unzip", |_ctx: &Context, zs: Vec<(A, B)>| {
             let mut xs = Vec::with_capacity(zs.len());
             let mut ys = Vec::with_capacity(zs.len());
             for (x, y) in zs {
                 xs.push(x);
                 ys.push(y);
             }
-            (xs, ys)
+            Ok((xs, ys))
         });
+
+        ftable.register_fn_async2("map", |ctx, f: Func<A, B>, xs: Vec<A>| {
+            Box::pin(async move {
+                let mut ys: Vec<B> = Vec::with_capacity(xs.len());
+                for x in xs {
+                    let y = eval_app(
+                        ctx,
+                        f.expr.id().clone(),
+                        f.expr.span().clone(),
+                        f.expr.clone(),
+                        x.0,
+                    )
+                    .await?;
+                    ys.push(B(y));
+                }
+                Ok(ys)
+            })
+        });
+
+        ftable.register_fn_async3("compose", |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
+            Box::pin(async move {
+                let x = eval_app(
+                    ctx,
+                    g.expr.id().clone(),
+                    g.expr.span().clone(),
+                    g.expr.clone(),
+                    x.0,
+                )
+                .await?;
+
+                let x = eval_app(
+                    ctx,
+                    f.expr.id().clone(),
+                    f.expr.span().clone(),
+                    f.expr.clone(),
+                    x,
+                )
+                .await?;
+
+                Ok(C(x))
+            })
+        });
+
         ftable
     }
 
-    pub fn register_fn<F, A, B>(&mut self, n: impl ToString, f: F)
-    where
-        F: CallFn<A, B> + Clone + Sync + Send + 'static,
-    {
-        self.0.entry(n.to_string()).or_default().push((
-            arrow!(F::a_type() => F::b_type()),
-            Box::new(move |_ftable, args| {
-                let f = f.clone();
-                Box::pin(async move { f.call(Id(u64::MAX), Span::default(), args).await })
-            }),
-        ));
-    }
+    impl_register_fn!(register_fn1, A0);
+    impl_register_fn!(register_fn2, A0, A1);
+    impl_register_fn!(register_fn3, A0, A1, A2);
+    impl_register_fn!(register_fn4, A0, A1, A2);
+
+    impl_register_fn_async!(register_fn_async1, A0);
+    impl_register_fn_async!(register_fn_async2, A0, A1);
+    impl_register_fn_async!(register_fn_async3, A0, A1, A2);
+    impl_register_fn_async!(register_fn_async4, A0, A1, A2);
 
     // NOTE(loong): We do not support overloaded parametric polymorphism.
     pub fn lookup_fns(&self, n: &str, t: Type) -> impl Iterator<Item = &FtableFn> {
@@ -169,139 +300,4 @@ where
     args.get(i)
         .ok_or(Error::MissingArgument { argument: i })
         .and_then(|a0| A::try_decode(a0))
-}
-
-pub trait CallFn<A0, B> {
-    fn call(
-        &self,
-        id: Id,
-        span: Span,
-        args: &Vec<Expr>,
-    ) -> impl Future<Output = Result<Expr, Error>> + Send + Sync + '_;
-    fn a_type() -> Type;
-    fn b_type() -> Type;
-}
-
-impl<F, A0, B> CallFn<(A0,), B> for F
-where
-    F: Fn(A0) -> B + Send + Sync + 'static,
-    A0: Decode + ToType + Send + Sync + 'static,
-    B: Encode + ToType + Send + Sync + 'static,
-{
-    fn call(
-        &self,
-        id: Id,
-        span: Span,
-        args: &Vec<Expr>,
-    ) -> impl Future<Output = Result<Expr, Error>> + Send + Sync + '_ {
-        let a0 = decode_arg(args, 0);
-        async move {
-            let (a0,) = (a0?,);
-            self(a0).try_encode(id, span)
-        }
-    }
-
-    fn a_type() -> Type {
-        A0::to_type()
-    }
-
-    fn b_type() -> Type {
-        B::to_type()
-    }
-}
-
-impl<F, A0, A1, B> CallFn<(A0, A1), B> for F
-where
-    F: Fn(A0, A1) -> B + Send + Sync + 'static,
-    A0: Decode + ToType + Send + Sync + 'static,
-    A1: Decode + ToType + Send + Sync + 'static,
-    B: Encode + ToType + Send + Sync + 'static,
-{
-    fn call(
-        &self,
-        id: Id,
-        span: Span,
-        args: &Vec<Expr>,
-    ) -> impl Future<Output = Result<Expr, Error>> + Send + Sync + '_ {
-        let a0 = decode_arg(args, 0);
-        let a1 = decode_arg(args, 1);
-        async move {
-            let (a0, a1) = (a0?, a1?);
-            self(a0, a1).try_encode(id, span)
-        }
-    }
-
-    fn a_type() -> Type {
-        A0::to_type()
-    }
-
-    fn b_type() -> Type {
-        arrow!(A1::to_type() => B::to_type())
-    }
-}
-
-impl<F, A0, A1, A2, B> CallFn<(A0, A1, A2), B> for F
-where
-    F: Fn(A0, A1, A2) -> B + Send + Sync + 'static,
-    A0: Decode + ToType + Send + Sync + 'static,
-    A1: Decode + ToType + Send + Sync + 'static,
-    A2: Decode + ToType + Send + Sync + 'static,
-    B: Encode + ToType + Send + Sync + 'static,
-{
-    fn call(
-        &self,
-        id: Id,
-        span: Span,
-        args: &Vec<Expr>,
-    ) -> impl Future<Output = Result<Expr, Error>> + Send + Sync + '_ {
-        let a0 = decode_arg(args, 0);
-        let a1 = decode_arg(args, 1);
-        let a2 = decode_arg(args, 2);
-        async move {
-            let (a0, a1, a2) = (a0?, a1?, a2?);
-            self(a0, a1, a2).try_encode(id, span)
-        }
-    }
-
-    fn a_type() -> Type {
-        A0::to_type()
-    }
-
-    fn b_type() -> Type {
-        arrow!(A1::to_type() => B::to_type())
-    }
-}
-
-impl<F, A0, A1, A2, A3, B> CallFn<(A0, A1, A2, A3), B> for F
-where
-    F: Fn(A0, A1, A2, A3) -> B + Send + Sync + 'static,
-    A0: Decode + ToType + Send + Sync + 'static,
-    A1: Decode + ToType + Send + Sync + 'static,
-    A2: Decode + ToType + Send + Sync + 'static,
-    A3: Decode + ToType + Send + Sync + 'static,
-    B: Encode + ToType + Send + Sync + 'static,
-{
-    fn call(
-        &self,
-        id: Id,
-        span: Span,
-        args: &Vec<Expr>,
-    ) -> impl Future<Output = Result<Expr, Error>> + Send + Sync + '_ {
-        let a0 = decode_arg(args, 0);
-        let a1 = decode_arg(args, 1);
-        let a2 = decode_arg(args, 2);
-        let a3 = decode_arg(args, 3);
-        async move {
-            let (a0, a1, a2, a3) = (a0?, a1?, a2?, a3?);
-            self(a0, a1, a2, a3).try_encode(id, span)
-        }
-    }
-
-    fn a_type() -> Type {
-        A0::to_type()
-    }
-
-    fn b_type() -> Type {
-        arrow!(A1::to_type() => B::to_type())
-    }
 }

@@ -5,6 +5,8 @@ use std::{
 
 use rex_ast::id::Id;
 
+use crate::arrow;
+
 pub type TypeEnv = HashMap<String, Type>;
 
 pub type ExprTypeEnv = HashMap<Id, Type>;
