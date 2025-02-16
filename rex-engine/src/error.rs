@@ -11,4 +11,10 @@ pub enum Error {
     ParseIntError(#[from] std::num::ParseIntError),
     #[error("{0}")]
     ParseFloatError(#[from] std::num::ParseFloatError),
+    #[error("cannot overload a parametrically polymorphic function")]
+    ParametricOverload {
+        name: String,
+        prev_insts: Vec<Type>,
+        curr_inst: Type,
+    },
 }

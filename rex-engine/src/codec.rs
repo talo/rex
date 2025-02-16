@@ -1,4 +1,7 @@
-use std::marker::PhantomData;
+use std::{
+    borrow::{Borrow, BorrowMut},
+    marker::PhantomData,
+};
 
 use rex_ast::{expr::Expr, id::Id};
 use rex_lexer::span::Span;
@@ -469,10 +472,41 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct Func<A, B> {
     pub expr: Expr,
     _a: PhantomData<A>,
     _b: PhantomData<B>,
+}
+
+impl<A, B> Borrow<Expr> for Func<A, B> {
+    fn borrow(&self) -> &Expr {
+        &self.expr
+    }
+}
+
+impl<A, B> Borrow<Expr> for &Func<A, B> {
+    fn borrow(&self) -> &Expr {
+        &self.expr
+    }
+}
+
+impl<A, B> Borrow<Expr> for &mut Func<A, B> {
+    fn borrow(&self) -> &Expr {
+        &self.expr
+    }
+}
+
+impl<A, B> BorrowMut<Expr> for Func<A, B> {
+    fn borrow_mut(&mut self) -> &mut Expr {
+        &mut self.expr
+    }
+}
+
+impl<A, B> BorrowMut<Expr> for &mut Func<A, B> {
+    fn borrow_mut(&mut self) -> &mut Expr {
+        &mut self.expr
+    }
 }
 
 impl<A, B> Encode for Func<A, B> {

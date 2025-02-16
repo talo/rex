@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{borrow::Borrow, collections::BTreeMap};
 
 use futures::future;
 use rex_ast::{
@@ -16,39 +16,57 @@ use crate::{error::Error, ftable::Ftable};
 
 pub type Scope = HashTrieMapSync<String, Expr>;
 
+#[derive(Clone)]
+pub struct Context<State>
+where
+    State: Clone + Sync + 'static,
+{
+    pub scope: Scope,
+    pub ftable: Ftable<State>,
+    pub subst: Subst,
+    pub env: ExprTypeEnv,
+    pub state: State,
+}
+
 #[async_recursion::async_recursion]
-pub async fn eval(ctx: &Context, expr: Expr) -> Result<Expr, Error> {
+pub async fn eval<State>(ctx: &Context<State>, expr: &Expr) -> Result<Expr, Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
     match expr {
         Expr::Bool(..) | Expr::Uint(..) | Expr::Int(..) | Expr::Float(..) | Expr::String(..) => {
-            Ok(expr)
+            Ok(expr.clone())
         }
         Expr::Tuple(id, span, tuple) => eval_tuple(ctx, id, span, tuple).await,
         Expr::List(id, span, list) => eval_list(ctx, id, span, list).await,
         Expr::Dict(id, span, dict) => eval_dict(ctx, id, span, dict).await,
         Expr::Var(var) => eval_var(ctx, var).await,
-        Expr::App(id, span, f, x) => eval_app(ctx, id, span, *f, *x).await,
-        Expr::Lam(id, span, param, body) => eval_lam(ctx, id, span, param, *body).await,
-        Expr::Let(id, span, var, def, body) => eval_let(ctx, id, span, var, *def, *body).await,
+        Expr::App(id, span, f, x) => eval_app(ctx, id, span, f, x).await,
+        Expr::Lam(id, span, param, body) => eval_lam(ctx, id, span, param, body).await,
+        Expr::Let(id, span, var, def, body) => eval_let(ctx, id, span, var, def, body).await,
         Expr::Ite(id, span, cond, then, r#else) => {
-            eval_ite(ctx, id, span, *cond, *then, *r#else).await
+            eval_ite(ctx, id, span, cond, then, r#else).await
         }
         Expr::Curry(id, span, f, args) => todo!("eval the curry by checking if it has enough args"),
     }
 }
 
-pub async fn eval_tuple(
-    ctx: &Context,
-    id: Id,
-    span: Span,
-    tuple: Vec<Expr>,
-) -> Result<Expr, Error> {
+pub async fn eval_tuple<State>(
+    ctx: &Context<State>,
+    id: &Id,
+    span: &Span,
+    tuple: &Vec<Expr>,
+) -> Result<Expr, Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
     let mut result = Vec::with_capacity(tuple.len());
     for v in tuple {
         result.push(eval(ctx, v));
     }
     Ok(Expr::Tuple(
-        id,
-        span,
+        id.clone(),
+        span.clone(),
         future::join_all(result)
             .await
             .into_iter()
@@ -56,14 +74,22 @@ pub async fn eval_tuple(
     ))
 }
 
-pub async fn eval_list(ctx: &Context, id: Id, span: Span, list: Vec<Expr>) -> Result<Expr, Error> {
+pub async fn eval_list<State>(
+    ctx: &Context<State>,
+    id: &Id,
+    span: &Span,
+    list: &Vec<Expr>,
+) -> Result<Expr, Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
     let mut result = Vec::with_capacity(list.len());
     for v in list {
         result.push(eval(ctx, v));
     }
     Ok(Expr::List(
-        id,
-        span,
+        id.clone(),
+        span.clone(),
         future::join_all(result)
             .await
             .into_iter()
@@ -71,12 +97,15 @@ pub async fn eval_list(ctx: &Context, id: Id, span: Span, list: Vec<Expr>) -> Re
     ))
 }
 
-pub async fn eval_dict(
-    ctx: &Context,
-    id: Id,
-    span: Span,
-    dict: BTreeMap<String, Expr>,
-) -> Result<Expr, Error> {
+pub async fn eval_dict<State>(
+    ctx: &Context<State>,
+    id: &Id,
+    span: &Span,
+    dict: &BTreeMap<String, Expr>,
+) -> Result<Expr, Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
     let mut keys = Vec::with_capacity(dict.len());
     let mut vals = Vec::with_capacity(dict.len());
     for (k, v) in dict {
@@ -86,36 +115,55 @@ pub async fn eval_dict(
 
     let mut result = BTreeMap::new();
     for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
-        result.insert(k, v?);
+        result.insert(k.clone(), v?);
     }
-    Ok(Expr::Dict(id, span, result))
+    Ok(Expr::Dict(id.clone(), span.clone(), result))
 }
 
-pub async fn eval_var(ctx: &Context, var: Var) -> Result<Expr, Error> {
-    let val = match ctx.scope.get(&var.name) {
-        Some(val) => val,
-        None => &Expr::Var(var),
+pub async fn eval_var<State>(ctx: &Context<State>, var: &Var) -> Result<Expr, Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
+    let var = match ctx.scope.get(&var.name) {
+        None => var,
+        Some(Expr::Var(var)) => var,
+        Some(non_var_expr) => return Ok(non_var_expr.clone()),
     };
 
-    match val {
-        Expr::Var(var) => {
-            let var_type = ctx.env.get(&var.id).unwrap();
-            let var_type = unify::apply_subst(var_type, &ctx.subst);
-            let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
-            if let Some(f) = f {
-                if var_type.num_params() == 0 {
-                    return f(ctx, &vec![]).await;
-                }
-            }
-            Ok(Expr::Var(var.clone()))
+    let var_type = ctx.env.get(&var.id).unwrap();
+    let var_type = unify::apply_subst(var_type, &ctx.subst);
+    let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
+    if let Some(f) = f {
+        if var_type.num_params() == 0 {
+            return f(ctx, &vec![]).await;
         }
-        _ => Ok(val.clone()),
     }
+    Ok(Expr::Var(var.clone()))
 }
 
-pub async fn eval_app(ctx: &Context, id: Id, span: Span, f: Expr, x: Expr) -> Result<Expr, Error> {
-    let f = eval(ctx, f).await?;
-    let x = eval(ctx, x).await?;
+pub async fn eval_app<State>(
+    ctx: &Context<State>,
+    id: &Id,
+    span: &Span,
+    f: &Expr,
+    x: &Expr,
+) -> Result<Expr, Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
+    apply(ctx, f, x).await
+}
+
+pub async fn apply<State>(
+    ctx: &Context<State>,
+    f: impl Borrow<Expr>,
+    x: impl Borrow<Expr>,
+) -> Result<Expr, Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
+    let f = eval(ctx, f.borrow()).await?;
+    let x = eval(ctx, x.borrow()).await?;
 
     match f {
         Expr::Var(var) => {
@@ -135,7 +183,7 @@ pub async fn eval_app(ctx: &Context, id: Id, span: Span, f: Expr, x: Expr) -> Re
         Expr::Lam(_id, _span, param, body) => {
             let mut ctx = ctx.clone();
             ctx.scope = ctx.scope.insert(param.name, x);
-            eval(&ctx, *body).await
+            eval(&ctx, &body).await
         }
         Expr::Curry(id, span, var, mut args) => {
             args.push(x);
@@ -158,46 +206,52 @@ pub async fn eval_app(ctx: &Context, id: Id, span: Span, f: Expr, x: Expr) -> Re
     }
 }
 
-#[derive(Clone)]
-pub struct Context {
-    scope: Scope,
-    ftable: Ftable,
-    subst: Subst,
-    env: ExprTypeEnv,
+pub async fn eval_lam<State>(
+    ctx: &Context<State>,
+    id: &Id,
+    span: &Span,
+    param: &Var,
+    body: &Expr,
+) -> Result<Expr, Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
+    Ok(Expr::Lam(
+        id.clone(),
+        span.clone(),
+        param.clone(),
+        Box::new(body.clone()),
+    ))
 }
 
-pub async fn eval_lam(
-    ctx: &Context,
-    id: Id,
-    span: Span,
-    param: Var,
-    body: Expr,
-) -> Result<Expr, Error> {
-    Ok(Expr::Lam(id, span, param, Box::new(body)))
-}
-
-pub async fn eval_let(
-    ctx: &Context,
-    id: Id,
-    span: Span,
-    var: Var,
-    def: Expr,
-    body: Expr,
-) -> Result<Expr, Error> {
+pub async fn eval_let<State>(
+    ctx: &Context<State>,
+    id: &Id,
+    span: &Span,
+    var: &Var,
+    def: &Expr,
+    body: &Expr,
+) -> Result<Expr, Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
     let def = eval(ctx, def).await?;
     let mut ctx = ctx.clone();
-    ctx.scope = ctx.scope.insert(var.name, def);
+    ctx.scope = ctx.scope.insert(var.name.clone(), def);
     eval(&ctx, body).await
 }
 
-pub async fn eval_ite(
-    ctx: &Context,
-    id: Id,
-    span: Span,
-    cond: Expr,
-    then: Expr,
-    r#else: Expr,
-) -> Result<Expr, Error> {
+pub async fn eval_ite<State>(
+    ctx: &Context<State>,
+    id: &Id,
+    span: &Span,
+    cond: &Expr,
+    then: &Expr,
+    r#else: &Expr,
+) -> Result<Expr, Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
     let cond = eval(ctx, cond).await?;
     match cond {
         Expr::Bool(_, _, true) => eval(ctx, then).await,
@@ -228,10 +282,9 @@ pub mod test {
         let mut parser = Parser::new(Token::tokenize("1").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
-        let ftable = Ftable::with_prelude();
-        let type_env = TypeEnv::new();
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
 
-        let mut constraint_system = ConstraintSystem::new();
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
@@ -253,8 +306,9 @@ pub mod test {
                 ftable,
                 subst,
                 env: expr_type_env,
+                state: (),
             },
-            expr,
+            &expr,
         )
         .await
         .unwrap();
@@ -267,25 +321,11 @@ pub mod test {
         let mut parser = Parser::new(Token::tokenize("negate 3.14").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
-        let mut builder = Builder::new();
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
 
-        let ftable = Ftable::with_prelude();
-
-        let mut type_env = TypeEnv::new();
-        let negate_id = id_dispenser.next();
-        type_env.insert("negate".to_string(), Type::Var(negate_id));
-
-        let mut constraint_system = ConstraintSystem::new();
-        constraint_system.add_global_constraint(Constraint::OneOf(
-            Type::Var(negate_id),
-            vec![
-                arrow!(Type::Uint =>  Type::Int),
-                arrow!(Type::Int =>  Type::Int),
-                arrow!(Type::Float => Type::Float),
-            ]
-            .into_iter()
-            .collect(),
-        ));
+        dbg!(&constraint_system);
+        dbg!(&type_env);
 
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
@@ -308,8 +348,9 @@ pub mod test {
                 ftable,
                 subst,
                 env: expr_type_env,
+                state: (),
             },
-            expr,
+            &expr,
         )
         .await
         .unwrap();
@@ -322,23 +363,8 @@ pub mod test {
         let mut parser = Parser::new(Token::tokenize("(negate 6.9, negate 420)").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
-        let ftable = Ftable::with_prelude();
-
-        let mut type_env = TypeEnv::new();
-        let negate_id = id_dispenser.next();
-        type_env.insert("negate".to_string(), Type::Var(negate_id));
-
-        let mut constraint_system = ConstraintSystem::new();
-        constraint_system.add_global_constraint(Constraint::OneOf(
-            Type::Var(negate_id),
-            vec![
-                arrow!(Type::Uint =>  Type::Int),
-                arrow!(Type::Int =>  Type::Int),
-                arrow!(Type::Float => Type::Float),
-            ]
-            .into_iter()
-            .collect(),
-        ));
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
@@ -361,8 +387,9 @@ pub mod test {
                 ftable,
                 subst,
                 env: expr_type_env,
+                state: (),
             },
-            expr,
+            &expr,
         )
         .await
         .unwrap();
@@ -382,23 +409,8 @@ pub mod test {
         let mut parser = Parser::new(Token::tokenize("[negate 6.9, negate 3.14]").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
-        let ftable = Ftable::with_prelude();
-
-        let mut type_env = TypeEnv::new();
-        let negate_id = id_dispenser.next();
-        type_env.insert("negate".to_string(), Type::Var(negate_id));
-
-        let mut constraint_system = ConstraintSystem::new();
-        constraint_system.add_global_constraint(Constraint::OneOf(
-            Type::Var(negate_id),
-            vec![
-                arrow!(Type::Uint =>  Type::Int),
-                arrow!(Type::Int =>  Type::Int),
-                arrow!(Type::Float => Type::Float),
-            ]
-            .into_iter()
-            .collect(),
-        ));
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
@@ -421,8 +433,9 @@ pub mod test {
                 ftable,
                 subst,
                 env: expr_type_env,
+                state: (),
             },
-            expr,
+            &expr,
         )
         .await
         .unwrap();
@@ -442,23 +455,8 @@ pub mod test {
         let mut parser = Parser::new(Token::tokenize("6.9 + 4.20").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
-        let ftable = Ftable::with_prelude();
-
-        let mut type_env = TypeEnv::new();
-        let add_id = id_dispenser.next();
-        type_env.insert("+".to_string(), Type::Var(add_id));
-
-        let mut constraint_system = ConstraintSystem::new();
-        constraint_system.add_global_constraint(Constraint::OneOf(
-            Type::Var(add_id),
-            vec![
-                arrow!(Type::Uint => arrow!(Type::Uint => Type::Uint)),
-                arrow!(Type::Int => arrow!(Type::Int => Type::Int)),
-                arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
-            ]
-            .into_iter()
-            .collect(),
-        ));
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
@@ -481,8 +479,9 @@ pub mod test {
                 ftable,
                 subst,
                 env: expr_type_env,
+                state: (),
             },
-            expr,
+            &expr,
         )
         .await
         .unwrap();
@@ -495,23 +494,8 @@ pub mod test {
         let mut parser = Parser::new(Token::tokenize("(6.9 + 4.20, 6 + 9)").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
-        let ftable = Ftable::with_prelude();
-
-        let mut type_env = TypeEnv::new();
-        let add_id = id_dispenser.next();
-        type_env.insert("+".to_string(), Type::Var(add_id));
-
-        let mut constraint_system = ConstraintSystem::new();
-        constraint_system.add_global_constraint(Constraint::OneOf(
-            Type::Var(add_id),
-            vec![
-                arrow!(Type::Uint => arrow!(Type::Uint => Type::Uint)),
-                arrow!(Type::Int => arrow!(Type::Int => Type::Int)),
-                arrow!(Type::Float => arrow!(Type::Float => Type::Float)),
-            ]
-            .into_iter()
-            .collect(),
-        ));
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
@@ -534,8 +518,9 @@ pub mod test {
                 ftable,
                 subst,
                 env: expr_type_env,
+                state: (),
             },
-            expr,
+            &expr,
         )
         .await
         .unwrap();
@@ -556,20 +541,9 @@ pub mod test {
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
         let state = ();
 
-        let ftable = Ftable::with_prelude();
-        let mut type_env = TypeEnv::new();
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
 
-        let id_param_typeid = id_dispenser.next();
-        type_env.insert(
-            "id".to_string(),
-            Type::ForAll(
-                id_param_typeid.into(),
-                arrow!(Type::Var(id_param_typeid) =>  Type::Var(id_param_typeid)).into(),
-                Default::default(),
-            ),
-        );
-
-        let mut constraint_system = ConstraintSystem::with_global_constraints(vec![]);
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
@@ -590,8 +564,9 @@ pub mod test {
                 ftable,
                 subst,
                 env: expr_type_env,
+                state: (),
             },
-            expr,
+            &expr,
         )
         .await
         .unwrap();
@@ -607,23 +582,9 @@ pub mod test {
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
         let state = ();
 
-        let ftable = Ftable::with_prelude();
-        let mut type_env = TypeEnv::new();
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
 
-        let neg_op_typeid = id_dispenser.next();
-        type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
-
-        let mut constraint_system =
-            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
-                Type::Var(neg_op_typeid),
-                vec![
-                    arrow!(Type::Uint =>  Type::Int),
-                    arrow!(Type::Int =>  Type::Int),
-                    arrow!(Type::Float => Type::Float),
-                ]
-                .into_iter()
-                .collect(),
-            )]);
         let mut expr_type_env = ExprTypeEnv::new();
         let ty = generate_constraints(
             &expr,
@@ -644,8 +605,9 @@ pub mod test {
                 ftable,
                 subst,
                 env: expr_type_env,
+                state: (),
             },
-            expr,
+            &expr,
         )
         .await
         .unwrap();
@@ -660,23 +622,8 @@ pub mod test {
             Parser::new(Token::tokenize("let f = \\x -> negate x in (f 6.9, f 420)").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
-        let ftable = Ftable::with_prelude();
-        let mut type_env = TypeEnv::new();
-
-        let neg_op_typeid = id_dispenser.next();
-        type_env.insert("negate".to_string(), Type::Var(neg_op_typeid));
-
-        let mut constraint_system =
-            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
-                Type::Var(neg_op_typeid),
-                vec![
-                    arrow!(Type::Uint =>  Type::Int),
-                    arrow!(Type::Int =>  Type::Int),
-                    arrow!(Type::Float => Type::Float),
-                ]
-                .into_iter()
-                .collect(),
-            )]);
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
         let mut expr_type_env = ExprTypeEnv::new();
 
         let ty = generate_constraints(
@@ -696,8 +643,9 @@ pub mod test {
                 ftable,
                 subst,
                 env: expr_type_env,
+                state: (),
             },
-            expr,
+            &expr,
         )
         .await;
 
@@ -708,24 +656,12 @@ pub mod test {
     async fn test_parametric_ftable() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut parser =
-            Parser::new(Token::tokenize("let f = \\x -> id x in (f 6.9, f 420, f true)").unwrap());
+            Parser::new(Token::tokenize("let f = λx → id x in (f 6.9, f 420, f true)").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
-        let ftable = Ftable::with_prelude();
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
 
-        let mut type_env = TypeEnv::new();
-
-        let id_param_typeid = id_dispenser.next();
-        type_env.insert(
-            "id".to_string(),
-            Type::ForAll(
-                id_param_typeid.into(),
-                arrow!(Type::Var(id_param_typeid) =>  Type::Var(id_param_typeid)).into(),
-                Default::default(),
-            ),
-        );
-
-        let mut constraint_system = ConstraintSystem::with_global_constraints(vec![]);
         let mut expr_type_env = ExprTypeEnv::new();
 
         let ty = generate_constraints(
@@ -745,8 +681,9 @@ pub mod test {
                 ftable,
                 subst,
                 env: expr_type_env,
+                state: (),
             },
-            expr,
+            &expr,
         )
         .await;
 

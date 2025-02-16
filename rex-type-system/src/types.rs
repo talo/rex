@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     fmt::{self, Display, Formatter},
 };
 
@@ -39,6 +39,56 @@ impl Type {
             Type::Arrow(_, b) => 1 + b.num_params(),
             _ => 0,
         }
+    }
+
+    pub fn resolve_vars(&mut self, assignments: &HashMap<String, Type>) {
+        match self {
+            Type::UnresolvedVar(x) => {
+                if let Some(t) = assignments.get(x) {
+                    *self = t.clone();
+                }
+            }
+            Type::Var(_) => {}
+            Type::ForAll(_, t, _) => t.resolve_vars(assignments),
+            Type::ADT(adt) => {
+                for variant in &mut adt.variants {
+                    if let Some(t) = &mut variant.t {
+                        t.resolve_vars(assignments);
+                    }
+                }
+            }
+            Type::Arrow(a, b) => {
+                a.resolve_vars(assignments);
+                b.resolve_vars(assignments);
+            }
+            Type::Result(a, b) => {
+                a.resolve_vars(assignments);
+                b.resolve_vars(assignments);
+            }
+            Type::Option(t) => t.resolve_vars(assignments),
+            Type::List(t) => t.resolve_vars(assignments),
+            Type::Dict(xs) => {
+                for (_, v) in xs {
+                    v.resolve_vars(assignments);
+                }
+            }
+            Type::Tuple(xs) => {
+                for x in xs {
+                    x.resolve_vars(assignments);
+                }
+            }
+            Type::Bool => {}
+            Type::Uint => {}
+            Type::Int => {}
+            Type::Float => {}
+            Type::String => {}
+        }
+    }
+
+    pub fn unresolved_vars(&self) -> HashSet<String> {
+        let mut set = HashSet::new();
+        self.unresolved_vars_accum(&mut set);
+        set
     }
 
     pub fn maybe_compatible(&self, other: &Type) -> Result<(), String> {
@@ -132,6 +182,48 @@ impl Type {
             (_, Self::ForAll(_, t, _)) => t.maybe_compatible(other),
 
             _ => Err(format!("Incompatible types: {} and {}", self, other)),
+        }
+    }
+
+    fn unresolved_vars_accum(&self, set: &mut HashSet<String>) {
+        match self {
+            Type::UnresolvedVar(x) => {
+                set.insert(x.clone());
+            }
+            Type::Var(_) => {}
+            Type::ForAll(_, t, _) => t.unresolved_vars_accum(set),
+            Type::ADT(adt) => {
+                for variant in &adt.variants {
+                    if let Some(t) = &variant.t {
+                        t.unresolved_vars_accum(set);
+                    }
+                }
+            }
+            Type::Arrow(a, b) => {
+                a.unresolved_vars_accum(set);
+                b.unresolved_vars_accum(set);
+            }
+            Type::Result(a, b) => {
+                a.unresolved_vars_accum(set);
+                b.unresolved_vars_accum(set);
+            }
+            Type::Option(t) => t.unresolved_vars_accum(set),
+            Type::List(t) => t.unresolved_vars_accum(set),
+            Type::Dict(xs) => {
+                for (_, v) in xs {
+                    v.unresolved_vars_accum(set);
+                }
+            }
+            Type::Tuple(xs) => {
+                for x in xs {
+                    x.unresolved_vars_accum(set);
+                }
+            }
+            Type::Bool => {}
+            Type::Uint => {}
+            Type::Int => {}
+            Type::Float => {}
+            Type::String => {}
         }
     }
 }
