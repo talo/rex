@@ -69,6 +69,11 @@ macro_rules! impl_register_fn_async {
                     Box::pin(async move {
                         let mut i = 0;
                         let r = f(ctx, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*).await?;
+
+                        // FIXME(loong): it is absolutely critical to assign a
+                        // proper ID here. We need unique IDs for created
+                        // expressions, because we need to associate a type with
+                        // them in the expression-type environment.
                         r.try_encode(Id(u64::MAX), Span::default())
                     })
                 }),
@@ -131,18 +136,26 @@ where
         Self(Default::default())
     }
 
-    pub fn with_prelude() -> Self {
-        let mut ftable = Self(Default::default());
-
-        ftable.register_fn1("negate", |_ctx: &Context<_>, x: u64| Ok(-(x as i64)));
-        // ftable.register_fn1("negate", |_ctx: &Context, x: i64| Ok(-x));
-        // ftable.register_fn1("negate", |_ctx: &Context, x: f64| Ok(-x));
-
-        // ftable.register_fn2("+", |_ctx: &Context, x: u64, y: u64| Ok(x + y));
-        // ftable.register_fn2("+", |_ctx: &Context, x: i64, y: i64| Ok(x + y));
-        // ftable.register_fn2("+", |_ctx: &Context, x: f64, y: f64| Ok(x + y));
-
-        ftable
+    // NOTE(loong): We do not support overloaded parametric polymorphism.
+    pub fn lookup_fns(&self, n: &str, t: Type) -> impl Iterator<Item = (&FtableFn<State>, &Type)> {
+        println!("lookup for {}:{}", n, t);
+        self.0
+            .get(n)
+            .map(|v| v.iter())
+            .into_iter()
+            .flatten()
+            .filter_map(move |(ftype, f)| match ftype.maybe_compatible(&t) {
+                Ok(()) => Some({
+                    println!("  ↳found ftype: {ftype}");
+                    (f, ftype)
+                }),
+                Err(_e) => {
+                    println!("  ↳skipping ftype: {ftype}");
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     impl_register_fn!(register_fn1, A0);
@@ -154,19 +167,6 @@ where
     impl_register_fn_async!(register_fn_async2, A0, A1);
     impl_register_fn_async!(register_fn_async3, A0, A1, A2);
     impl_register_fn_async!(register_fn_async4, A0, A1, A2);
-
-    // NOTE(loong): We do not support overloaded parametric polymorphism.
-    pub fn lookup_fns(&self, n: &str, t: Type) -> impl Iterator<Item = &FtableFn<State>> {
-        self.0
-            .get(n)
-            .map(|v| v.iter())
-            .into_iter()
-            .flatten()
-            .filter_map(move |(ftype, f)| match ftype.maybe_compatible(&t) {
-                Ok(()) => Some(f),
-                Err(_e) => None,
-            })
-    }
 }
 
 pub fn decode_arg<A>(args: &Vec<Expr>, i: usize) -> Result<A, Error>

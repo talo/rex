@@ -9,7 +9,7 @@ pub fn sprint_subst(subst: &Subst) -> String {
     let mut s = String::new();
     s.push_str("{\n");
     for (k, v) in subst {
-        s.push_str(&format!("  {}: {}\n", k, v));
+        s.push_str(&format!("  τ{}: {}\n", k, v));
     }
     s.push('}');
     s

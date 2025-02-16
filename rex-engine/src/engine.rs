@@ -4,7 +4,7 @@ use std::{
     pin::Pin,
 };
 
-use rex_ast::id::IdDispenser;
+use rex_ast::{expr::Expr, id::IdDispenser};
 use rex_type_system::{
     constraint::{Constraint, ConstraintSystem},
     types::{ToType, Type, TypeEnv},

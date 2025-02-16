@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::BTreeMap};
+use std::{borrow::Borrow, collections::BTreeMap, sync::Arc};
 
 use futures::future;
 use rex_ast::{
@@ -7,10 +7,11 @@ use rex_ast::{
 };
 use rex_lexer::span::Span;
 use rex_type_system::{
-    types::ExprTypeEnv,
+    types::{ExprTypeEnv, Type},
     unify::{self, Subst},
 };
 use rpds::HashTrieMapSync;
+use tokio::sync::RwLock;
 
 use crate::{error::Error, ftable::Ftable};
 
@@ -24,7 +25,7 @@ where
     pub scope: Scope,
     pub ftable: Ftable<State>,
     pub subst: Subst,
-    pub env: ExprTypeEnv,
+    pub env: Arc<RwLock<ExprTypeEnv>>,
     pub state: State,
 }
 
@@ -47,7 +48,9 @@ where
         Expr::Ite(id, span, cond, then, r#else) => {
             eval_ite(ctx, id, span, cond, then, r#else).await
         }
-        Expr::Curry(id, span, f, args) => todo!("eval the curry by checking if it has enough args"),
+        Expr::Curry(_id, _span, _f, _args) => {
+            todo!("eval the curry by checking if it has enough args")
+        }
     }
 }
 
@@ -130,21 +133,21 @@ where
         Some(non_var_expr) => return Ok(non_var_expr.clone()),
     };
 
-    let var_type = ctx.env.get(&var.id).unwrap();
-    let var_type = unify::apply_subst(var_type, &ctx.subst);
+    let var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
     let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
-    if let Some(f) = f {
+    if let Some((f, _ftype)) = f {
         if var_type.num_params() == 0 {
             return f(ctx, &vec![]).await;
         }
     }
+
     Ok(Expr::Var(var.clone()))
 }
 
 pub async fn eval_app<State>(
     ctx: &Context<State>,
-    id: &Id,
-    span: &Span,
+    _id: &Id,
+    _span: &Span,
     f: &Expr,
     x: &Expr,
 ) -> Result<Expr, Error>
@@ -167,13 +170,47 @@ where
 
     match f {
         Expr::Var(var) => {
-            let var_type = ctx.env.get(&var.id).unwrap();
-            let var_type = unify::apply_subst(var_type, &ctx.subst);
+            let var_type =
+                unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
+
+            let x_type = unify::apply_subst(ctx.env.read().await.get(&x.id()).unwrap(), &ctx.subst);
+
+            let var_type = match var_type {
+                Type::Arrow(a, b) => Type::Arrow(Box::new(x_type.clone()), b),
+                _ => panic!("Function application on non-function type"),
+            };
+
+            println!("XTYPE {}", x_type);
+
+            // TODO(loong): we should be checking if more than one function is
+            // found. This is an ambiguity error.
             let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
-            if let Some(f) = f {
+            if let Some((f, ftype)) = f {
                 match var_type.num_params() {
                     0 => panic!("Function application on non-function type"),
-                    1 => f(ctx, &vec![x]).await,
+                    1 => {
+                        match f(ctx, &vec![x]).await {
+                            Ok(expr) => {
+                                match ftype {
+                                    // FIXME(loong): this genius block of code
+                                    // needs to be applied everywhere that
+                                    // ftable functions are invoked.
+                                    Type::Arrow(_a, b) => {
+                                        let mut env = ctx.env.write().await;
+
+                                        // FIXME(loong): the return type of
+                                        // ftype could be a type variable. And
+                                        // we need to resolve that to an actual
+                                        // type. This might be a problem.
+                                        env.insert(*expr.id(), *b.clone());
+                                        Ok(expr)
+                                    }
+                                    _ => unreachable!(), // NOTE(loong): assuming type inference is working, and has been done, it should never be possible to apply a non-arrow type.
+                                }
+                            }
+                            Err(e) => Err(e),
+                        }
+                    }
                     _ => Ok(Expr::Curry(var.id, var.span, var, vec![x])), // TODO(loong): fix the ID and the span.
                 }
             } else {
@@ -187,14 +224,21 @@ where
         }
         Expr::Curry(id, span, var, mut args) => {
             args.push(x);
-            let var_type = ctx.env.get(&var.id).unwrap();
-            let var_type = unify::apply_subst(var_type, &ctx.subst);
+            let var_type =
+                unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
+
+            // TODO(loong): we should be checking if more than one function is
+            // found. This is an ambiguity error.
             let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
-            if let Some(f) = f {
+
+            if let Some((f, _ftype)) = f {
                 if var_type.num_params() < args.len() {
                     panic!("Too many arguments");
                 } else if var_type.num_params() == args.len() {
-                    f(&ctx, &args).await
+                    match f(&ctx, &args).await {
+                        Ok(expr) => Ok(expr),
+                        Err(e) => Err(e),
+                    }
                 } else {
                     Ok(Expr::Curry(id, span, var, args)) // TODO(loong): fix the ID and the span.
                 }
@@ -207,7 +251,7 @@ where
 }
 
 pub async fn eval_lam<State>(
-    ctx: &Context<State>,
+    _ctx: &Context<State>,
     id: &Id,
     span: &Span,
     param: &Var,
@@ -226,8 +270,8 @@ where
 
 pub async fn eval_let<State>(
     ctx: &Context<State>,
-    id: &Id,
-    span: &Span,
+    _id: &Id,
+    _span: &Span,
     var: &Var,
     def: &Expr,
     body: &Expr,
@@ -243,8 +287,8 @@ where
 
 pub async fn eval_ite<State>(
     ctx: &Context<State>,
-    id: &Id,
-    span: &Span,
+    _id: &Id,
+    _span: &Span,
     cond: &Expr,
     then: &Expr,
     r#else: &Expr,
@@ -266,9 +310,9 @@ pub mod test {
     use rex_lexer::Token;
     use rex_parser::Parser;
     use rex_type_system::{
-        arrow,
-        constraint::{generate_constraints, Constraint, ConstraintSystem},
-        types::{Type, TypeEnv},
+        constraint::generate_constraints,
+        trace::{sprint_expr_with_type, sprint_subst, sprint_type_env},
+        types::Type,
         unify::{self},
     };
 
@@ -305,7 +349,7 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: expr_type_env,
+                env: Arc::new(RwLock::new(expr_type_env)), // NOTE(loong): stop talking shit about me.
                 state: (),
             },
             &expr,
@@ -318,7 +362,7 @@ pub mod test {
     #[tokio::test]
     async fn test_negate() {
         let mut id_dispenser = IdDispenser::new();
-        let mut parser = Parser::new(Token::tokenize("negate 3.14").unwrap());
+        let mut parser = Parser::new(Token::tokenize("-3.14").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
@@ -347,7 +391,7 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: expr_type_env,
+                env: Arc::new(RwLock::new(expr_type_env)),
                 state: (),
             },
             &expr,
@@ -360,7 +404,7 @@ pub mod test {
     #[tokio::test]
     async fn test_negate_tuple() {
         let mut id_dispenser = IdDispenser::new();
-        let mut parser = Parser::new(Token::tokenize("(negate 6.9, negate 420)").unwrap());
+        let mut parser = Parser::new(Token::tokenize("(-6.9, -420)").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
@@ -386,7 +430,7 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: expr_type_env,
+                env: Arc::new(RwLock::new(expr_type_env)),
                 state: (),
             },
             &expr,
@@ -406,7 +450,7 @@ pub mod test {
     #[tokio::test]
     async fn test_negate_list() {
         let mut id_dispenser = IdDispenser::new();
-        let mut parser = Parser::new(Token::tokenize("[negate 6.9, negate 3.14]").unwrap());
+        let mut parser = Parser::new(Token::tokenize("[-6.9, -3.14]").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
@@ -432,7 +476,7 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: expr_type_env,
+                env: Arc::new(RwLock::new(expr_type_env)),
                 state: (),
             },
             &expr,
@@ -478,7 +522,7 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: expr_type_env,
+                env: Arc::new(RwLock::new(expr_type_env)),
                 state: (),
             },
             &expr,
@@ -517,7 +561,7 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: expr_type_env,
+                env: Arc::new(RwLock::new(expr_type_env)),
                 state: (),
             },
             &expr,
@@ -539,7 +583,6 @@ pub mod test {
         let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("(id 6.9, id 420)").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
-        let state = ();
 
         let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
@@ -557,19 +600,28 @@ pub mod test {
         let subst = unify::unify_constraints(&constraint_system)?;
 
         let final_type = unify::apply_subst(&ty, &subst);
+        assert_eq!(final_type, Type::Tuple(vec![Type::Float, Type::Uint]));
 
         let res = eval(
             &Context {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: expr_type_env,
+                env: Arc::new(RwLock::new(expr_type_env)),
                 state: (),
             },
             &expr,
         )
         .await
         .unwrap();
+        match res {
+            Expr::Tuple(_, _, res) => {
+                assert!(res.len() == 2);
+                assert!(matches!(res[0], Expr::Float(_, _, 6.9)));
+                assert!(matches!(res[1], Expr::Uint(_, _, 420)));
+            }
+            _ => panic!("Expected (6.9, 420), got {:?}", res),
+        }
 
         Ok(())
     }
@@ -578,9 +630,8 @@ pub mod test {
     async fn test_let_polymorphism() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut parser =
-            Parser::new(Token::tokenize("let id = \\x -> x in (id 6.9, id 420)").unwrap());
+            Parser::new(Token::tokenize("let jd = λx → x in (jd 6.9, jd 420)").unwrap()); // Yes, we do mean jd
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
-        let state = ();
 
         let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
@@ -598,19 +649,29 @@ pub mod test {
         let subst = unify::unify_constraints(&constraint_system)?;
 
         let final_type = unify::apply_subst(&ty, &subst);
+        assert_eq!(final_type, Type::Tuple(vec![Type::Float, Type::Uint]));
 
         let res = eval(
             &Context {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: expr_type_env,
+                env: Arc::new(RwLock::new(expr_type_env)),
                 state: (),
             },
             &expr,
         )
         .await
         .unwrap();
+
+        match res {
+            Expr::Tuple(_, _, res) => {
+                assert!(res.len() == 2);
+                assert!(matches!(res[0], Expr::Float(_, _, 6.9)));
+                assert!(matches!(res[1], Expr::Uint(_, _, 420)));
+            }
+            _ => panic!("Expected (6.9, 420), got {:?}", res),
+        }
 
         Ok(())
     }
@@ -619,12 +680,16 @@ pub mod test {
     async fn test_let_polymorphism_overloading() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut parser =
-            Parser::new(Token::tokenize("let f = \\x -> negate x in (f 6.9, f 420)").unwrap());
+            Parser::new(Token::tokenize("let f = λx → -x in (f 6.9, f 420, f (-1))").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
         let mut expr_type_env = ExprTypeEnv::new();
+
+        // println!("BEFORE\n",);
+        // println!("TYPE_ENV\n{}", sprint_type_env(&type_env));
+        // println!("CONSTRAINTS\n{}", constraint_system);
 
         let ty = generate_constraints(
             &expr,
@@ -637,17 +702,37 @@ pub mod test {
 
         let subst = unify::unify_constraints(&constraint_system)?;
 
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "AFTER\n{}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+        println!("SUBST\n{}", sprint_subst(&subst));
+        println!("TYPE_ENV\n{}", sprint_type_env(&type_env));
+        println!("CONSTRAINTS\n{}", constraint_system);
+
         let res = eval(
             &Context {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: expr_type_env,
+                env: Arc::new(RwLock::new(expr_type_env)),
                 state: (),
             },
             &expr,
         )
         .await;
+        match res {
+            Ok(Expr::Tuple(_, _, res)) => {
+                assert!(res.len() == 3);
+                assert!(matches!(res[0], Expr::Float(_, _, -6.9)));
+                assert!(matches!(res[1], Expr::Int(_, _, -420)));
+                assert!(matches!(res[2], Expr::Int(_, _, 1)));
+            }
+            Err(e) => return Err(format!("{:?}", e)),
+            _ => panic!("Expected (-6.9, -420, 1), got {:?}", res),
+        }
 
         Ok(())
     }
@@ -680,12 +765,22 @@ pub mod test {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: expr_type_env,
+                env: Arc::new(RwLock::new(expr_type_env)),
                 state: (),
             },
             &expr,
         )
         .await;
+        match res {
+            Ok(Expr::Tuple(_, _, res)) => {
+                assert!(res.len() == 3);
+                assert!(matches!(res[0], Expr::Float(_, _, 6.9)));
+                assert!(matches!(res[1], Expr::Uint(_, _, 420)));
+                assert!(matches!(res[2], Expr::Bool(_, _, true)));
+            }
+            Err(e) => return Err(format!("{:?}", e)),
+            _ => panic!("Expected (6.9, 420, true), got {:?}", res),
+        }
 
         Ok(())
     }

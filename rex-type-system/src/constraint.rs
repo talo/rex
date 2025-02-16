@@ -142,12 +142,12 @@ impl Display for ConstraintSystem {
                 .iter()
                 .map(|c| c.to_string())
                 .collect::<Vec<_>>()
-                .join(", "),
+                .join(", \n"),
             self.global_constraints
                 .iter()
                 .map(|c| c.to_string())
                 .collect::<Vec<_>>()
-                .join(", ")
+                .join(", \n")
         )
     }
 }
@@ -217,10 +217,10 @@ pub fn generate_constraints(
                                     new_global_constraints
                                         .push(Constraint::Eq(new_t1.clone(), new_t2.clone()));
                                 }
-                                Constraint::OneOf(t, ts) => {
-                                    let new_t = if t == t { &fresh_var } else { t };
+                                Constraint::OneOf(t1, t2s) => {
+                                    let new_t = if t1 == t { &fresh_var } else { t1 };
                                     new_global_constraints
-                                        .push(Constraint::OneOf(new_t.clone(), ts.clone()));
+                                        .push(Constraint::OneOf(new_t.clone(), t2s.clone()));
                                 }
                             }
                         }
@@ -357,7 +357,11 @@ pub fn generate_constraints(
                 match constraint {
                     Constraint::Eq(..) => {}
                     Constraint::OneOf(t1, t2_possibilties) => {
-                        // TODO(loong): is there a reason we don't unwrap the result?
+                        // TODO(loong): is there a reason we don't unwrap the
+                        // result? Is it because there are constraints for
+                        // unused type variables (and therefore they cannot be
+                        // disambiguated but we don't care because they aren't
+                        // used)?
                         unify::unify_one_of(t1, t2_possibilties, &mut def_subst);
                     }
                 }

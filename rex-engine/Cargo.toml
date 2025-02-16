@@ -13,6 +13,6 @@ rex-parser = { path = "../rex-parser" }
 rex-type-system = { path = "../rex-type-system" }
 rpds = { version = "1.1" }
 thiserror = { version = "1.0" }
-tokio = { version = "1.27.0", features = ["macros", "rt"] }
+tokio = { version = "1.27.0", features = ["macros", "rt", "sync"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
