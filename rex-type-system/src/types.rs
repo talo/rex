@@ -34,10 +34,24 @@ pub enum Type {
 }
 
 impl Type {
+    pub fn build_arrow(params: Vec<Type>, ret: Type) -> Type {
+        params
+            .into_iter()
+            .rev()
+            .fold(ret, |acc, t| Type::Arrow(Box::new(t), Box::new(acc)))
+    }
+
     pub fn num_params(&self) -> usize {
         match self {
             Type::Arrow(_, b) => 1 + b.num_params(),
             _ => 0,
+        }
+    }
+
+    pub fn evaluated_type(&self) -> &Type {
+        match self {
+            Type::Arrow(_, b) => b.evaluated_type(),
+            _ => self,
         }
     }
 
@@ -271,7 +285,14 @@ impl Display for Type {
                 '}'.fmt(f)
             }
             Type::Arrow(a, b) => {
-                a.fmt(f)?;
+                match a.as_ref() {
+                    Type::Arrow(_, _) => {
+                        '('.fmt(f)?;
+                        a.fmt(f)?;
+                        ')'.fmt(f)?;
+                    }
+                    _ => a.fmt(f)?,
+                }
                 " → ".fmt(f)?;
                 b.fmt(f)
             }

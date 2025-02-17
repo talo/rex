@@ -35,7 +35,12 @@ macro_rules! impl_register_fn {
                     Box::pin(async move {
                         let mut i: isize = -1;
                         let r = f(ctx, $(decode_arg::<$param>(args, { i += 1; i as usize })?),*)?;
-                        r.try_encode(Id(u64::MAX), Span::default())
+
+                        // FIXME(loong): it is absolutely critical to assign a
+                        // proper ID here. We need unique IDs for created
+                        // expressions, because we need to associate a type with
+                        // them in the expression-type environment.
+                        r.try_encode(Id(rand::random()), Span::default())
                     })
                 }),
             ))
@@ -74,7 +79,7 @@ macro_rules! impl_register_fn_async {
                         // proper ID here. We need unique IDs for created
                         // expressions, because we need to associate a type with
                         // them in the expression-type environment.
-                        r.try_encode(Id(u64::MAX), Span::default())
+                        r.try_encode(Id(rand::random()), Span::default())
                     })
                 }),
             ))
@@ -138,21 +143,14 @@ where
 
     // NOTE(loong): We do not support overloaded parametric polymorphism.
     pub fn lookup_fns(&self, n: &str, t: Type) -> impl Iterator<Item = (&FtableFn<State>, &Type)> {
-        println!("lookup for {}:{}", n, t);
         self.0
             .get(n)
             .map(|v| v.iter())
             .into_iter()
             .flatten()
             .filter_map(move |(ftype, f)| match ftype.maybe_compatible(&t) {
-                Ok(()) => Some({
-                    println!("  ↳found ftype: {ftype}");
-                    (f, ftype)
-                }),
-                Err(_e) => {
-                    println!("  ↳skipping ftype: {ftype}");
-                    None
-                }
+                Ok(()) => Some((f, ftype)),
+                Err(_e) => None,
             })
             .collect::<Vec<_>>()
             .into_iter()

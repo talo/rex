@@ -347,22 +347,24 @@ pub fn generate_constraints(
 
             // Solve definition constraints to get its type
             let mut def_subst = HashMap::new();
-            for constraint in def_constraint_system.constraints() {
-                match constraint {
-                    Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut def_subst)?,
-                    _ => {}
+            for _ in 1..100 {
+                for constraint in def_constraint_system.constraints() {
+                    match constraint {
+                        Constraint::Eq(t1, t2) => unify::unify_eq(&t1, &t2, &mut def_subst)?,
+                        _ => {}
+                    }
                 }
-            }
-            for constraint in def_constraint_system.constraints() {
-                match constraint {
-                    Constraint::Eq(..) => {}
-                    Constraint::OneOf(t1, t2_possibilties) => {
-                        // TODO(loong): is there a reason we don't unwrap the
-                        // result? Is it because there are constraints for
-                        // unused type variables (and therefore they cannot be
-                        // disambiguated but we don't care because they aren't
-                        // used)?
-                        unify::unify_one_of(t1, t2_possibilties, &mut def_subst);
+                for constraint in def_constraint_system.constraints() {
+                    match constraint {
+                        Constraint::Eq(..) => {}
+                        Constraint::OneOf(t1, t2_possibilties) => {
+                            // TODO(loong): is there a reason we don't unwrap the
+                            // result? Is it because there are constraints for
+                            // unused type variables (and therefore they cannot be
+                            // disambiguated but we don't care because they aren't
+                            // used)?
+                            unify::unify_one_of(t1, t2_possibilties, &mut def_subst);
+                        }
                     }
                 }
             }

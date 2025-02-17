@@ -88,6 +88,25 @@ impl Expr {
         }
     }
 
+    pub fn id_mut(&mut self) -> &mut Id {
+        match self {
+            Self::Bool(id, ..)
+            | Self::Uint(id, ..)
+            | Self::Int(id, ..)
+            | Self::Float(id, ..)
+            | Self::String(id, ..)
+            | Self::Tuple(id, ..)
+            | Self::List(id, ..)
+            | Self::Dict(id, ..)
+            | Self::Var(Var { id, .. })
+            | Self::App(id, ..)
+            | Self::Lam(id, ..)
+            | Self::Let(id, ..)
+            | Self::Ite(id, ..)
+            | Self::Curry(id, ..) => id,
+        }
+    }
+
     pub fn span(&self) -> &Span {
         match self {
             Self::Bool(_, span, ..)

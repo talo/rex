@@ -7,6 +7,7 @@ use rex_ast::{
 };
 use rex_lexer::span::Span;
 use rex_type_system::{
+    arrow,
     types::{ExprTypeEnv, Type},
     unify::{self, Subst},
 };
@@ -133,6 +134,8 @@ where
         Some(non_var_expr) => return Ok(non_var_expr.clone()),
     };
 
+    // FIXME: re-enable variable lookup.
+    //
     let var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
     let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
     if let Some((f, _ftype)) = f {
@@ -146,7 +149,7 @@ where
 
 pub async fn eval_app<State>(
     ctx: &Context<State>,
-    _id: &Id,
+    id: &Id,
     _span: &Span,
     f: &Expr,
     x: &Expr,
@@ -154,6 +157,15 @@ pub async fn eval_app<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
+    let app_type = unify::apply_subst(ctx.env.read().await.get(id).unwrap(), &ctx.subst);
+    let pre_f_type = unify::apply_subst(ctx.env.read().await.get(f.id()).unwrap(), &ctx.subst);
+    let pre_x_type = unify::apply_subst(ctx.env.read().await.get(x.id()).unwrap(), &ctx.subst);
+
+    println!(
+        "evaluating app: ({{{}}}:{}) ({}:{}) with apply type: {}",
+        f, pre_f_type, x, pre_x_type, app_type
+    );
+
     apply(ctx, f, x).await
 }
 
@@ -165,89 +177,184 @@ pub async fn apply<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
+    let pre_f_type = unify::apply_subst(
+        ctx.env.read().await.get(f.borrow().id()).unwrap(),
+        &ctx.subst,
+    );
+    let pre_x_type = unify::apply_subst(
+        ctx.env.read().await.get(x.borrow().id()).unwrap(),
+        &ctx.subst,
+    );
+
+    let (_pre_a_type, pre_b_type) = match &pre_f_type {
+        Type::Arrow(a, b) => (a.clone(), b.clone()),
+        _ => panic!("Function application on non-function type"),
+    };
+
+    println!(
+        "pre-eval apply function: ({{{}}}:{}) ({}:{})",
+        f.borrow(),
+        &pre_f_type,
+        x.borrow(),
+        &pre_x_type
+    );
+
     let f = eval(ctx, f.borrow()).await?;
     let x = eval(ctx, x.borrow()).await?;
 
-    match f {
+    let f_type = unify::apply_subst(
+        ctx.env.read().await.get(f.borrow().id()).unwrap(),
+        &ctx.subst,
+    );
+    let x_type = unify::apply_subst(
+        ctx.env.read().await.get(x.borrow().id()).unwrap(),
+        &ctx.subst,
+    );
+
+    let (_a_type, b_type) = match &pre_f_type {
+        Type::Arrow(a, b) => (a.clone(), b.clone()),
+        _ => panic!("Function application on non-function type"),
+    };
+
+    println!(
+        "post-eval apply function: ({{{}}}:{}) ({}:{})",
+        &f, &f_type, &x, &x_type
+    );
+
+    let res = match f {
         Expr::Var(var) => {
-            let var_type =
-                unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
+            // We need to reset the f_type because in order to do function
+            // lookup, we need the f_type of the underlying callee, not the
+            // result of applying the next argument to the callee (which, thanks
+            // to curring, may result in another function).
+            let f_type = pre_f_type; // unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
 
-            let x_type = unify::apply_subst(ctx.env.read().await.get(&x.id()).unwrap(), &ctx.subst);
-
-            let var_type = match var_type {
-                Type::Arrow(a, b) => Type::Arrow(Box::new(x_type.clone()), b),
-                _ => panic!("Function application on non-function type"),
-            };
-
-            println!("XTYPE {}", x_type);
+            println!(
+                "var function lookup: ({}:{}) ({}:{})",
+                &var, &f_type, &x, &x_type
+            );
 
             // TODO(loong): we should be checking if more than one function is
             // found. This is an ambiguity error.
-            let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
-            if let Some((f, ftype)) = f {
-                match var_type.num_params() {
+            let f = ctx.ftable.lookup_fns(&var.name, f_type.clone()).next();
+            if let Some((f, _ftype)) = f {
+                match f_type.num_params() {
                     0 => panic!("Function application on non-function type"),
                     1 => {
-                        match f(ctx, &vec![x]).await {
-                            Ok(expr) => {
-                                match ftype {
-                                    // FIXME(loong): this genius block of code
-                                    // needs to be applied everywhere that
-                                    // ftable functions are invoked.
-                                    Type::Arrow(_a, b) => {
-                                        let mut env = ctx.env.write().await;
-
-                                        // FIXME(loong): the return type of
-                                        // ftype could be a type variable. And
-                                        // we need to resolve that to an actual
-                                        // type. This might be a problem.
-                                        env.insert(*expr.id(), *b.clone());
-                                        Ok(expr)
-                                    }
-                                    _ => unreachable!(), // NOTE(loong): assuming type inference is working, and has been done, it should never be possible to apply a non-arrow type.
-                                }
-                            }
-                            Err(e) => Err(e),
-                        }
+                        println!(
+                            "calling function: ({}:{}) ({}:{}) results in type: {}",
+                            &var, &f_type, &x, &x_type, &b_type
+                        );
+                        f(ctx, &vec![x]).await?
                     }
-                    _ => Ok(Expr::Curry(var.id, var.span, var, vec![x])), // TODO(loong): fix the ID and the span.
+                    // TODO(loong): fix the ID and the span.
+                    _ => {
+                        println!(
+                            "curry function lookup: ({}:{}) ({}:{})",
+                            &var, &f_type, &x, &x_type
+                        );
+
+                        let mut x = x.clone();
+                        *x.id_mut() = Id(rand::random());
+                        ctx.env.write().await.insert(*x.id(), pre_x_type.clone());
+
+                        Expr::Curry(Id(rand::random()), var.span, var, vec![x])
+                    }
                 }
             } else {
-                panic!("Function not found: {}:{}", var.name, var_type)
+                panic!("Function not found: {}:{}", var.name, f_type)
             }
         }
-        Expr::Lam(_id, _span, param, body) => {
+        Expr::Lam(id, _span, param, body) => {
+            let l_type = unify::apply_subst(ctx.env.read().await.get(&id).unwrap(), &ctx.subst);
+
+            println!(
+                "dropping into lambda: ({}) [actually: {}] with param: ({}:{})",
+                &l_type, &pre_f_type, &x, &x_type
+            );
+
             let mut ctx = ctx.clone();
             ctx.scope = ctx.scope.insert(param.name, x);
-            eval(&ctx, &body).await
+
+            println!("hot-swap lambda body: {{{}}}:{}", &body, &pre_b_type);
+
+            let new_body_id = Id(rand::random());
+            let mut body = match *body {
+                Expr::App(_, span, g, y) => {
+                    let new_g_id = Id(rand::random());
+                    let new_y_id = Id(rand::random());
+
+                    let mut g = g.clone();
+                    *g.id_mut() = new_g_id;
+                    ctx.env.write().await.insert(new_g_id, pre_f_type.clone());
+
+                    let mut y = y.clone();
+                    *y.id_mut() = new_y_id;
+                    ctx.env.write().await.insert(new_y_id, x_type.clone());
+
+                    Expr::App(new_body_id, span.clone(), g, y)
+                }
+                body => body,
+            };
+            *body.id_mut() = new_body_id;
+            ctx.env.write().await.insert(new_body_id, *pre_b_type);
+
+            eval(&ctx, &body).await?
         }
         Expr::Curry(id, span, var, mut args) => {
-            args.push(x);
-            let var_type =
-                unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
+            let f_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
 
-            // TODO(loong): we should be checking if more than one function is
-            // found. This is an ambiguity error.
-            let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
+            args.push(x.clone());
+            if f_type.num_params() < args.len() {
+                panic!("Too many arguments");
+            } else if f_type.num_params() == args.len() {
+                let mut args_fmt = Vec::new();
+                let mut arg_types = Vec::new();
+                for arg in &args {
+                    args_fmt.push(format!(
+                        "({})",
+                        unify::apply_subst(ctx.env.read().await.get(arg.id()).unwrap(), &ctx.subst,)
+                    ));
+                    arg_types.push(unify::apply_subst(
+                        ctx.env.read().await.get(arg.id()).unwrap(),
+                        &ctx.subst,
+                    ));
+                }
 
-            if let Some((f, _ftype)) = f {
-                if var_type.num_params() < args.len() {
-                    panic!("Too many arguments");
-                } else if var_type.num_params() == args.len() {
-                    match f(&ctx, &args).await {
-                        Ok(expr) => Ok(expr),
-                        Err(e) => Err(e),
-                    }
+                println!(
+                    "curried function lookup: ({}:{}) {} -> ({})",
+                    &var,
+                    &f_type,
+                    &args_fmt.join(" -> "),
+                    &b_type
+                );
+
+                let f_type = Type::build_arrow(arg_types, *b_type.clone());
+
+                // TODO(loong): we should be checking if more than one function is
+                // found. This is an ambiguity error.
+                let f = ctx.ftable.lookup_fns(&var.name, f_type.clone()).next();
+
+                if let Some((f, _ftype)) = f {
+                    println!(
+                        "calling curried function: ({}:{}) ({}:{}) results in type: {}",
+                        &var, &f_type, &x, &x_type, &b_type
+                    );
+                    f(ctx, &args).await?
                 } else {
-                    Ok(Expr::Curry(id, span, var, args)) // TODO(loong): fix the ID and the span.
+                    panic!("Function not found: {}:{}", var.name, f_type)
                 }
             } else {
-                panic!("Function not found: {}", var.name)
+                // TODO(loong): fix the ID and the span.
+                Expr::Curry(Id(rand::random()), span, var, args)
             }
         }
         _ => unimplemented!(),
-    }
+    };
+
+    ctx.env.write().await.insert(*res.id(), *b_type);
+
+    Ok(res)
 }
 
 pub async fn eval_lam<State>(
@@ -311,7 +418,9 @@ pub mod test {
     use rex_parser::Parser;
     use rex_type_system::{
         constraint::generate_constraints,
+        list,
         trace::{sprint_expr_with_type, sprint_subst, sprint_type_env},
+        tuple,
         types::Type,
         unify::{self},
     };
@@ -533,6 +642,95 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_add_then_add() {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser =
+            Parser::new(Token::tokenize("let f = (\\x -> (x+x)) in (f (6.9 + 3.14))").unwrap());
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::<()>::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system).unwrap();
+
+        let final_type = unify::apply_subst(&ty, &subst);
+        assert_eq!(final_type, Type::Float);
+
+        println!(
+            "\n{}\n",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(res, Expr::Float(_, _, 20.080000000000002)));
+    }
+
+    #[tokio::test]
+    async fn test_id_then_add() {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser = Parser::new(Token::tokenize("let f = id in (f 6.9) + (f 3.14)").unwrap());
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::<()>::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system).unwrap();
+
+        let final_type = unify::apply_subst(&ty, &subst);
+        assert_eq!(final_type, Type::Float);
+
+        println!(
+            "\n{}\n",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(dbg!(res), Expr::Float(_, _, 10.040000000000001)));
+    }
+
+    #[tokio::test]
     async fn test_add_tuple() {
         let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("(6.9 + 4.20, 6 + 9)").unwrap());
@@ -680,7 +878,7 @@ pub mod test {
     async fn test_let_polymorphism_overloading() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut parser =
-            Parser::new(Token::tokenize("let f = λx → -x in (f 6.9, f 420, f (-1))").unwrap());
+            Parser::new(Token::tokenize("let f = λx → -x in (f 6.9, f 420, f (3 + 14))").unwrap());
         let expr = parser.parse_expr(&mut id_dispenser).unwrap();
 
         let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
@@ -702,8 +900,6 @@ pub mod test {
 
         let subst = unify::unify_constraints(&constraint_system)?;
 
-        let final_type = unify::apply_subst(&ty, &subst);
-
         println!(
             "AFTER\n{}",
             sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
@@ -711,6 +907,12 @@ pub mod test {
         println!("SUBST\n{}", sprint_subst(&subst));
         println!("TYPE_ENV\n{}", sprint_type_env(&type_env));
         println!("CONSTRAINTS\n{}", constraint_system);
+
+        let final_type = unify::apply_subst(&ty, &subst);
+        assert_eq!(
+            final_type,
+            Type::Tuple(vec![Type::Float, Type::Int, Type::Int])
+        );
 
         let res = eval(
             &Context {
@@ -728,10 +930,10 @@ pub mod test {
                 assert!(res.len() == 3);
                 assert!(matches!(res[0], Expr::Float(_, _, -6.9)));
                 assert!(matches!(res[1], Expr::Int(_, _, -420)));
-                assert!(matches!(res[2], Expr::Int(_, _, 1)));
+                assert!(matches!(res[2], Expr::Int(_, _, -17)));
             }
             Err(e) => return Err(format!("{:?}", e)),
-            _ => panic!("Expected (-6.9, -420, 1), got {:?}", res),
+            _ => panic!("Expected (-6.9, -420, 17), got {:?}", res),
         }
 
         Ok(())
@@ -777,6 +979,281 @@ pub mod test {
                 assert!(matches!(res[0], Expr::Float(_, _, 6.9)));
                 assert!(matches!(res[1], Expr::Uint(_, _, 420)));
                 assert!(matches!(res[2], Expr::Bool(_, _, true)));
+            }
+            Err(e) => return Err(format!("{:?}", e)),
+            _ => panic!("Expected (6.9, 420, true), got {:?}", res),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_let_negate() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser = Parser::new(Token::tokenize("let f = negate in f 6.9").unwrap());
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system)?;
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR\n{}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+
+        assert_eq!(final_type, Type::Float);
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await;
+
+        match res {
+            Ok(Expr::Float(_, _, -6.9)) => Ok(()),
+            Err(e) => Err(format!("{:?}", e)),
+            _ => panic!("Expected (-6.9, 420), got {:?}", res),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_let_in_let_in() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser = Parser::new(
+            Token::tokenize("let f = (λx → -x), u = f 6.9, v = f 420 in (u, v)").unwrap(),
+        );
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system)?;
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR\n{}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+
+        assert_eq!(final_type, tuple!(Type::Float, Type::Int));
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await;
+        match res {
+            Ok(Expr::Tuple(_, _, res)) => {
+                assert!(res.len() == 2);
+                assert!(matches!(res[0], Expr::Float(_, _, -6.9)));
+                assert!(matches!(res[1], Expr::Int(_, _, -420)));
+            }
+            Err(e) => return Err(format!("{:?}", e)),
+            _ => panic!("Expected (-6.9, 420), got {:?}", res),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_map() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser = Parser::new(
+            Token::tokenize("let f = (λx → -x) in map f [3.14, 6.9, 42.0, 1.0]").unwrap(),
+        );
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system)?;
+        let final_type = unify::apply_subst(&ty, &subst);
+        assert_eq!(final_type, list![Type::Float]);
+
+        println!(
+            "EXPR\n{}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await;
+        match res {
+            Ok(Expr::List(_, _, res)) => {
+                assert!(res.len() == 4);
+                assert!(matches!(res[0], Expr::Float(_, _, -3.14)));
+                assert!(matches!(res[1], Expr::Float(_, _, -6.9)));
+                assert!(matches!(res[2], Expr::Float(_, _, -42.0)));
+                assert!(matches!(res[3], Expr::Float(_, _, -1.0)));
+            }
+            Err(e) => return Err(format!("{:?}", e)),
+            _ => panic!("Expected [-3.14, -6.9, -42.0, -1.0], got {:?}", res),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_map_map() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser = Parser::new(
+            Token::tokenize("let f = (λx → -x) in map f (map f [3.14, 6.9, 42.0, 1.0])").unwrap(),
+        );
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system)?;
+        let final_type = unify::apply_subst(&ty, &subst);
+        assert_eq!(final_type, list![Type::Float]);
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await;
+        match res {
+            Ok(Expr::List(_, _, res)) => {
+                assert!(res.len() == 4);
+                assert!(matches!(res[0], Expr::Float(_, _, 3.14)));
+                assert!(matches!(res[1], Expr::Float(_, _, 6.9)));
+                assert!(matches!(res[2], Expr::Float(_, _, 42.0)));
+                assert!(matches!(res[3], Expr::Float(_, _, 1.0)));
+            }
+            Err(e) => return Err(format!("{:?}", e)),
+            _ => panic!("Expected [3.14, 6.9, 42.0, 1.0], got {:?}", res),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_map_extensive() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser = Parser::new(
+            Token::tokenize(
+                "map (let g = λx → 2.0 * (id x) - x in g) (let f = λx → -(id x), h = map f (map f [-1, -2, -3, -4]) in map f (map (λx → f (id x)) [3.28 - 0.14, id 6.9, (λx → x) 42.0, f (f 1.0)]))",
+            )
+            .unwrap(),
+        );
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system)?;
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR\n{}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+
+        assert_eq!(final_type, list![Type::Float]);
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await;
+        match res {
+            Ok(Expr::List(_, _, res)) => {
+                assert!(res.len() == 4);
+                assert!(matches!(res[0], Expr::Float(_, _, 3.1399999999999997)));
+                assert!(matches!(res[1], Expr::Float(_, _, 6.9)));
+                assert!(matches!(res[2], Expr::Float(_, _, 42.0)));
+                assert!(matches!(res[3], Expr::Float(_, _, 1.0)));
             }
             Err(e) => return Err(format!("{:?}", e)),
             _ => panic!("Expected (6.9, 420, true), got {:?}", res),

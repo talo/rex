@@ -12,24 +12,28 @@ pub type Subst = HashMap<Id, Type>;
 // NOTE(loong): We do not support overloaded parametric polymorphism.
 pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, String> {
     let mut subst = Subst::new();
-    for constraint in constraint_system.constraints() {
-        match constraint {
-            Constraint::Eq(t1, t2) => {
-                unify_eq(t1, t2, &mut subst)?;
+    // FIXME(loong): loop until no more progress is made in resolving
+    // constraints instead of dumbly looping 100 times.
+    for _ in 1..100 {
+        for constraint in constraint_system.constraints() {
+            match constraint {
+                Constraint::Eq(t1, t2) => {
+                    unify_eq(t1, t2, &mut subst)?;
+                }
+                Constraint::OneOf(..) => {}
             }
-            Constraint::OneOf(..) => {}
         }
-    }
-    for constraint in constraint_system.constraints() {
-        match constraint {
-            Constraint::Eq(..) => {}
-            Constraint::OneOf(t1, t2_possibilties) => {
-                // TODO(loong): doing the naive thing of ? short-circuiting this
-                // result does not work. Because it will cause issues for unused
-                // overloaded type variables. This is because we are resolving
-                // all constraints, not just the ones that are actually used by
-                // the expression.
-                unify_one_of(t1, t2_possibilties, &mut subst);
+        for constraint in constraint_system.constraints() {
+            match constraint {
+                Constraint::Eq(..) => {}
+                Constraint::OneOf(t1, t2_possibilties) => {
+                    // TODO(loong): doing the naive thing of ? short-circuiting this
+                    // result does not work. Because it will cause issues for unused
+                    // overloaded type variables. This is because we are resolving
+                    // all constraints, not just the ones that are actually used by
+                    // the expression.
+                    unify_one_of(t1, t2_possibilties, &mut subst);
+                }
             }
         }
     }

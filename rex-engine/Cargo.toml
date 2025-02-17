@@ -7,6 +7,7 @@ edition = "2021"
 async-recursion = { version = "1.1" }
 async-trait = { version = "0.1" }
 futures = { version = "0.3" }
+rand = { version = "0.9" }
 rex-ast = { path = "../rex-ast" }
 rex-lexer = { path = "../rex-lexer" }
 rex-parser = { path = "../rex-parser" }
