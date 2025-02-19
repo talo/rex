@@ -338,10 +338,12 @@ pub fn generate_constraints(
 
         Expr::Let(id, _span, var, def, body) => {
             // First generate constraints for the definition
-            let mut def_constraint_system = ConstraintSystem {
-                local_constraints: vec![],
-                global_constraints: constraint_system.global_constraints.clone(),
-            };
+            // let mut def_constraint_system = ConstraintSystem {
+            //     local_constraints: vec![],
+            //     global_constraints: constraint_system.global_constraints.clone(),
+            // };
+            let mut def_constraint_system = constraint_system.clone();
+
             let def_type =
                 generate_constraints(def, env, expr_env, &mut def_constraint_system, id_dispenser)?;
 
@@ -380,7 +382,7 @@ pub fn generate_constraints(
                     _ => None,
                 })
                 .collect();
-            // let gen_deps = vec![];
+            
             let gen_type = generalize(env, &solved_def_type, gen_deps);
 
             // Add generalized type to environment

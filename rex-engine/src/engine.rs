@@ -278,6 +278,23 @@ where
 
         this.register_fn2(
             id_dispenser,
+            "get",
+            |_ctx: &Context<_>, n: u64, xs: Vec<A>| Ok(xs[n as usize].clone()),
+        )?;
+
+        this.register_fn2(
+            id_dispenser,
+            "++",
+            |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<A>| {
+                let mut zs = Vec::with_capacity(xs.len() + ys.len());
+                zs.extend(xs);
+                zs.extend(ys);
+                Ok(zs)
+            },
+        )?;
+
+        this.register_fn2(
+            id_dispenser,
             "take",
             |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
                 Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())

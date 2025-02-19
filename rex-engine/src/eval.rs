@@ -7,7 +7,6 @@ use rex_ast::{
 };
 use rex_lexer::span::Span;
 use rex_type_system::{
-    arrow,
     types::{ExprTypeEnv, Type},
     unify::{self, Subst},
 };
@@ -128,19 +127,25 @@ pub async fn eval_var<State>(ctx: &Context<State>, var: &Var) -> Result<Expr, Er
 where
     State: Clone + Send + Sync + 'static,
 {
+    let pre_var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
+
     let var = match ctx.scope.get(&var.name) {
         None => var,
         Some(Expr::Var(var)) => var,
         Some(non_var_expr) => return Ok(non_var_expr.clone()),
     };
 
-    // FIXME: re-enable variable lookup.
-    //
     let var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
+
     let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
-    if let Some((f, _ftype)) = f {
-        if var_type.num_params() == 0 {
-            return f(ctx, &vec![]).await;
+    if let Some((f, f_type)) = f {
+        if f_type.num_params() == 0 {
+            let res = f(ctx, &vec![]).await?;
+            ctx.env
+                .write()
+                .await
+                .insert(*res.id(), pre_var_type.clone());
+            return Ok(res);
         }
     }
 
@@ -988,6 +993,55 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_let_id() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser = Parser::new(Token::tokenize("let f = id in f 6.9").unwrap());
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system)?;
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR\n{}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+
+        assert_eq!(final_type, Type::Float);
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await;
+
+        match res {
+            Ok(Expr::Float(_, _, 6.9)) => Ok(()),
+            Err(e) => Err(format!("{:?}", e)),
+            _ => panic!("Expected (6.9), got {:?}", res),
+        }
+    }
+
+    #[tokio::test]
     async fn test_let_negate() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("let f = negate in f 6.9").unwrap());
@@ -1207,6 +1261,91 @@ pub mod test {
         let mut parser = Parser::new(
             Token::tokenize(
                 "map (let g = λx → 2.0 * (id x) - x in g) (let f = λx → -(id x), h = map f (map f [-1, -2, -3, -4]) in map f (map (λx → f (id x)) [3.28 - 0.14, id 6.9, (λx → x) 42.0, f (f 1.0)]))",
+            )
+            .unwrap(),
+        );
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system)?;
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR\n{}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+
+        assert_eq!(final_type, list![Type::Float]);
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await;
+        match res {
+            Ok(Expr::List(_, _, res)) => {
+                assert!(res.len() == 4);
+                assert!(matches!(res[0], Expr::Float(_, _, 3.1399999999999997)));
+                assert!(matches!(res[1], Expr::Float(_, _, 6.9)));
+                assert!(matches!(res[2], Expr::Float(_, _, 42.0)));
+                assert!(matches!(res[3], Expr::Float(_, _, 1.0)));
+            }
+            Err(e) => return Err(format!("{:?}", e)),
+            _ => panic!("Expected (6.9, 420, true), got {:?}", res),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_realistic() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser = Parser::new(
+            Token::tokenize(
+                r#"
+(λ xs ys zs →
+    let
+        t = map (λ x → (2.0 * x)) xs,
+
+        {- u = ys ++ [420],
+
+        v = take 2 zs,
+
+        f = (λ x →
+            let
+                a = (id x) + 1
+            in
+                (id a, a + a)
+        ),
+
+        g = (++) ((++) xs t) -}
+    in
+        {- map (λ z → let m = (λ x → f x) in m z) (map g zs) ++ [map f u, map f v] -}
+        t
+) 
+    [2.0, 3.0, 4.0]
+    [4, 5, 6] 
+    [[6, 7, 8], [9, 10, 11], [12, 13, 14]]
+"#,
             )
             .unwrap(),
         );

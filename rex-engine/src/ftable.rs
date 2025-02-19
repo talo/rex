@@ -179,6 +179,7 @@ where
 macro_rules! define_polymorphic_types {
     ($($ty:ident),*) => {
         $(
+            #[derive(Clone, Debug)]
             pub struct $ty(pub ::rex_ast::expr::Expr);
 
             impl Into<::rex_ast::expr::Expr> for $ty {
