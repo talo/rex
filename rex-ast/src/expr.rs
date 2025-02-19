@@ -6,7 +6,7 @@ use std::{
 use rex_lexer::span::{Position, Span};
 use rpds::HashTrieMapSync;
 
-use crate::id::{Id, IdDispenser};
+use crate::id::Id;
 
 pub type Scope = HashTrieMapSync<String, Expr>;
 
@@ -19,7 +19,15 @@ pub struct Var {
 }
 
 impl Var {
-    pub fn new(id: Id, span: Span, name: impl ToString) -> Self {
+    pub fn new(span: Span, name: impl ToString) -> Self {
+        Self {
+            id: Id::new(),
+            span,
+            name: name.to_string(),
+        }
+    }
+
+    pub fn with_id(id: Id, span: Span, name: impl ToString) -> Self {
         Self {
             id,
             span,
@@ -27,12 +35,8 @@ impl Var {
         }
     }
 
-    pub fn next(id_dispenser: &mut IdDispenser, name: impl ToString) -> Self {
-        Self::new(id_dispenser.next(), Span::default(), name)
-    }
-
-    pub fn next_with_span(id_dispenser: &mut IdDispenser, span: Span, name: impl ToString) -> Self {
-        Self::new(id_dispenser.next(), span, name)
+    pub fn reset_id(&mut self) {
+        self.id = Id::default();
     }
 }
 
@@ -160,6 +164,64 @@ impl Expr {
     pub fn set_span_end(&mut self, end: Position) {
         self.span_mut().end = end;
     }
+
+    pub fn reset_ids(&mut self) {
+        match self {
+            Self::Bool(id, ..) => *id = Id::default(),
+            Self::Uint(id, ..) => *id = Id::default(),
+            Self::Int(id, ..) => *id = Id::default(),
+            Self::Float(id, ..) => *id = Id::default(),
+            Self::String(id, ..) => *id = Id::default(),
+            Self::Tuple(id, _span, elems) => {
+                *id = Id::default();
+                for elem in elems {
+                    elem.reset_ids();
+                }
+            }
+            Self::List(id, _span, elems) => {
+                *id = Id::default();
+                for elem in elems {
+                    elem.reset_ids();
+                }
+            }
+            Self::Dict(id, _span, kvs) => {
+                *id = Id::default();
+                for (_k, v) in kvs {
+                    v.reset_ids();
+                }
+            }
+            Self::Var(var) => var.reset_id(),
+            Self::App(id, _span, g, x) => {
+                *id = Id::default();
+                g.reset_ids();
+                x.reset_ids();
+            }
+            Self::Lam(id, _span, _scope, param, body) => {
+                *id = Id::default();
+                param.reset_id();
+                body.reset_ids();
+            }
+            Self::Let(id, _span, var, def, body) => {
+                *id = Id::default();
+                var.reset_id();
+                def.reset_ids();
+                body.reset_ids();
+            }
+            Self::Ite(id, _span, cond, then, r#else) => {
+                *id = Id::default();
+                cond.reset_ids();
+                then.reset_ids();
+                r#else.reset_ids();
+            }
+            Self::Curry(id, _span, g, args) => {
+                *id = Id::default();
+                g.reset_id();
+                for arg in args {
+                    arg.reset_ids();
+                }
+            }
+        }
+    }
 }
 
 impl Display for Expr {
@@ -224,7 +286,7 @@ impl Display for Expr {
                     }
                 }
             }
-            Self::Lam(_id, _span, scope, param, body) => {
+            Self::Lam(_id, _span, _scope, param, body) => {
                 'λ'.fmt(f)?;
                 param.fmt(f)?;
                 " → ".fmt(f)?;

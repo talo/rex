@@ -192,14 +192,6 @@ where
         _ => panic!("Function application on non-function type"),
     };
 
-    // println!(
-    //     "pre-eval apply function: ({{{}}}:{}) ({}:{})",
-    //     f.borrow(),
-    //     &pre_f_type,
-    //     x.borrow(),
-    //     &pre_x_type
-    // );
-
     let f = eval(ctx, f.borrow()).await?;
     let x = eval(ctx, x.borrow()).await?;
 
@@ -217,11 +209,6 @@ where
         _ => panic!("Function application on non-function type"),
     };
 
-    // println!(
-    //     "post-eval apply function: ({{{}}}:{}) ({}:{})",
-    //     &f, &f_type, &x, &x_type
-    // );
-
     let res = match f {
         Expr::Var(var) => {
             // We need to reset the f_type because in order to do function
@@ -229,11 +216,6 @@ where
             // result of applying the next argument to the callee (which, thanks
             // to curring, may result in another function).
             let f_type = pre_f_type; // unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
-
-            println!(
-                "var function lookup: ({}:{}) ({}:{})",
-                &var, &f_type, &x, &x_type
-            );
 
             // TODO(loong): we should be checking if more than one function is
             // found. This is an ambiguity error.
@@ -268,13 +250,6 @@ where
         }
         Expr::Lam(id, _span, scope, param, body) => {
             let l_type = unify::apply_subst(ctx.env.read().await.get(&id).unwrap(), &ctx.subst);
-
-            // println!(
-            //     "dropping into lambda: ({}) [actually: {}] with param: ({}:{})",
-            //     &l_type, &pre_f_type, &x, &x_type
-            // );
-
-            // println!("hot-swap lambda body: {{{}}}:{}", &body, &pre_b_type);
 
             let new_body_id = Id(rand::random());
             let mut body = match *body {

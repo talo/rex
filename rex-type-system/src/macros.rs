@@ -159,6 +159,7 @@ macro_rules! arrow {
 #[cfg(test)]
 mod test {
     use rex_ast::id::Id;
+    use uuid::Uuid;
 
     use crate::types::{ADTVariant, Type, ADT};
 
@@ -176,11 +177,8 @@ mod test {
         assert_eq!(unresolved!("a"), Type::UnresolvedVar("a".to_string()));
         assert_eq!(unresolved!("b"), Type::UnresolvedVar("b".to_string()));
         assert_eq!(unresolved!("c"), Type::UnresolvedVar("c".to_string()));
-        assert_eq!(var!(Id(::std::u64::MIN)), Type::Var(Id(::std::u64::MIN)));
-        assert_eq!(var!(Id(::std::u64::MAX)), Type::Var(Id(::std::u64::MAX)));
-        assert_eq!(var!(Id(0)), Type::Var(Id(0)));
-        assert_eq!(var!(Id(1)), Type::Var(Id(1)));
-        assert_eq!(var!(Id(42)), Type::Var(Id(42)));
+        assert_eq!(var!(Id(Uuid::default())), Type::Var(Id(Uuid::default())));
+        assert_eq!(var!(Id(Uuid::max())), Type::Var(Id(Uuid::max())));
     }
 
     #[test]

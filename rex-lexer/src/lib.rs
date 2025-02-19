@@ -5,6 +5,7 @@ use std::str::FromStr;
 
 use span::{Span, Spanned};
 
+pub mod macros;
 pub mod span;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
