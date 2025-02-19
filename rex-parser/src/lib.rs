@@ -273,51 +273,51 @@ impl Parser {
         let mut expr = match self.current_token() {
             Some(Token::Add(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, "+"))
+                Expr::Var(Var::with_span(span, "+"))
             }
             Some(Token::And(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, "&&"))
+                Expr::Var(Var::with_span(span, "&&"))
             }
             Some(Token::Concat(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, "++"))
+                Expr::Var(Var::with_span(span, "++"))
             }
             Some(Token::Div(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, "/"))
+                Expr::Var(Var::with_span(span, "/"))
             }
             Some(Token::Dot(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, "."))
+                Expr::Var(Var::with_span(span, "."))
             }
             Some(Token::Eq(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, "=="))
+                Expr::Var(Var::with_span(span, "=="))
             }
             Some(Token::Ge(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, ">="))
+                Expr::Var(Var::with_span(span, ">="))
             }
             Some(Token::Gt(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, ">"))
+                Expr::Var(Var::with_span(span, ">"))
             }
             Some(Token::Le(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, "<="))
+                Expr::Var(Var::with_span(span, "<="))
             }
             Some(Token::Lt(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, "<"))
+                Expr::Var(Var::with_span(span, "<"))
             }
             Some(Token::Mul(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, "*"))
+                Expr::Var(Var::with_span(span, "*"))
             }
             Some(Token::Or(span, ..)) => {
                 self.next_token();
-                Expr::Var(Var::new(span, "||"))
+                Expr::Var(Var::with_span(span, "||"))
             }
             Some(Token::Sub(span, ..)) => {
                 if let Some(Token::ParenR(..)) = self.peek_token(1) {
@@ -332,7 +332,7 @@ impl Parser {
                     // do not want to allow expressions like `(+ 420)` the
                     // explicit check will allow for better error messages.
                     self.next_token();
-                    Expr::Var(Var::new(span, "-"))
+                    Expr::Var(Var::with_span(span, "-"))
                 } else {
                     self.parse_expr()?
                 }
@@ -973,7 +973,7 @@ impl Parser {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Ident(name, span, ..)) => Ok(Expr::Var(Var::new(span, name))),
+            Some(Token::Ident(name, span, ..)) => Ok(Expr::Var(Var::with_span(span, name))),
             Some(token) => {
                 self.errors.push(ParserErr::new(
                     *token.span(),

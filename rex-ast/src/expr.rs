@@ -19,7 +19,15 @@ pub struct Var {
 }
 
 impl Var {
-    pub fn new(span: Span, name: impl ToString) -> Self {
+    pub fn new(name: impl ToString) -> Self {
+        Self {
+            id: Id::new(),
+            span: Span::default(),
+            name: name.to_string(),
+        }
+    }
+
+    pub fn with_span(span: Span, name: impl ToString) -> Self {
         Self {
             id: Id::new(),
             span,

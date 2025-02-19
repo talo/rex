@@ -223,49 +223,59 @@ mod tests {
 
     #[test]
     fn test_basic_unification() {
+        let alpha = Id::new();
+        let beta = Id::new();
+
         let mut subst = HashMap::new();
 
         // Test case 1: α = Int
-        let t1 = Type::Var(Id(0));
+        let t1 = Type::Var(alpha);
         let t2 = Type::Int;
         assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
-        assert_eq!(apply_subst(&Type::Var(Id(0)), &subst), Type::Int);
+        assert_eq!(apply_subst(&Type::Var(alpha), &subst), Type::Int);
 
         // Test case 2: (α -> β) = (Int -> Bool)
-        let t1 = Type::Arrow(Box::new(Type::Var(Id(0))), Box::new(Type::Var(Id(1))));
+        let t1 = Type::Arrow(Box::new(Type::Var(alpha)), Box::new(Type::Var(beta)));
         let t2 = Type::Arrow(Box::new(Type::Int), Box::new(Type::Bool));
         assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
-        assert_eq!(apply_subst(&Type::Var(Id(0)), &subst), Type::Int);
-        assert_eq!(apply_subst(&Type::Var(Id(1)), &subst), Type::Bool);
+        assert_eq!(apply_subst(&Type::Var(alpha), &subst), Type::Int);
+        assert_eq!(apply_subst(&Type::Var(beta), &subst), Type::Bool);
     }
 
     #[test]
     fn test_var_unification() {
+        let alpha = Id::new();
+        let beta = Id::new();
+
         let mut subst = HashMap::new();
 
         // Unify α = β
-        let t1 = Type::Var(Id(0));
-        let t2 = Type::Var(Id(1));
+        let t1 = Type::Var(alpha);
+        let t2 = Type::Var(beta);
         assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
 
         // Now α should be mapped to β
-        assert_eq!(apply_subst(&Type::Var(Id(0)), &subst), Type::Var(Id(1)));
+        assert_eq!(apply_subst(&Type::Var(alpha), &subst), Type::Var(beta));
     }
 
     #[test]
     fn test_function_unification() {
+        let alpha = Id::new();
+        let beta = Id::new();
+        let gamma = Id::new();
+
         let mut subst = HashMap::new();
 
         // f : α -> β
         let f_type = Type::Arrow(
-            Box::new(Type::Var(Id(0))), // α
-            Box::new(Type::Var(Id(1))), // β
+            Box::new(Type::Var(alpha)), // α
+            Box::new(Type::Var(beta)),  // β
         );
 
         // g : γ -> γ
         let g_type = Type::Arrow(
-            Box::new(Type::Var(Id(2))), // γ
-            Box::new(Type::Var(Id(2))), // γ (same type)
+            Box::new(Type::Var(gamma)), // γ
+            Box::new(Type::Var(gamma)), // γ (same type)
         );
 
         // Unify f with g directly
@@ -281,33 +291,37 @@ mod tests {
         // And specifically they should both be γ -> γ
         assert_eq!(
             final_f,
-            Type::Arrow(Box::new(Type::Var(Id(2))), Box::new(Type::Var(Id(2))))
+            Type::Arrow(Box::new(Type::Var(gamma)), Box::new(Type::Var(gamma)))
         );
     }
 
     #[test]
     fn test_composition_unification() {
+        let alpha = Id::new();
+        let beta = Id::new();
+        let gamma = Id::new();
+
         let mut subst = HashMap::new();
 
         // f : α -> β
         let f_type = Type::Arrow(
-            Box::new(Type::Var(Id(0))), // α
-            Box::new(Type::Var(Id(1))), // β
+            Box::new(Type::Var(alpha)), // α
+            Box::new(Type::Var(beta)),  // β
         );
 
         // g : γ -> γ
         let g_type = Type::Arrow(
-            Box::new(Type::Var(Id(2))), // γ
-            Box::new(Type::Var(Id(2))), // γ (same type)
+            Box::new(Type::Var(gamma)), // γ
+            Box::new(Type::Var(gamma)), // γ (same type)
         );
 
         // Now unify g's output with f's input
-        let g_output = Type::Var(Id(2)); // γ
-        let f_input = Type::Var(Id(0)); // α
+        let g_output = Type::Var(gamma); // γ
+        let f_input = Type::Var(alpha); // α
         assert!(unify_eq(&g_output, &f_input, &mut subst).is_ok());
 
         // Let's make g take an Int
-        assert!(unify_eq(&Type::Var(Id(2)), &Type::Int, &mut subst).is_ok());
+        assert!(unify_eq(&Type::Var(gamma), &Type::Int, &mut subst).is_ok());
 
         // After unification:
         let final_g = apply_subst(&g_type, &subst);
@@ -322,27 +336,32 @@ mod tests {
         // f should be Int -> β (where β is still free)
         assert_eq!(
             final_f,
-            Type::Arrow(Box::new(Type::Int), Box::new(Type::Var(Id(1))))
+            Type::Arrow(Box::new(Type::Int), Box::new(Type::Var(beta)))
         );
     }
 
     #[test]
     fn test_higher_order_unification() {
+        let alpha = Id::new();
+        let beta = Id::new();
+        let gamma = Id::new();
+        let delta = Id::new();
+
         let mut subst = HashMap::new();
 
         // f : (α -> β) -> γ
         let f_type = Type::Arrow(
             Box::new(Type::Arrow(
-                Box::new(Type::Var(Id(0))), // α
-                Box::new(Type::Var(Id(1))), // β
+                Box::new(Type::Var(alpha)), // α
+                Box::new(Type::Var(beta)),  // β
             )),
-            Box::new(Type::Var(Id(2))), // γ
+            Box::new(Type::Var(gamma)), // γ
         );
 
         // g : (Int -> Bool) -> δ
         let g_type = Type::Arrow(
             Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Bool))),
-            Box::new(Type::Var(Id(3))), // δ
+            Box::new(Type::Var(delta)), // δ
         );
 
         // Unify f with g
@@ -356,48 +375,51 @@ mod tests {
             final_f,
             Type::Arrow(
                 Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Bool))),
-                Box::new(Type::Var(Id(3)))
+                Box::new(Type::Var(delta))
             )
         );
     }
 
     #[test]
     fn test_occurs_check() {
-        let var = Id(0);
+        let alpha = Id::new();
+        let beta = Id::new();
+
+        let var = alpha.clone();
 
         // Simple variable occurrence
-        assert!(occurs_check(var, &Type::Var(Id(0))));
-        assert!(!occurs_check(var, &Type::Var(Id(1))));
+        assert!(occurs_check(var, &Type::Var(alpha)));
+        assert!(!occurs_check(var, &Type::Var(beta)));
 
         // Arrow type occurrences
         assert!(occurs_check(
             var,
-            &Type::Arrow(Box::new(Type::Var(Id(0))), Box::new(Type::Int))
+            &Type::Arrow(Box::new(Type::Var(alpha)), Box::new(Type::Int))
         ));
         assert!(occurs_check(
             var,
-            &Type::Arrow(Box::new(Type::Int), Box::new(Type::Var(Id(0))))
+            &Type::Arrow(Box::new(Type::Int), Box::new(Type::Var(alpha)))
         ));
 
         // Tuple occurrences - would have failed before our fix
         assert!(occurs_check(
             var,
-            &Type::Tuple(vec![Type::Int, Type::Var(Id(0)), Type::Bool])
+            &Type::Tuple(vec![Type::Int, Type::Var(alpha), Type::Bool])
         ));
         assert!(!occurs_check(
             var,
-            &Type::Tuple(vec![Type::Int, Type::Var(Id(1)), Type::Bool])
+            &Type::Tuple(vec![Type::Int, Type::Var(beta), Type::Bool])
         ));
 
         // List occurrences - would have failed before our fix
-        assert!(occurs_check(var, &Type::List(Box::new(Type::Var(Id(0))))));
-        assert!(!occurs_check(var, &Type::List(Box::new(Type::Var(Id(1))))));
+        assert!(occurs_check(var, &Type::List(Box::new(Type::Var(alpha)))));
+        assert!(!occurs_check(var, &Type::List(Box::new(Type::Var(beta)))));
 
         // Nested structures - would have failed before our fix
         assert!(occurs_check(
             var,
             &Type::Tuple(vec![
-                Type::List(Box::new(Type::Var(Id(0)))),
+                Type::List(Box::new(Type::Var(alpha))),
                 Type::Arrow(
                     Box::new(Type::Int),
                     Box::new(Type::List(Box::new(Type::Bool)))
@@ -409,18 +431,18 @@ mod tests {
         // Case 1: The variable we're looking for is bound by the ForAll
         assert!(!occurs_check(
             var,
-            &Type::ForAll(Id(0), Box::new(Type::Var(Id(0))), BTreeSet::new())
+            &Type::ForAll(alpha, Box::new(Type::Var(alpha)), BTreeSet::new())
         ));
 
         // Case 2: The variable we're looking for occurs freely in the body
-        let var2 = Id(1);
+        let var2 = beta;
         assert!(occurs_check(
             var2,
             &Type::ForAll(
-                Id(0),
+                alpha,
                 Box::new(Type::Arrow(
-                    Box::new(Type::Var(Id(1))),
-                    Box::new(Type::Var(Id(0)))
+                    Box::new(Type::Var(beta)),
+                    Box::new(Type::Var(alpha))
                 )),
                 BTreeSet::new()
             )
