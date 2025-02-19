@@ -4,7 +4,6 @@ use std::{
     pin::Pin,
 };
 
-use rex_ast::id::IdDispenser;
 use rex_type_system::{
     constraint::{Constraint, ConstraintSystem},
     types::{ToType, Type, TypeEnv},
@@ -18,7 +17,7 @@ use crate::{
 };
 
 macro_rules! impl_register_fn_core {
-    ($self:expr, $id_dispenser:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
+    ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
         let n = $n.to_string();
         let t = <fn($($($param,)*)?) -> B as ToType>::to_type();
 
@@ -39,7 +38,7 @@ macro_rules! impl_register_fn_core {
                     if let None = assignments.get(var) {
                         assignments.insert(
                             var.clone(),
-                            Type::Var($id_dispenser.next()),
+                            Type::Var(rex_ast::id::Id::new()),
                         );
                     }
                 }
@@ -72,7 +71,7 @@ macro_rules! impl_register_fn_core {
                 );
             }
             None => {
-                let new_id = $id_dispenser.next();
+                let new_id = rex_ast::id::Id::new();
                 $self.fconstraints
                     .insert(n.clone(), Constraint::Eq(Type::Var(new_id), t));
                 $self.ftenv.insert(n.clone(), Type::Var(new_id));
@@ -111,7 +110,6 @@ macro_rules! impl_register_fn {
     ($name:ident $(,$($param:ident),*)?) => {
         pub fn $name <$($($param,)*)? B, F>(
             &mut self,
-            id_dispenser: &mut IdDispenser,
             n: impl ToString,
             f: F,
         ) ->
@@ -128,7 +126,7 @@ macro_rules! impl_register_fn {
                 + Sync
                 + 'static
         {
-            impl_register_fn_core!(self, id_dispenser, n, f, $name $(,$($param),*)?)
+            impl_register_fn_core!(self, n, f, $name $(,$($param),*)?)
         }
     };
 }
@@ -138,7 +136,6 @@ macro_rules! impl_register_fn_async {
         #[allow(unused_assignments)] // This is a workaround for the unused_assignments lint for the last `i += 1` in the macro expansion.
         pub fn $name <$($param,)* B, F>(
             &mut self,
-            id_dispenser: &mut IdDispenser,
             n: impl ToString,
             f: F,
         ) ->
@@ -155,7 +152,7 @@ macro_rules! impl_register_fn_async {
                 + Sync
                 + 'static,
         {
-            impl_register_fn_core!(self, id_dispenser, n, f, $name, $($param),*)
+            impl_register_fn_core!(self, n, f, $name, $($param),*)
         }
     };
 }
@@ -173,7 +170,7 @@ impl<State> Builder<State>
 where
     State: Clone + Send + Sync + 'static,
 {
-    pub fn with_prelude(id_dispenser: &mut IdDispenser) -> Result<Self, Error> {
+    pub fn with_prelude() -> Result<Self, Error> {
         let mut this = Self {
             ftable: Ftable::new(),
             fconstraints: Default::default(),
@@ -184,178 +181,100 @@ where
         // functions causes an infinite loop:
         //
         // ```rex
-        this.register_fn0(id_dispenser, "zero", |_ctx: &Context<_>| Ok(0u64))?;
-        this.register_fn0(id_dispenser, "zero", |_ctx: &Context<_>| Ok(0i64))?;
-        this.register_fn0(id_dispenser, "zero", |_ctx: &Context<_>| Ok(0f64))?;
+        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0u64))?;
+        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0i64))?;
+        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0f64))?;
         // ```
 
-        this.register_fn1(id_dispenser, "uint", |_ctx: &Context<_>, x: i64| {
-            Ok(x as u64)
-        })?;
-        this.register_fn1(id_dispenser, "uint", |_ctx: &Context<_>, x: f64| {
-            Ok(x as u64)
-        })?;
-        this.register_fn1(id_dispenser, "uint", |_ctx: &Context<_>, x: String| {
+        this.register_fn1("uint", |_ctx: &Context<_>, x: i64| Ok(x as u64))?;
+        this.register_fn1("uint", |_ctx: &Context<_>, x: f64| Ok(x as u64))?;
+        this.register_fn1("uint", |_ctx: &Context<_>, x: String| {
             x.parse::<u64>().map_err(|e| e.into())
         })?;
 
-        this.register_fn1(
-            id_dispenser,
-            "int",
-            |_ctx: &Context<_>, x: u64| Ok(x as i64),
-        )?;
-        this.register_fn1(
-            id_dispenser,
-            "int",
-            |_ctx: &Context<_>, x: f64| Ok(x as i64),
-        )?;
-        this.register_fn1(id_dispenser, "int", |_ctx: &Context<_>, x: String| {
+        this.register_fn1("int", |_ctx: &Context<_>, x: u64| Ok(x as i64))?;
+        this.register_fn1("int", |_ctx: &Context<_>, x: f64| Ok(x as i64))?;
+        this.register_fn1("int", |_ctx: &Context<_>, x: String| {
             x.parse::<i64>().map_err(|e| e.into())
         })?;
 
-        this.register_fn1(id_dispenser, "float", |_ctx: &Context<_>, x: u64| {
-            Ok(x as f64)
-        })?;
-        this.register_fn1(id_dispenser, "float", |_ctx: &Context<_>, x: i64| {
-            Ok(x as f64)
-        })?;
-        this.register_fn1(id_dispenser, "float", |_ctx: &Context<_>, x: String| {
+        this.register_fn1("float", |_ctx: &Context<_>, x: u64| Ok(x as f64))?;
+        this.register_fn1("float", |_ctx: &Context<_>, x: i64| Ok(x as f64))?;
+        this.register_fn1("float", |_ctx: &Context<_>, x: String| {
             x.parse::<f64>().map_err(|e| e.into())
         })?;
 
-        this.register_fn1(id_dispenser, "negate", |_ctx: &Context<_>, x: u64| {
-            Ok(-(x as i64))
-        })?;
-        this.register_fn1(id_dispenser, "negate", |_ctx: &Context<_>, x: i64| Ok(-x))?;
-        this.register_fn1(id_dispenser, "negate", |_ctx: &Context<_>, x: f64| Ok(-x))?;
+        this.register_fn1("negate", |_ctx: &Context<_>, x: u64| Ok(-(x as i64)))?;
+        this.register_fn1("negate", |_ctx: &Context<_>, x: i64| Ok(-x))?;
+        this.register_fn1("negate", |_ctx: &Context<_>, x: f64| Ok(-x))?;
 
-        this.register_fn2(id_dispenser, "+", |_ctx: &Context<_>, x: u64, y: u64| {
-            Ok(x + y)
-        })?;
-        this.register_fn2(id_dispenser, "+", |_ctx: &Context<_>, x: i64, y: i64| {
-            Ok(x + y)
-        })?;
-        this.register_fn2(id_dispenser, "+", |_ctx: &Context<_>, x: f64, y: f64| {
-            Ok(x + y)
-        })?;
+        this.register_fn2("+", |_ctx: &Context<_>, x: u64, y: u64| Ok(x + y))?;
+        this.register_fn2("+", |_ctx: &Context<_>, x: i64, y: i64| Ok(x + y))?;
+        this.register_fn2("+", |_ctx: &Context<_>, x: f64, y: f64| Ok(x + y))?;
 
-        this.register_fn2(id_dispenser, "-", |_ctx: &Context<_>, x: u64, y: u64| {
-            Ok(x - y)
-        })?;
-        this.register_fn2(id_dispenser, "-", |_ctx: &Context<_>, x: i64, y: i64| {
-            Ok(x - y)
-        })?;
-        this.register_fn2(id_dispenser, "-", |_ctx: &Context<_>, x: f64, y: f64| {
-            Ok(x - y)
-        })?;
+        this.register_fn2("-", |_ctx: &Context<_>, x: u64, y: u64| Ok(x - y))?;
+        this.register_fn2("-", |_ctx: &Context<_>, x: i64, y: i64| Ok(x - y))?;
+        this.register_fn2("-", |_ctx: &Context<_>, x: f64, y: f64| Ok(x - y))?;
 
-        this.register_fn2(id_dispenser, "*", |_ctx: &Context<_>, x: u64, y: u64| {
-            Ok(x * y)
-        })?;
-        this.register_fn2(id_dispenser, "*", |_ctx: &Context<_>, x: i64, y: i64| {
-            Ok(x * y)
-        })?;
-        this.register_fn2(id_dispenser, "*", |_ctx: &Context<_>, x: f64, y: f64| {
-            Ok(x * y)
+        this.register_fn2("*", |_ctx: &Context<_>, x: u64, y: u64| Ok(x * y))?;
+        this.register_fn2("*", |_ctx: &Context<_>, x: i64, y: i64| Ok(x * y))?;
+        this.register_fn2("*", |_ctx: &Context<_>, x: f64, y: f64| Ok(x * y))?;
+
+        this.register_fn2("/", |_ctx: &Context<_>, x: u64, y: u64| Ok(x / y))?;
+        this.register_fn2("/", |_ctx: &Context<_>, x: i64, y: i64| Ok(x / y))?;
+        this.register_fn2("/", |_ctx: &Context<_>, x: f64, y: f64| Ok(x / y))?;
+
+        this.register_fn1("abs", |_ctx: &Context<_>, x: i64| Ok(x.abs()))?;
+        this.register_fn1("abs", |_ctx: &Context<_>, x: f64| Ok(x.abs()))?;
+
+        this.register_fn1("sqrt", |_ctx: &Context<_>, x: f64| Ok(x.sqrt()))?;
+
+        this.register_fn2("pow", |_ctx: &Context<_>, x: f64, y: i32| Ok(x.powi(y)))?;
+        this.register_fn2("pow", |_ctx: &Context<_>, x: f64, y: f64| Ok(x.powf(y)))?;
+
+        this.register_fn1("id", |_ctx: &Context<_>, x: A| Ok(x))?;
+
+        this.register_fn2("get", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
+            Ok(xs[n as usize].clone())
         })?;
 
-        this.register_fn2(id_dispenser, "/", |_ctx: &Context<_>, x: u64, y: u64| {
-            Ok(x / y)
-        })?;
-        this.register_fn2(id_dispenser, "/", |_ctx: &Context<_>, x: i64, y: i64| {
-            Ok(x / y)
-        })?;
-        this.register_fn2(id_dispenser, "/", |_ctx: &Context<_>, x: f64, y: f64| {
-            Ok(x / y)
+        this.register_fn1("elem0", |_ctx: &Context<_>, xs: (A,)| Ok(xs.0.clone()))?;
+        this.register_fn1("elem1", |_ctx: &Context<_>, xs: (A, B)| Ok(xs.1.clone()))?;
+        this.register_fn1("elem2", |_ctx: &Context<_>, xs: (A, B, C)| Ok(xs.2.clone()))?;
+        this.register_fn1("elem3", |_ctx: &Context<_>, xs: (A, B, C, D)| {
+            Ok(xs.3.clone())
         })?;
 
-        this.register_fn1(id_dispenser, "abs", |_ctx: &Context<_>, x: i64| Ok(x.abs()))?;
-        this.register_fn1(id_dispenser, "abs", |_ctx: &Context<_>, x: f64| Ok(x.abs()))?;
-
-        this.register_fn1(id_dispenser, "sqrt", |_ctx: &Context<_>, x: f64| {
-            Ok(x.sqrt())
+        this.register_fn2("++", |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<A>| {
+            let mut zs = Vec::with_capacity(xs.len() + ys.len());
+            zs.extend(xs);
+            zs.extend(ys);
+            Ok(zs)
         })?;
 
-        this.register_fn2(id_dispenser, "pow", |_ctx: &Context<_>, x: f64, y: i32| {
-            Ok(x.powi(y))
-        })?;
-        this.register_fn2(id_dispenser, "pow", |_ctx: &Context<_>, x: f64, y: f64| {
-            Ok(x.powf(y))
+        this.register_fn2("take", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
+            Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
         })?;
 
-        this.register_fn1(id_dispenser, "id", |_ctx: &Context<_>, x: A| Ok(x))?;
-
-        this.register_fn2(
-            id_dispenser,
-            "get",
-            |_ctx: &Context<_>, n: u64, xs: Vec<A>| Ok(xs[n as usize].clone()),
-        )?;
-
-        this.register_fn1(id_dispenser, "elem0", |_ctx: &Context<_>, xs: (A,)| {
-            Ok(xs.0.clone())
+        this.register_fn2("skip", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
+            Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
         })?;
-        this.register_fn1(id_dispenser, "elem1", |_ctx: &Context<_>, xs: (A, B)| {
-            Ok(xs.1.clone())
+
+        this.register_fn2("zip", |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<B>| {
+            Ok(xs.into_iter().zip(ys.into_iter()).collect::<Vec<_>>())
         })?;
-        this.register_fn1(id_dispenser, "elem2", |_ctx: &Context<_>, xs: (A, B, C)| {
-            Ok(xs.2.clone())
+
+        this.register_fn1("unzip", |_ctx: &Context<_>, zs: Vec<(A, B)>| {
+            let mut xs = Vec::with_capacity(zs.len());
+            let mut ys = Vec::with_capacity(zs.len());
+            for (x, y) in zs {
+                xs.push(x);
+                ys.push(y);
+            }
+            Ok((xs, ys))
         })?;
-        this.register_fn1(
-            id_dispenser,
-            "elem3",
-            |_ctx: &Context<_>, xs: (A, B, C, D)| Ok(xs.3.clone()),
-        )?;
 
-        this.register_fn2(
-            id_dispenser,
-            "++",
-            |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<A>| {
-                let mut zs = Vec::with_capacity(xs.len() + ys.len());
-                zs.extend(xs);
-                zs.extend(ys);
-                Ok(zs)
-            },
-        )?;
-
-        this.register_fn2(
-            id_dispenser,
-            "take",
-            |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
-                Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
-            },
-        )?;
-
-        this.register_fn2(
-            id_dispenser,
-            "skip",
-            |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
-                Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
-            },
-        )?;
-
-        this.register_fn2(
-            id_dispenser,
-            "zip",
-            |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<B>| {
-                Ok(xs.into_iter().zip(ys.into_iter()).collect::<Vec<_>>())
-            },
-        )?;
-
-        this.register_fn1(
-            id_dispenser,
-            "unzip",
-            |_ctx: &Context<_>, zs: Vec<(A, B)>| {
-                let mut xs = Vec::with_capacity(zs.len());
-                let mut ys = Vec::with_capacity(zs.len());
-                for (x, y) in zs {
-                    xs.push(x);
-                    ys.push(y);
-                }
-                Ok((xs, ys))
-            },
-        )?;
-
-        this.register_fn_async2(id_dispenser, "map", |ctx, f: Func<A, B>, xs: Vec<A>| {
+        this.register_fn_async2("map", |ctx, f: Func<A, B>, xs: Vec<A>| {
             Box::pin(async move {
                 let mut ys: Vec<B> = Vec::with_capacity(xs.len());
                 for x in xs {
@@ -366,17 +285,13 @@ where
             })
         })?;
 
-        this.register_fn_async3(
-            id_dispenser,
-            "compose",
-            |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
-                Box::pin(async move {
-                    let x = apply(ctx, &g, &x).await?;
-                    let x = apply(ctx, &f, &x).await?;
-                    Ok(C(x))
-                })
-            },
-        )?;
+        this.register_fn_async3("compose", |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
+            Box::pin(async move {
+                let x = apply(ctx, &g, &x).await?;
+                let x = apply(ctx, &f, &x).await?;
+                Ok(C(x))
+            })
+        })?;
 
         Ok(this)
     }

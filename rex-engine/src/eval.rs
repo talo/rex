@@ -230,7 +230,7 @@ where
                         );
                         f(ctx, &vec![x]).await?
                     }
-                    // TODO(loong): fix the ID and the span.
+                    // TODO(loong): fix the span.
                     _ => {
                         println!(
                             "curry function lookup: ({}:{}) ({}:{})",
@@ -238,10 +238,10 @@ where
                         );
 
                         let mut x = x.clone();
-                        *x.id_mut() = Id(rand::random());
+                        *x.id_mut() = Id::new();
                         ctx.env.write().await.insert(*x.id(), pre_x_type.clone());
 
-                        Expr::Curry(Id(rand::random()), var.span, var, vec![x])
+                        Expr::Curry(Id::new(), var.span, var, vec![x])
                     }
                 }
             } else {
@@ -251,11 +251,11 @@ where
         Expr::Lam(id, _span, scope, param, body) => {
             let l_type = unify::apply_subst(ctx.env.read().await.get(&id).unwrap(), &ctx.subst);
 
-            let new_body_id = Id(rand::random());
+            let new_body_id = Id::new();
             let mut body = match *body {
                 Expr::App(_, span, g, y) => {
-                    let new_g_id = Id(rand::random());
-                    let new_y_id = Id(rand::random());
+                    let new_g_id = Id::new();
+                    let new_y_id = Id::new();
 
                     let mut g = g.clone();
                     *g.id_mut() = new_g_id;
@@ -324,8 +324,8 @@ where
                     panic!("Function not found: {}:{}", var.name, f_type)
                 }
             } else {
-                // TODO(loong): fix the ID and the span.
-                Expr::Curry(Id(rand::random()), span, var, args)
+                // TODO(loong): fix the span.
+                Expr::Curry(Id::new(), span, var, args)
             }
         }
         _ => unimplemented!(),
@@ -398,7 +398,6 @@ where
 
 #[cfg(test)]
 pub mod test {
-    use rex_ast::id::IdDispenser;
     use rex_lexer::Token;
     use rex_parser::Parser;
     use rex_type_system::{
@@ -416,22 +415,15 @@ pub mod test {
 
     #[tokio::test]
     async fn test_simple() {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("1").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system).unwrap();
 
@@ -455,25 +447,18 @@ pub mod test {
 
     #[tokio::test]
     async fn test_negate() {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("-3.14").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         dbg!(&constraint_system);
         dbg!(&type_env);
 
         let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system).unwrap();
 
@@ -497,22 +482,15 @@ pub mod test {
 
     #[tokio::test]
     async fn test_negate_tuple() {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("(-6.9, -420)").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system).unwrap();
 
@@ -543,22 +521,15 @@ pub mod test {
 
     #[tokio::test]
     async fn test_negate_list() {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("[-6.9, -3.14]").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system).unwrap();
 
@@ -589,22 +560,15 @@ pub mod test {
 
     #[tokio::test]
     async fn test_add() {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("6.9 + 4.20").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system).unwrap();
 
@@ -628,23 +592,16 @@ pub mod test {
 
     #[tokio::test]
     async fn test_add_then_add() {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser =
             Parser::new(Token::tokenize("let f = (\\x -> (x+x)) in (f (6.9 + 3.14))").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::<()>::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::<()>::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system).unwrap();
 
@@ -673,22 +630,15 @@ pub mod test {
 
     #[tokio::test]
     async fn test_id_then_add() {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("let f = id in (f 6.9) + (f 3.14)").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::<()>::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::<()>::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system).unwrap();
 
@@ -717,22 +667,15 @@ pub mod test {
 
     #[tokio::test]
     async fn test_add_tuple() {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("(6.9 + 4.20, 6 + 9)").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system).unwrap();
 
@@ -763,22 +706,15 @@ pub mod test {
 
     #[tokio::test]
     async fn test_polymorphism() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("(id 6.9, id 420)").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
 
@@ -811,23 +747,16 @@ pub mod test {
 
     #[tokio::test]
     async fn test_let_polymorphism() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser =
             Parser::new(Token::tokenize("let jd = λx → x in (jd 6.9, jd 420)").unwrap()); // Yes, we do mean jd
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
 
@@ -861,12 +790,11 @@ pub mod test {
 
     #[tokio::test]
     async fn test_let_polymorphism_overloading() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser =
             Parser::new(Token::tokenize("let f = λx → -x in (f 6.9, f 420, f (3 + 14))").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
         let mut expr_type_env = ExprTypeEnv::new();
 
@@ -874,14 +802,8 @@ pub mod test {
         // println!("TYPE_ENV\n{}", sprint_type_env(&type_env));
         // println!("CONSTRAINTS\n{}", constraint_system);
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
 
@@ -926,24 +848,17 @@ pub mod test {
 
     #[tokio::test]
     async fn test_parametric_ftable() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser =
             Parser::new(Token::tokenize("let f = λx → id x in (f 6.9, f 420, f true)").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
 
@@ -974,23 +889,16 @@ pub mod test {
 
     #[tokio::test]
     async fn test_let_id() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("let f = id in f 6.9").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1023,24 +931,17 @@ pub mod test {
 
     #[tokio::test]
     async fn test_zero() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser =
             Parser::new(Token::tokenize("(6.9 + zero, 420 + zero, -314 + zero)").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1079,23 +980,16 @@ pub mod test {
 
     #[tokio::test]
     async fn test_let_negate() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("let f = negate in f 6.9").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1128,25 +1022,18 @@ pub mod test {
 
     #[tokio::test]
     async fn test_let_in_let_in() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(
             Token::tokenize("let f = (λx → -x), u = f 6.9, v = f 420 in (u, v)").unwrap(),
         );
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1184,25 +1071,18 @@ pub mod test {
 
     #[tokio::test]
     async fn test_map() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(
             Token::tokenize("let f = (λx → -x) in map f [3.14, 6.9, 42.0, 1.0]").unwrap(),
         );
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1241,25 +1121,18 @@ pub mod test {
 
     #[tokio::test]
     async fn test_map_map() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(
             Token::tokenize("let f = (λx → -x) in map f (map f [3.14, 6.9, 42.0, 1.0])").unwrap(),
         );
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1293,28 +1166,21 @@ pub mod test {
 
     #[tokio::test]
     async fn test_map_extensive() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(
             Token::tokenize(
                 "map (let g = λx → 2.0 * (id x) - x in g) (let f = λx → -(id x), h = map f (map f [-1, -2, -3, -4]) in map f (map (λx → f (id x)) [3.28 - 0.14, id 6.9, (λx → x) 42.0, f (f 1.0)]))",
             )
             .unwrap(),
         );
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1354,23 +1220,16 @@ pub mod test {
 
     #[tokio::test]
     async fn test_lambda_let_in_var() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(Token::tokenize("(λx → let y = id x in y + y) 6.9").unwrap());
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1403,7 +1262,6 @@ pub mod test {
 
     #[tokio::test]
     async fn test_realistic() -> Result<(), String> {
-        let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(
             Token::tokenize(
                 r#"
@@ -1433,21 +1291,15 @@ pub mod test {
             )
             .unwrap(),
         );
-        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+        let expr = parser.parse_expr().unwrap();
 
-        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let builder = Builder::with_prelude().unwrap();
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
 
-        let ty = generate_constraints(
-            &expr,
-            &type_env,
-            &mut expr_type_env,
-            &mut constraint_system,
-            &mut id_dispenser,
-        )
-        .unwrap();
+        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+            .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system)?;
         let final_type = unify::apply_subst(&ty, &subst);

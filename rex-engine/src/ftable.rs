@@ -39,11 +39,8 @@ macro_rules! impl_register_fn {
                         let mut i = 0;
                         let r = f(ctx $(, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),* )?)?;
 
-                        // FIXME(loong): it is absolutely critical to assign a
-                        // proper ID here. We need unique IDs for created
-                        // expressions, because we need to associate a type with
-                        // them in the expression-type environment.
-                        r.try_encode(Id(rand::random()), Span::default())
+                        // FIXME(loong): assign a proper span
+                        r.try_encode(Id::new(), Span::default())
                     })
                 }),
             ))
@@ -78,11 +75,8 @@ macro_rules! impl_register_fn_async {
                         let mut i = 0;
                         let r = f(ctx, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*).await?;
 
-                        // FIXME(loong): it is absolutely critical to assign a
-                        // proper ID here. We need unique IDs for created
-                        // expressions, because we need to associate a type with
-                        // them in the expression-type environment.
-                        r.try_encode(Id(rand::random()), Span::default())
+                        // FIXME(loong): assign a proper span
+                        r.try_encode(Id::new(), Span::default())
                     })
                 }),
             ))
