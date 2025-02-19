@@ -35,7 +35,7 @@ impl ConstraintSystem {
     }
 
     pub fn add_global_constraint(&mut self, constraint: Constraint) {
-        if !self.is_constrained_globally(&constraint) {
+        if !self.has_constraint_globally(&constraint) {
             self.global_constraints.push(constraint);
         }
     }
@@ -53,7 +53,7 @@ impl ConstraintSystem {
     }
 
     pub fn add_local_constraint(&mut self, constraint: Constraint) {
-        if !self.is_constrained_globally(&constraint) && !self.is_constrained_locally(&constraint) {
+        if !self.has_constraint_globally(&constraint) && !self.has_constraint_locally(&constraint) {
             self.local_constraints.push(constraint);
         }
     }
@@ -68,20 +68,19 @@ impl ConstraintSystem {
     }
 
     pub fn apply_subst(&mut self, subst: &Subst) {
-        Self::apply_subst_to_constraints(subst, self.global_constraints.iter_mut());
-        Self::apply_subst_to_constraints(subst, self.local_constraints.iter_mut());
+        Self::apply_subst_to_constraints(subst, self.constraints_mut());
     }
 
-    pub fn is_constrained_globally(&self, constraint: &Constraint) -> bool {
-        Self::is_constrained_by_constraints(constraint, self.global_constraints.iter())
+    pub fn has_constraint_globally(&self, constraint: &Constraint) -> bool {
+        Self::constraints_has_constraint(constraint, self.global_constraints.iter())
     }
 
-    pub fn is_constrained_locally(&self, constraint: &Constraint) -> bool {
-        Self::is_constrained_by_constraints(constraint, self.local_constraints.iter())
+    pub fn has_constraint_locally(&self, constraint: &Constraint) -> bool {
+        Self::constraints_has_constraint(constraint, self.local_constraints.iter())
     }
 
-    pub fn is_constrained(&self, constraint: &Constraint) -> bool {
-        Self::is_constrained_by_constraints(constraint, self.constraints())
+    pub fn has_constraint(&self, constraint: &Constraint) -> bool {
+        Self::constraints_has_constraint(constraint, self.constraints())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -94,7 +93,13 @@ impl ConstraintSystem {
             .chain(self.global_constraints.iter())
     }
 
-    fn is_constrained_by_constraints<'a>(
+    pub fn constraints_mut(&mut self) -> impl Iterator<Item = &mut Constraint> {
+        self.local_constraints
+            .iter_mut()
+            .chain(self.global_constraints.iter_mut())
+    }
+
+    fn constraints_has_constraint<'a>(
         constraint: &Constraint,
         constraints: impl Iterator<Item = &'a Constraint>,
     ) -> bool {
@@ -152,7 +157,7 @@ impl Display for ConstraintSystem {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Constraint {
     Eq(Type, Type),
     OneOf(Type, HashSet<Type>),
@@ -339,13 +344,18 @@ pub fn generate_constraints(
         Expr::Let(id, _span, var, def, body) => {
             // TODO(loong): why were we dropping local constraints here? There
             // was a very specific reason and we need to make sure it won't
-            // cause unexpected problems.
+            // cause unexpected problems elsewhere...
+            //
+            // The code was written a while ago though, so maybe the specific
+            // issue just isn't relevant anymore. Our existing test suite is
+            // pretty thorough.
             //
             // ```rs
-            // // First generate constraints for the definition let mut
-            // def_constraint_system = ConstraintSystem { local_constraints:
-            //     vec![], global_constraints:
-            //     constraint_system.global_constraints.clone(), };
+            // First generate constraints for the definition let mut
+            // let mut def_constraint_system = ConstraintSystem {
+            //     local_constraints: vec![],
+            //     global_constraints: constraint_system.global_constraints.clone(),
+            // };
             // ```
             let mut def_constraint_system = constraint_system.clone();
 

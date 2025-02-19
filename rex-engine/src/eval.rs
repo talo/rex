@@ -47,22 +47,12 @@ where
         Expr::Ite(id, span, cond, then, r#else) => {
             eval_ite(ctx, id, span, cond, then, r#else).await
         }
-        Expr::Curry(id, span, f, args) => {
-            // todo!(
-            //     "eval the curry by checking if it has enough args: {} ({})",
-            //     f,
-            //     args.iter()
-            //         .map(|a| a.to_string())
-            //         .collect::<Vec<_>>()
-            //         .join(") (")
-            // )
-            Ok(Expr::Curry(
-                id.clone(),
-                span.clone(),
-                f.clone(),
-                args.clone(),
-            ))
-        }
+        Expr::Curry(id, span, f, args) => Ok(Expr::Curry(
+            id.clone(),
+            span.clone(),
+            f.clone(),
+            args.clone(),
+        )),
     }
 }
 
@@ -177,15 +167,6 @@ pub async fn eval_app<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let app_type = unify::apply_subst(ctx.env.read().await.get(id).unwrap(), &ctx.subst);
-    let pre_f_type = unify::apply_subst(ctx.env.read().await.get(f.id()).unwrap(), &ctx.subst);
-    let pre_x_type = unify::apply_subst(ctx.env.read().await.get(x.id()).unwrap(), &ctx.subst);
-
-    println!(
-        "evaluating app: ({{{}}}:{}) ({}:{}) with apply type: {}",
-        f, pre_f_type, x, pre_x_type, app_type
-    );
-
     apply(ctx, f, x).await
 }
 

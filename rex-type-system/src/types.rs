@@ -5,8 +5,6 @@ use std::{
 
 use rex_ast::id::Id;
 
-use crate::arrow;
-
 pub type TypeEnv = HashMap<String, Type>;
 
 pub type ExprTypeEnv = HashMap<Id, Type>;
@@ -309,20 +307,16 @@ impl Display for Type {
                 x.fmt(f)?;
                 ". ".fmt(f)?;
                 t.fmt(f)?;
-                // TODO(loong): re-assess if dependencies are necessary.
-                //
-                // ```rs
-                // if !deps.is_empty() {
-                //     " with {".fmt(f)?;
-                //     for (i, dep) in deps.iter().enumerate() {
-                //         dep.fmt(f)?;
-                //         if i + 1 < deps.len() {
-                //             ", ".fmt(f)?;
-                //         }
-                //     }
-                //     '}'.fmt(f)?;
-                // }
-                // ```
+                if !deps.is_empty() {
+                    " with {".fmt(f)?;
+                    for (i, dep) in deps.iter().enumerate() {
+                        dep.fmt(f)?;
+                        if i + 1 < deps.len() {
+                            ", ".fmt(f)?;
+                        }
+                    }
+                    '}'.fmt(f)?;
+                }
                 Ok(())
             }
             Type::List(x) => {
