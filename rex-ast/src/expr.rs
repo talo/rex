@@ -4,8 +4,11 @@ use std::{
 };
 
 use rex_lexer::span::{Position, Span};
+use rpds::HashTrieMapSync;
 
 use crate::id::{Id, IdDispenser};
+
+pub type Scope = HashTrieMapSync<String, Expr>;
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -61,7 +64,7 @@ pub enum Expr {
 
     Var(Var),                                       // x
     App(Id, Span, Box<Expr>, Box<Expr>),            // f x
-    Lam(Id, Span, Var, Box<Expr>),                  // λx → e
+    Lam(Id, Span, Scope, Var, Box<Expr>),           // λx → e
     Let(Id, Span, Var, Box<Expr>, Box<Expr>),       // let x = e1 in e2
     Ite(Id, Span, Box<Expr>, Box<Expr>, Box<Expr>), // if e1 then e2 else e3
 
@@ -221,7 +224,7 @@ impl Display for Expr {
                     }
                 }
             }
-            Self::Lam(_id, _span, param, body) => {
+            Self::Lam(_id, _span, scope, param, body) => {
                 'λ'.fmt(f)?;
                 param.fmt(f)?;
                 " → ".fmt(f)?;

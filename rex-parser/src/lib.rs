@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, vec};
 
 use rex_ast::{
-    expr::{Expr, Var},
+    expr::{Expr, Scope, Var},
     id::IdDispenser,
 };
 use rex_lexer::{
@@ -690,6 +690,7 @@ impl Parser {
             body = Expr::Lam(
                 id_dispenser.next(),
                 Span::from_begin_end(param_span.begin, body_span_end),
+                Scope::new_sync(),
                 Var::new(param_id, param_span, param),
                 Box::new(body),
             );

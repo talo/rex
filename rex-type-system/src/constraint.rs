@@ -319,7 +319,7 @@ pub fn generate_constraints(
             Ok(result_type)
         }
 
-        Expr::Lam(id, _span, param, body) => {
+        Expr::Lam(id, _span, _scope, param, body) => {
             let param_type = Type::Var(id_dispenser.next());
 
             let mut new_env = env.clone();
@@ -337,11 +337,16 @@ pub fn generate_constraints(
         }
 
         Expr::Let(id, _span, var, def, body) => {
-            // First generate constraints for the definition
-            // let mut def_constraint_system = ConstraintSystem {
-            //     local_constraints: vec![],
-            //     global_constraints: constraint_system.global_constraints.clone(),
-            // };
+            // TODO(loong): why were we dropping local constraints here? There
+            // was a very specific reason and we need to make sure it won't
+            // cause unexpected problems.
+            //
+            // ```rs
+            // // First generate constraints for the definition let mut
+            // def_constraint_system = ConstraintSystem { local_constraints:
+            //     vec![], global_constraints:
+            //     constraint_system.global_constraints.clone(), };
+            // ```
             let mut def_constraint_system = constraint_system.clone();
 
             let def_type =
@@ -349,6 +354,10 @@ pub fn generate_constraints(
 
             // Solve definition constraints to get its type
             let mut def_subst = HashMap::new();
+            // FIXME(loong): this is a hack to make sure that constraints are
+            // solved even if multiple rounds of unification are needed. This
+            // should be fixed to loop until a round occcurs where no more
+            // constraints are solved.
             for _ in 1..100 {
                 for constraint in def_constraint_system.constraints() {
                     match constraint {
@@ -382,7 +391,28 @@ pub fn generate_constraints(
                     _ => None,
                 })
                 .collect();
-            
+
+            // TODO(loong): is this safe to do? We only generalize the
+            // let-binding if it is a function. It is possible that the binding
+            // is a type variable that itself could later resolve to be a
+            // function. We do this because when we generalize expressions like
+            //
+            // ```rex
+            // (λx → let y = id x in y) 6.9
+            // ```
+            //
+            // the generalization of `y` causes issues with resolving the final
+            // type of the expression. Weirdly, this manifests as `y` having a
+            // different type variable at the `in` expression than at the `let`
+            // expression. This could be because the free variables are being
+            // computed incorrectly, or it could be the way we instantiate `y`
+            // when we see it at the `in` expression.
+
+            // let gen_type = match solved_def_type {
+            //     Type::Arrow(..) => generalize(env, &solved_def_type, gen_deps),
+            //     _ => solved_def_type,
+            // };
+
             let gen_type = generalize(env, &solved_def_type, gen_deps);
 
             // Add generalized type to environment
@@ -653,7 +683,7 @@ fn instantiate(
 mod tests {
     use std::collections::BTreeSet;
 
-    use rex_ast::expr::Var;
+    use rex_ast::expr::{Scope, Var};
     use rex_lexer::span::Span;
 
     use crate::{
@@ -851,6 +881,7 @@ mod tests {
             Box::new(Expr::Lam(
                 id_dispenser.next(),
                 Span::default(),
+                Scope::new_sync(),
                 Var::next(&mut id_dispenser, "xs"),
                 Box::new(Expr::App(
                     id_dispenser.next(),
@@ -987,6 +1018,7 @@ mod tests {
             Box::new(Expr::Lam(
                 id_dispenser.next(),
                 Span::default(),
+                Scope::new_sync(),
                 Var::next(&mut id_dispenser, "x"),
                 Box::new(Expr::Var(Var::next(&mut id_dispenser, "x"))),
             )),
@@ -1036,6 +1068,7 @@ mod tests {
             Box::new(Expr::Lam(
                 id_dispenser.next(),
                 Span::default(),
+                Scope::new_sync(),
                 Var::next(&mut id_dispenser, "x"),
                 Box::new(Expr::Var(Var::next(&mut id_dispenser, "x"))),
             )),
@@ -1142,14 +1175,17 @@ mod tests {
             Box::new(Expr::Lam(
                 id_dispenser.next(),
                 Span::default(),
+                Scope::new_sync(),
                 Var::next(&mut id_dispenser, "f"),
                 Box::new(Expr::Lam(
                     id_dispenser.next(),
                     Span::default(),
+                    Scope::new_sync(),
                     Var::next(&mut id_dispenser, "g"),
                     Box::new(Expr::Lam(
                         id_dispenser.next(),
                         Span::default(),
+                        Scope::new_sync(),
                         Var::next(&mut id_dispenser, "x"),
                         Box::new(Expr::App(
                             id_dispenser.next(),
@@ -1257,6 +1293,7 @@ mod tests {
             Box::new(Expr::Lam(
                 id_dispenser.next(),
                 Span::default(),
+                Scope::new_sync(),
                 Var::next(&mut id_dispenser, "x"),
                 Box::new(Expr::Var(Var::next(&mut id_dispenser, "x"))),
             )),

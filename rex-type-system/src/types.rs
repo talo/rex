@@ -309,16 +309,20 @@ impl Display for Type {
                 x.fmt(f)?;
                 ". ".fmt(f)?;
                 t.fmt(f)?;
-                if !deps.is_empty() {
-                    " with {".fmt(f)?;
-                    for (i, dep) in deps.iter().enumerate() {
-                        dep.fmt(f)?;
-                        if i + 1 < deps.len() {
-                            ", ".fmt(f)?;
-                        }
-                    }
-                    '}'.fmt(f)?;
-                }
+                // TODO(loong): re-assess if dependencies are necessary.
+                //
+                // ```rs
+                // if !deps.is_empty() {
+                //     " with {".fmt(f)?;
+                //     for (i, dep) in deps.iter().enumerate() {
+                //         dep.fmt(f)?;
+                //         if i + 1 < deps.len() {
+                //             ", ".fmt(f)?;
+                //         }
+                //     }
+                //     '}'.fmt(f)?;
+                // }
+                // ```
                 Ok(())
             }
             Type::List(x) => {
@@ -464,6 +468,15 @@ impl ToType for str {
 impl ToType for String {
     fn to_type() -> Type {
         Type::String
+    }
+}
+
+impl<B> ToType for fn() -> B
+where
+    B: ToType,
+{
+    fn to_type() -> Type {
+        B::to_type()
     }
 }
 

@@ -2,7 +2,7 @@ use std::{borrow::Borrow, collections::BTreeMap, sync::Arc};
 
 use futures::future;
 use rex_ast::{
-    expr::{Expr, Var},
+    expr::{Expr, Scope, Var},
     id::Id,
 };
 use rex_lexer::span::Span;
@@ -10,12 +10,9 @@ use rex_type_system::{
     types::{ExprTypeEnv, Type},
     unify::{self, Subst},
 };
-use rpds::HashTrieMapSync;
 use tokio::sync::RwLock;
 
 use crate::{error::Error, ftable::Ftable};
-
-pub type Scope = HashTrieMapSync<String, Expr>;
 
 #[derive(Clone)]
 pub struct Context<State>
@@ -43,13 +40,28 @@ where
         Expr::Dict(id, span, dict) => eval_dict(ctx, id, span, dict).await,
         Expr::Var(var) => eval_var(ctx, var).await,
         Expr::App(id, span, f, x) => eval_app(ctx, id, span, f, x).await,
-        Expr::Lam(id, span, param, body) => eval_lam(ctx, id, span, param, body).await,
+        Expr::Lam(id, span, scope, param, body) => {
+            eval_lam(ctx, id, span, scope, param, body).await
+        }
         Expr::Let(id, span, var, def, body) => eval_let(ctx, id, span, var, def, body).await,
         Expr::Ite(id, span, cond, then, r#else) => {
             eval_ite(ctx, id, span, cond, then, r#else).await
         }
-        Expr::Curry(_id, _span, _f, _args) => {
-            todo!("eval the curry by checking if it has enough args")
+        Expr::Curry(id, span, f, args) => {
+            // todo!(
+            //     "eval the curry by checking if it has enough args: {} ({})",
+            //     f,
+            //     args.iter()
+            //         .map(|a| a.to_string())
+            //         .collect::<Vec<_>>()
+            //         .join(") (")
+            // )
+            Ok(Expr::Curry(
+                id.clone(),
+                span.clone(),
+                f.clone(),
+                args.clone(),
+            ))
         }
     }
 }
@@ -123,16 +135,18 @@ where
     Ok(Expr::Dict(id.clone(), span.clone(), result))
 }
 
+#[async_recursion::async_recursion]
 pub async fn eval_var<State>(ctx: &Context<State>, var: &Var) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
+    println!("evaluated var: {}...", var);
     let pre_var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
 
     let var = match ctx.scope.get(&var.name) {
         None => var,
-        Some(Expr::Var(var)) => var,
-        Some(non_var_expr) => return Ok(non_var_expr.clone()),
+        Some(Expr::Var(var)) => return eval_var(ctx, var).await,
+        Some(non_var_expr) => return eval(ctx, non_var_expr).await, // Ok(non_var_expr.clone()),
     };
 
     let var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
@@ -149,6 +163,7 @@ where
         }
     }
 
+    println!(" into: {}", var);
     Ok(Expr::Var(var.clone()))
 }
 
@@ -196,13 +211,13 @@ where
         _ => panic!("Function application on non-function type"),
     };
 
-    println!(
-        "pre-eval apply function: ({{{}}}:{}) ({}:{})",
-        f.borrow(),
-        &pre_f_type,
-        x.borrow(),
-        &pre_x_type
-    );
+    // println!(
+    //     "pre-eval apply function: ({{{}}}:{}) ({}:{})",
+    //     f.borrow(),
+    //     &pre_f_type,
+    //     x.borrow(),
+    //     &pre_x_type
+    // );
 
     let f = eval(ctx, f.borrow()).await?;
     let x = eval(ctx, x.borrow()).await?;
@@ -221,10 +236,10 @@ where
         _ => panic!("Function application on non-function type"),
     };
 
-    println!(
-        "post-eval apply function: ({{{}}}:{}) ({}:{})",
-        &f, &f_type, &x, &x_type
-    );
+    // println!(
+    //     "post-eval apply function: ({{{}}}:{}) ({}:{})",
+    //     &f, &f_type, &x, &x_type
+    // );
 
     let res = match f {
         Expr::Var(var) => {
@@ -270,18 +285,15 @@ where
                 panic!("Function not found: {}:{}", var.name, f_type)
             }
         }
-        Expr::Lam(id, _span, param, body) => {
+        Expr::Lam(id, _span, scope, param, body) => {
             let l_type = unify::apply_subst(ctx.env.read().await.get(&id).unwrap(), &ctx.subst);
 
-            println!(
-                "dropping into lambda: ({}) [actually: {}] with param: ({}:{})",
-                &l_type, &pre_f_type, &x, &x_type
-            );
+            // println!(
+            //     "dropping into lambda: ({}) [actually: {}] with param: ({}:{})",
+            //     &l_type, &pre_f_type, &x, &x_type
+            // );
 
-            let mut ctx = ctx.clone();
-            ctx.scope = ctx.scope.insert(param.name, x);
-
-            println!("hot-swap lambda body: {{{}}}:{}", &body, &pre_b_type);
+            // println!("hot-swap lambda body: {{{}}}:{}", &body, &pre_b_type);
 
             let new_body_id = Id(rand::random());
             let mut body = match *body {
@@ -303,6 +315,12 @@ where
             };
             *body.id_mut() = new_body_id;
             ctx.env.write().await.insert(new_body_id, *pre_b_type);
+
+            let mut ctx: Context<State> = ctx.clone();
+            ctx.scope.insert_mut(param.name, x);
+            for (k, v) in scope.iter() {
+                ctx.scope.insert_mut(k.clone(), v.clone());
+            }
 
             eval(&ctx, &body).await?
         }
@@ -363,18 +381,24 @@ where
 }
 
 pub async fn eval_lam<State>(
-    _ctx: &Context<State>,
+    ctx: &Context<State>,
     id: &Id,
     span: &Span,
+    scope: &Scope,
     param: &Var,
     body: &Expr,
 ) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
+    let mut scope = scope.clone();
+    for entry in ctx.scope.iter() {
+        scope.insert_mut(entry.0.clone(), entry.1.clone());
+    }
     Ok(Expr::Lam(
         id.clone(),
         span.clone(),
+        scope,
         param.clone(),
         Box::new(body.clone()),
     ))
@@ -1037,7 +1061,63 @@ pub mod test {
         match res {
             Ok(Expr::Float(_, _, 6.9)) => Ok(()),
             Err(e) => Err(format!("{:?}", e)),
-            _ => panic!("Expected (6.9), got {:?}", res),
+            _ => panic!("Expected 6.9, got {:?}", res),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_zero() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser =
+            Parser::new(Token::tokenize("(6.9 + zero, 420 + zero, -314 + zero)").unwrap());
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system)?;
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR\n{}",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+
+        assert_eq!(final_type, tuple!(Type::Float, Type::Uint, Type::Int));
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await
+        .unwrap();
+
+        match res {
+            Expr::Tuple(_, _, res) => {
+                assert!(res.len() == 3);
+                assert!(matches!(res[0], Expr::Float(_, _, 6.9)));
+                assert!(matches!(res[1], Expr::Uint(_, _, 420)));
+                assert!(matches!(res[2], Expr::Int(_, _, -314)));
+                Ok(())
+            }
+            _ => panic!("Expected (-6.9, 420), got {:?}", res),
         }
     }
 
@@ -1132,18 +1212,18 @@ pub mod test {
             },
             &expr,
         )
-        .await;
+        .await
+        .unwrap();
+
         match res {
-            Ok(Expr::Tuple(_, _, res)) => {
+            Expr::Tuple(_, _, res) => {
                 assert!(res.len() == 2);
                 assert!(matches!(res[0], Expr::Float(_, _, -6.9)));
                 assert!(matches!(res[1], Expr::Int(_, _, -420)));
+                Ok(())
             }
-            Err(e) => return Err(format!("{:?}", e)),
             _ => panic!("Expected (-6.9, 420), got {:?}", res),
         }
-
-        Ok(())
     }
 
     #[tokio::test]
@@ -1317,30 +1397,78 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_lambda_let_in_var() -> Result<(), String> {
+        let mut id_dispenser = IdDispenser::new();
+        let mut parser = Parser::new(Token::tokenize("(λx → let y = id x in y + y) 6.9").unwrap());
+        let expr = parser.parse_expr(&mut id_dispenser).unwrap();
+
+        let builder = Builder::with_prelude(&mut id_dispenser).unwrap();
+        let (mut constraint_system, ftable, type_env) = builder.build();
+
+        let mut expr_type_env = ExprTypeEnv::new();
+
+        let ty = generate_constraints(
+            &expr,
+            &type_env,
+            &mut expr_type_env,
+            &mut constraint_system,
+            &mut id_dispenser,
+        )
+        .unwrap();
+
+        let subst = unify::unify_constraints(&constraint_system)?;
+        let final_type = unify::apply_subst(&ty, &subst);
+
+        println!(
+            "EXPR\n{}\n",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
+
+        assert_eq!(final_type, Type::Float);
+
+        let res = eval(
+            &Context {
+                scope: Scope::new_sync(),
+                ftable,
+                subst,
+                env: Arc::new(RwLock::new(expr_type_env)),
+                state: (),
+            },
+            &expr,
+        )
+        .await;
+
+        match res {
+            Ok(Expr::Float(_, _, 13.8)) => Ok(()),
+            Err(e) => Err(format!("{:?}", e)),
+            _ => panic!("Expected 13.8, got {:?}", res),
+        }
+    }
+
+    #[tokio::test]
     async fn test_realistic() -> Result<(), String> {
         let mut id_dispenser = IdDispenser::new();
         let mut parser = Parser::new(
             Token::tokenize(
                 r#"
-(λ xs ys zs →
+(λxs ys zs →
     let
-        t = map (λ x → (2.0 * x)) xs,
+        t = map (λx → ((get 0 xs) * x)) xs,
 
-        {- u = ys ++ [420],
+        u = ys ++ [420],
 
         v = take 2 zs,
 
-        f = (λ x →
+        f = (λx →
             let
-                a = (id x) + 1
+                a = (id x) 
             in
-                (id a, a + a)
+                a + a
         ),
 
-        g = (++) ((++) xs t) -}
+        g = (++) ((++) xs t)
     in
-        {- map (λ z → let m = (λ x → f x) in m z) (map g zs) ++ [map f u, map f v] -}
-        t
+        zip (g xs) [[u], v]
 ) 
     [2.0, 3.0, 4.0]
     [4, 5, 6] 
@@ -1369,11 +1497,15 @@ pub mod test {
         let final_type = unify::apply_subst(&ty, &subst);
 
         println!(
-            "EXPR\n{}",
+            "EXPR\n{}\n",
             sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
         );
+        println!("FINAL TYPE\n{}", final_type);
 
-        assert_eq!(final_type, list![Type::Float]);
+        assert_eq!(
+            final_type,
+            list![tuple!(Type::Float, list!(list!(Type::Uint)))]
+        );
 
         let res = eval(
             &Context {
@@ -1385,17 +1517,72 @@ pub mod test {
             },
             &expr,
         )
-        .await;
+        .await
+        .unwrap();
+
+        println!("res: {}", res);
         match res {
-            Ok(Expr::List(_, _, res)) => {
-                assert!(res.len() == 4);
-                assert!(matches!(res[0], Expr::Float(_, _, 3.1399999999999997)));
-                assert!(matches!(res[1], Expr::Float(_, _, 6.9)));
-                assert!(matches!(res[2], Expr::Float(_, _, 42.0)));
-                assert!(matches!(res[3], Expr::Float(_, _, 1.0)));
+            Expr::List(_, _, res) => {
+                assert!(res.len() == 2);
+                match &res[0] {
+                    Expr::Tuple(_, _, res) => {
+                        assert!(res.len() == 2);
+                        assert!(matches!(&res[0], Expr::Float(_, _, 2.0)));
+                        match &res[1] {
+                            Expr::List(_, _, res) => {
+                                assert!(res.len() == 1);
+                                match &res[0] {
+                                    Expr::List(_, _, res) => {
+                                        assert!(res.len() == 4);
+                                        assert!(matches!(res[0], Expr::Uint(_, _, 4)));
+                                        assert!(matches!(res[1], Expr::Uint(_, _, 5)));
+                                        assert!(matches!(res[2], Expr::Uint(_, _, 6)));
+                                        assert!(matches!(res[3], Expr::Uint(_, _, 420)));
+                                    }
+                                    _ => panic!("Expected [4, 5, 6, 420], got {:?}", res),
+                                }
+                            }
+                            _ => panic!("Expected [[4, 5, 6, 420]], got {:?}", res),
+                        }
+                    }
+                    _ => panic!("Expected (2, [[4, 5, 6, 420]]), got {:?}", res),
+                }
+                match &res[1] {
+                    Expr::Tuple(_, _, res) => {
+                        assert!(res.len() == 2);
+                        assert!(matches!(&res[0], Expr::Float(_, _, 3.0)));
+                        match &res[1] {
+                            Expr::List(_, _, res) => {
+                                assert!(res.len() == 2);
+                                match &res[0] {
+                                    Expr::List(_, _, res) => {
+                                        assert!(res.len() == 3);
+                                        assert!(matches!(res[0], Expr::Uint(_, _, 6)));
+                                        assert!(matches!(res[1], Expr::Uint(_, _, 7)));
+                                        assert!(matches!(res[2], Expr::Uint(_, _, 8)));
+                                    }
+                                    _ => panic!("Expected [6, 7, 8], got {:?}", res),
+                                }
+                                match &res[1] {
+                                    Expr::List(_, _, res) => {
+                                        assert!(res.len() == 3);
+                                        assert!(matches!(res[0], Expr::Uint(_, _, 9)));
+                                        assert!(matches!(res[1], Expr::Uint(_, _, 10)));
+                                        assert!(matches!(res[2], Expr::Uint(_, _, 11)));
+                                    }
+                                    _ => panic!("Expected [9, 10, 11], got {:?}", res),
+                                }
+                            }
+                            _ => panic!("Expected [[6, 7, 8], [9, 10, 11]], got {:?}", res),
+                        }
+                    }
+                    _ => panic!("Expected (3.0, [6, 7, 8], [9, 10, 11]]), got {:?}", res),
+                }
             }
-            Err(e) => return Err(format!("{:?}", e)),
-            _ => panic!("Expected (6.9, 420, true), got {:?}", res),
+            _ => panic!(
+                "Expected [(2.0, [[4, 5, 6, 420]]), (3.0, [6, 7, 8], [9, 10, 11]])], got {:?}",
+                res
+            ),
         }
 
         Ok(())

@@ -4,7 +4,7 @@ use std::{
     pin::Pin,
 };
 
-use rex_ast::{expr::Expr, id::IdDispenser};
+use rex_ast::id::IdDispenser;
 use rex_type_system::{
     constraint::{Constraint, ConstraintSystem},
     types::{ToType, Type, TypeEnv},
@@ -14,13 +14,13 @@ use crate::{
     codec::{Decode, Encode, Func},
     error::Error,
     eval::{apply, Context},
-    ftable::{Ftable, A, B, C},
+    ftable::{Ftable, A, B, C, D},
 };
 
 macro_rules! impl_register_fn_core {
-    ($self:expr, $id_dispenser:expr, $n:expr, $f:expr, $name:ident, $($param:ident),*) => {{
+    ($self:expr, $id_dispenser:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
         let n = $n.to_string();
-        let t = <fn($($param,)*) -> B as ToType>::to_type();
+        let t = <fn($($($param,)*)?) -> B as ToType>::to_type();
 
         let unresolved_vars = t.unresolved_vars();
 
@@ -108,8 +108,8 @@ macro_rules! impl_register_fn_core {
 }
 
 macro_rules! impl_register_fn {
-    ($name:ident, $($param:ident),*) => {
-        pub fn $name <$($param,)* B, F>(
+    ($name:ident $(,$($param:ident),*)?) => {
+        pub fn $name <$($($param,)*)? B, F>(
             &mut self,
             id_dispenser: &mut IdDispenser,
             n: impl ToString,
@@ -117,18 +117,18 @@ macro_rules! impl_register_fn {
         ) ->
             Result<(), Error>
         where
-            $($param : Decode + Send + ToType,)*
+            $($($param : Decode + Send + ToType,)*)?
             B: Encode + ToType,
             F: Fn(
                 &Context<State>,
-                $($param,)*
+                $($($param,)*)?
             ) -> Result<B, Error>
                 + Clone
                 + Send
                 + Sync
                 + 'static
         {
-            impl_register_fn_core!(self, id_dispenser, n, f, $name, $($param),*)
+            impl_register_fn_core!(self, id_dispenser, n, f, $name $(,$($param),*)?)
         }
     };
 }
@@ -179,6 +179,15 @@ where
             fconstraints: Default::default(),
             ftenv: Default::default(),
         };
+
+        // FIXME(loong): attempting to type-check / evaluate the following
+        // functions causes an infinite loop:
+        //
+        // ```rex
+        this.register_fn0(id_dispenser, "zero", |_ctx: &Context<_>| Ok(0u64))?;
+        this.register_fn0(id_dispenser, "zero", |_ctx: &Context<_>| Ok(0i64))?;
+        this.register_fn0(id_dispenser, "zero", |_ctx: &Context<_>| Ok(0f64))?;
+        // ```
 
         this.register_fn1(id_dispenser, "uint", |_ctx: &Context<_>, x: i64| {
             Ok(x as u64)
@@ -282,6 +291,21 @@ where
             |_ctx: &Context<_>, n: u64, xs: Vec<A>| Ok(xs[n as usize].clone()),
         )?;
 
+        this.register_fn1(id_dispenser, "elem0", |_ctx: &Context<_>, xs: (A,)| {
+            Ok(xs.0.clone())
+        })?;
+        this.register_fn1(id_dispenser, "elem1", |_ctx: &Context<_>, xs: (A, B)| {
+            Ok(xs.1.clone())
+        })?;
+        this.register_fn1(id_dispenser, "elem2", |_ctx: &Context<_>, xs: (A, B, C)| {
+            Ok(xs.2.clone())
+        })?;
+        this.register_fn1(
+            id_dispenser,
+            "elem3",
+            |_ctx: &Context<_>, xs: (A, B, C, D)| Ok(xs.3.clone()),
+        )?;
+
         this.register_fn2(
             id_dispenser,
             "++",
@@ -357,6 +381,7 @@ where
         Ok(this)
     }
 
+    impl_register_fn!(register_fn0);
     impl_register_fn!(register_fn1, A0);
     impl_register_fn!(register_fn2, A0, A1);
     impl_register_fn!(register_fn3, A0, A1, A2);

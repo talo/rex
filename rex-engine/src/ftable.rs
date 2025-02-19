@@ -11,17 +11,20 @@ use crate::{
 };
 
 macro_rules! impl_register_fn {
-    ($name:ident, $($param:ident),*) => {
-        pub fn $name <$($param,)* B, F>(
+    ($name:ident $(, $($param:ident),*)?) => {
+        #[allow(unused_assignments)] // This is a workaround for the unused_assignments lint for the last `i += 1` in the macro expansion.
+        #[allow(unused_mut)] // This is a workaround for the unused_assignments lint for `let mut i = 0` not being needed for functions with zero parameters.
+        #[allow(unused_variables)] // This is a workaround for the unused_assignments lint for `args` and `i` not being needed for functions with zero parameters.
+        pub fn $name <$($($param,)*)? B, F>(
             &mut self,
             n: impl ToString,
             f: F,
         ) where
-            $($param : Decode + Send + ToType,)*
+            $($($param : Decode + Send + ToType,)*)?
             B: Encode + ToType,
             F: Fn(
                 &Context<State>,
-                $($param,)*
+                $($($param,)*)?
             ) -> Result<B, Error>
                 + Clone
                 + Send
@@ -29,12 +32,12 @@ macro_rules! impl_register_fn {
                 + 'static
         {
             self.0.entry(n.to_string()).or_default().push((
-                <fn($($param,)*) -> B as ToType>::to_type(),
+                <fn($($($param,)*)?) -> B as ToType>::to_type(),
                 Box::new(move |ctx, args| {
                     let f = f.clone();
                     Box::pin(async move {
-                        let mut i: isize = -1;
-                        let r = f(ctx, $(decode_arg::<$param>(args, { i += 1; i as usize })?),*)?;
+                        let mut i = 0;
+                        let r = f(ctx $(, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),* )?)?;
 
                         // FIXME(loong): it is absolutely critical to assign a
                         // proper ID here. We need unique IDs for created
@@ -156,6 +159,7 @@ where
             .into_iter()
     }
 
+    impl_register_fn!(register_fn0);
     impl_register_fn!(register_fn1, A0);
     impl_register_fn!(register_fn2, A0, A1);
     impl_register_fn!(register_fn3, A0, A1, A2);

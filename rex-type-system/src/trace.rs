@@ -167,7 +167,7 @@ pub fn sprint_expr_with_type(expr: &Expr, env: &ExprTypeEnv, subst: Option<&Subs
             s.push(')');
             s
         }
-        Expr::Lam(id, _, param, body) => {
+        Expr::Lam(id, _, _scope, param, body) => {
             let mut s = String::new();
             s.push('λ');
             s.push_str(&sprint_expr_with_type(
