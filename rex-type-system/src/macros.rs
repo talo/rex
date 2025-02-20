@@ -202,8 +202,6 @@ mod test {
     }
     #[test]
     fn test_dict_type_macro() {
-        let c = String::from("c");
-
         // with trailing comma
         assert_eq!(
             dict!(a: bool!(), b: uint!(), c: int!(),),

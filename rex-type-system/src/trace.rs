@@ -158,7 +158,7 @@ pub fn sprint_expr_with_type(expr: &Expr, env: &ExprTypeEnv, subst: Option<&Subs
                 .map(|t| t.to_string())
                 .unwrap_or("_".to_string())
         ),
-        Expr::App(id, _, g, x) => {
+        Expr::App(_id, _, g, x) => {
             let mut s = String::new();
             s.push('(');
             s.push_str(&sprint_expr_with_type(g, env, subst));
@@ -167,7 +167,7 @@ pub fn sprint_expr_with_type(expr: &Expr, env: &ExprTypeEnv, subst: Option<&Subs
             s.push(')');
             s
         }
-        Expr::Lam(id, _, _scope, param, body) => {
+        Expr::Lam(_id, _, _scope, param, body) => {
             let mut s = String::new();
             s.push('λ');
             s.push_str(&sprint_expr_with_type(
@@ -179,7 +179,7 @@ pub fn sprint_expr_with_type(expr: &Expr, env: &ExprTypeEnv, subst: Option<&Subs
             s.push_str(&sprint_expr_with_type(body, env, subst));
             s
         }
-        Expr::Let(id, _, var, def, body) => {
+        Expr::Let(_id, _, var, def, body) => {
             let mut s = String::new();
             s.push_str("let ");
             s.push_str(&sprint_expr_with_type(&Expr::Var(var.clone()), env, subst));
@@ -189,7 +189,7 @@ pub fn sprint_expr_with_type(expr: &Expr, env: &ExprTypeEnv, subst: Option<&Subs
             s.push_str(&sprint_expr_with_type(body, env, subst));
             s
         }
-        Expr::Ite(id, _, cond, then, r#else) => {
+        Expr::Ite(_id, _, cond, then, r#else) => {
             let mut s = String::new();
             s.push_str("if ");
             s.push_str(&sprint_expr_with_type(cond, env, subst));
