@@ -177,14 +177,11 @@ where
             ftenv: Default::default(),
         };
 
-        // FIXME(loong): attempting to type-check / evaluate the following
-        // functions causes an infinite loop:
-        //
-        // ```rex
+        this.register_fn1("swap", |_ctx: &Context<_>, (x, y): (A, B)| Ok((y, x)))?;
+
         this.register_fn0("zero", |_ctx: &Context<_>| Ok(0u64))?;
         this.register_fn0("zero", |_ctx: &Context<_>| Ok(0i64))?;
         this.register_fn0("zero", |_ctx: &Context<_>| Ok(0f64))?;
-        // ```
 
         this.register_fn1("uint", |_ctx: &Context<_>, x: i64| Ok(x as u64))?;
         this.register_fn1("uint", |_ctx: &Context<_>, x: f64| Ok(x as u64))?;
@@ -207,6 +204,9 @@ where
         this.register_fn1("negate", |_ctx: &Context<_>, x: u64| Ok(-(x as i64)))?;
         this.register_fn1("negate", |_ctx: &Context<_>, x: i64| Ok(-x))?;
         this.register_fn1("negate", |_ctx: &Context<_>, x: f64| Ok(-x))?;
+
+        this.register_fn2("&&", |_ctx: &Context<_>, x: bool, y: bool| Ok(x && y))?;
+        this.register_fn2("||", |_ctx: &Context<_>, x: bool, y: bool| Ok(x || y))?;
 
         this.register_fn2("+", |_ctx: &Context<_>, x: u64, y: u64| Ok(x + y))?;
         this.register_fn2("+", |_ctx: &Context<_>, x: i64, y: i64| Ok(x + y))?;
@@ -273,6 +273,17 @@ where
             }
             Ok((xs, ys))
         })?;
+
+        this.register_fn_async3(
+            "flip",
+            |ctx: &Context<_>, f: Func<A, Func<B, C>>, x: B, y: A| {
+                Box::pin(async move {
+                    let g = apply(ctx, &f, &y).await?;
+                    let z = apply(ctx, &g, &x).await?;
+                    Ok(C(z))
+                })
+            },
+        )?;
 
         this.register_fn_async2("map", |ctx, f: Func<A, B>, xs: Vec<A>| {
             Box::pin(async move {

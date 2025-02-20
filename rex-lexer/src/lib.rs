@@ -282,7 +282,7 @@ impl Token {
             r"(?P<LambdaR>->)|",
             r"(?P<ParenL>\()|",
             r"(?P<ParenR>\))|",
-            r"(?P<Pipe>\|)|",
+            // r"(?P<Pipe>\|)|",
             r"(?P<Question>\?)|",
             r"(?P<SemiColon>;)|",
             r"(?P<Whitespace>( |\t))|",

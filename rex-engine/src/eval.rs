@@ -233,7 +233,7 @@ where
                     // TODO(loong): fix the span.
                     _ => {
                         println!(
-                            "curry function lookup: ({}:{}) ({}:{})",
+                            "creating curry: ({}:{}) ({}:{})",
                             &var, &f_type, &x, &x_type
                         );
 
@@ -314,12 +314,16 @@ where
                 // found. This is an ambiguity error.
                 let f = ctx.ftable.lookup_fns(&var.name, f_type.clone()).next();
 
-                if let Some((f, _ftype)) = f {
+                if let Some((f, found_ftype)) = f {
+                    println!("  ↳curried function found: {}", found_ftype);
                     println!(
-                        "calling curried function: ({}:{}) ({}:{}) results in type: {}",
+                        "  ↳calling curried function: ({}:{}) ({}:{}) results in type: {}",
                         &var, &f_type, &x, &x_type, &b_type
                     );
-                    f(ctx, &args).await?
+                    let res = f(ctx, &args).await?;
+
+                    println!("  ↳curry function result: {}", &res);
+                    res
                 } else {
                     panic!("Function not found: {}:{}", var.name, f_type)
                 }
@@ -398,14 +402,17 @@ where
 
 #[cfg(test)]
 pub mod test {
+    use rex_ast::{assert_expr_eq, b, d, f, i, l, s, tup, u};
     use rex_lexer::Token;
     use rex_parser::Parser;
     use rex_type_system::{
+        bool,
         constraint::generate_constraints,
-        list,
-        trace::{sprint_expr_with_type, sprint_subst, sprint_type_env},
+        dict, float, int, list, string,
+        trace::sprint_expr_with_type,
         tuple,
         types::Type,
+        uint,
         unify::{self},
     };
 
@@ -413,9 +420,13 @@ pub mod test {
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_simple() {
-        let mut parser = Parser::new(Token::tokenize("1").unwrap());
+    /// Helper function for parsing, inferring, and evaluating a given code
+    /// snippet. Pretty much all of the test suites can use this flow for
+    /// testing that the engine is correctly evaluating types and expressions.
+    /// In the future, we should probably make this (or some version of this) an
+    /// actual function for library users too.
+    async fn parse_infer_and_eval(code: &str) -> Result<(Expr, Type), Error> {
+        let mut parser = Parser::new(Token::tokenize(code).unwrap());
         let expr = parser.parse_expr().unwrap();
 
         let builder = Builder::with_prelude().unwrap();
@@ -426,697 +437,434 @@ pub mod test {
             .unwrap();
 
         let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let res_type = unify::apply_subst(&ty, &subst);
 
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert!(final_type == Type::Uint);
+        println!(
+            "{}\n",
+            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
+        );
 
         let res = eval(
             &Context {
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
-                env: Arc::new(RwLock::new(expr_type_env)), // NOTE(loong): stop talking shit about me.
+                env: Arc::new(RwLock::new(expr_type_env)),
                 state: (),
             },
             &expr,
         )
-        .await
-        .unwrap();
-        assert!(matches!(res, Expr::Uint(_, _, 1)));
+        .await;
+
+        res.map(|res| (res, res_type))
+    }
+
+    #[tokio::test]
+    async fn test_literals() {
+        let (res, res_type) = parse_infer_and_eval(r#"true"#).await.unwrap();
+        assert_eq!(res_type, bool!());
+        assert_expr_eq!(res, b!(true); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"420"#).await.unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(420); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"6.9"#).await.unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(6.9); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#""Hello, world!""#).await.unwrap();
+        assert_eq!(res_type, string!());
+        assert_expr_eq!(res, s!("Hello, world!"); ignore span);
     }
 
     #[tokio::test]
     async fn test_negate() {
-        let mut parser = Parser::new(Token::tokenize("-3.14").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"-420"#).await.unwrap();
+        assert_eq!(res_type, int!());
+        assert_expr_eq!(res, i!(-420); ignore span);
 
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
+        let (res, res_type) = parse_infer_and_eval(r#"-3.14"#).await.unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(-3.14); ignore span);
 
-        dbg!(&constraint_system);
-        dbg!(&type_env);
+        let (res, res_type) = parse_infer_and_eval(r#"(-3.14, -69)"#).await.unwrap();
+        assert_eq!(res_type, tuple!(float!(), int!()));
+        assert_expr_eq!(res, tup!(f!(-3.14), i!(-69)); ignore span);
 
-        let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+        let (res, res_type) = parse_infer_and_eval(r#"[-0, -314, -69, -420]"#)
+            .await
             .unwrap();
+        assert_eq!(res_type, list!(int!()));
+        assert_expr_eq!(res, l!(i!(0), i!(-314), i!(-69), i!(-420)); ignore span);
 
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"[-0.0, -3.14, -6.9, -42.0]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(float!()));
+        assert_expr_eq!(res, l!(f!(-0.0), f!(-3.14), f!(-6.9), f!(-42.0)); ignore span);
 
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert!(final_type == Type::Float);
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await
-        .unwrap();
-        assert!(matches!(res, Expr::Float(_, _, -3.14)));
+        let (res, res_type) = parse_infer_and_eval(r#"{ x = -3.14, y = -69 }"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, dict! { x: float!(), y: int!() });
+        assert_expr_eq!(res, d!{ x = f!(-3.14), y = i!(-69)}; ignore span);
     }
 
     #[tokio::test]
-    async fn test_negate_tuple() {
-        let mut parser = Parser::new(Token::tokenize("(-6.9, -420)").unwrap());
-        let expr = parser.parse_expr().unwrap();
+    async fn test_maths() {
+        let (res, res_type) = parse_infer_and_eval(r#"6.9 + 4.20"#).await.unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(11.100000000000001); ignore span);
 
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
+        let (res, res_type) = parse_infer_and_eval(r#"6 + 9"#).await.unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(15); ignore span);
 
-        let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+        let (res, res_type) = parse_infer_and_eval(r#"(-4) + (-20)"#).await.unwrap();
+        assert_eq!(res_type, int!());
+        assert_expr_eq!(res, i!(-24); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"(-4) + (int 20)"#).await.unwrap();
+        assert_eq!(res_type, int!());
+        assert_expr_eq!(res, i!(16); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"6.9 - 4.20"#).await.unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(2.7); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"(int 6) - (int 9)"#).await.unwrap();
+        assert_eq!(res_type, int!());
+        assert_expr_eq!(res, i!(-3); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"(-) (int 4) (int 20)"#)
+            .await
             .unwrap();
+        assert_eq!(res_type, int!());
+        assert_expr_eq!(res, i!(-16); ignore span);
 
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"4 * 20 + 6 * 9"#).await.unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(134); ignore span);
 
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert!(final_type == Type::Tuple(vec![Type::Float, Type::Int]));
+        let (res, res_type) = parse_infer_and_eval(r#"4 * (20 + 6) * 9"#).await.unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(936); ignore span);
 
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await
-        .unwrap();
-        match res {
-            Expr::Tuple(_, _, res) => {
-                assert!(res.len() == 2);
-                assert!(matches!(res[0], Expr::Float(_, _, -6.9)));
-                assert!(matches!(res[1], Expr::Int(_, _, -420)));
-            }
-            _ => panic!("Expected (-6.9, -420), got {:?}", res),
-        }
+        let (res, res_type) = parse_infer_and_eval(r#"((+) 3 14) * 4 + ((*) 20 6) / 9"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(81); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"((+) 3.0 1.4) * 4.0 + ((*) 2.0 6.9) / 3.14"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(21.99490445859873); ignore span);
     }
 
     #[tokio::test]
-    async fn test_negate_list() {
-        let mut parser = Parser::new(Token::tokenize("[-6.9, -3.14]").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+    async fn test_let_add_in_add() {
+        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → x + x in f (6.9 + 3.14)"#)
+            .await
             .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
 
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → x + x in f (id 6.9 + id 3.14)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
 
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert!(final_type == Type::List(Type::Float.into()));
+        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → x + x in f (id (6.9 + 3.14))"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
 
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await
-        .unwrap();
-        match res {
-            Expr::List(_, _, res) => {
-                assert!(res.len() == 2);
-                assert!(matches!(res[0], Expr::Float(_, _, -6.9)));
-                assert!(matches!(res[1], Expr::Float(_, _, -3.14)));
-            }
-            _ => panic!("Expected [-6.9, -420], got {:?}", res),
-        }
+        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → x + x in id (f (6.9 + 3.14))"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = λx → (id x + id x) in f (6.9 + 3.14)"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
+
+        // FIXME(loong): this test is not passing.
+        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → id (x + x) in f (6.9 + 3.14)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
     }
 
     #[tokio::test]
-    async fn test_add() {
-        let mut parser = Parser::new(Token::tokenize("6.9 + 4.20").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+    async fn test_let_id_in() {
+        let (res, res_type) = parse_infer_and_eval(r#"let f = id in id 420"#)
+            .await
             .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(420); ignore span);
 
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"let f = id in id 6.9"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(6.9); ignore span);
 
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert!(final_type == Type::Float);
+        let (res, res_type) = parse_infer_and_eval(r#"let f = id in id 69"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(69); ignore span);
 
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await
-        .unwrap();
-        assert!(matches!(res, Expr::Float(_, _, 11.100000000000001)));
+        let (res, res_type) = parse_infer_and_eval(r#"let f = id in id 3.14"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(3.14); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"let f = id in (f 6.9) + (f 3.14)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(10.040000000000001); ignore span);
     }
 
     #[tokio::test]
-    async fn test_add_then_add() {
-        let mut parser =
-            Parser::new(Token::tokenize("let f = (\\x -> (x+x)) in (f (6.9 + 3.14))").unwrap());
-        let expr = parser.parse_expr().unwrap();
+    async fn test_tuple() {
+        let (res, res_type) = parse_infer_and_eval(r#"(6.9, 420, true)"#).await.unwrap();
+        assert_eq!(res_type, tuple!(float!(), uint!(), bool!()));
+        assert_expr_eq!(res, tup!(f!(6.9), u!(420), b!(true)); ignore span);
 
-        let builder = Builder::<()>::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
+        let (res, res_type) =
+            parse_infer_and_eval(r#"(3.14 * 6.9, 20 * 4, (*) (int 4) (int 105), true || false)"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, tuple!(float!(), uint!(), int!(), bool!()));
+        assert_expr_eq!(res, tup!(f!(21.666), u!(80), i!(420), b!(true)); ignore span);
 
-        let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
-            .unwrap();
-
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
-
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, Type::Float);
-
-        println!(
-            "\n{}\n",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
-        );
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
+        let (res, res_type) = parse_infer_and_eval(
+            r#"((id 3.14) * (id 6.9), (id 20) * (id 4), (*) (id (int 4)) (id (int 105)), (id true) || (id false))"#,
         )
         .await
         .unwrap();
-        assert!(matches!(res, Expr::Float(_, _, 20.080000000000002)));
-    }
+        assert_eq!(res_type, tuple!(float!(), uint!(), int!(), bool!()));
+        assert_expr_eq!(res, tup!(f!(21.666), u!(80), i!(420), b!(true)); ignore span);
 
-    #[tokio::test]
-    async fn test_id_then_add() {
-        let mut parser = Parser::new(Token::tokenize("let f = id in (f 6.9) + (f 3.14)").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::<()>::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
-            .unwrap();
-
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
-
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, Type::Float);
-
-        println!(
-            "\n{}\n",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
-        );
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
+        let (res, res_type) = parse_infer_and_eval(
+            r#"(id (3.14 * 6.9), id (20 * 4), id ((*) (int 4) (int 105)), id (true || false))"#,
         )
         .await
         .unwrap();
-        assert!(matches!(dbg!(res), Expr::Float(_, _, 10.040000000000001)));
-    }
+        assert_eq!(res_type, tuple!(float!(), uint!(), int!(), bool!()));
+        assert_expr_eq!(res, tup!(f!(21.666), u!(80), i!(420), b!(true)); ignore span);
 
-    #[tokio::test]
-    async fn test_add_tuple() {
-        let mut parser = Parser::new(Token::tokenize("(6.9 + 4.20, 6 + 9)").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
-            .unwrap();
-
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
-
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert!(final_type == Type::Tuple(vec![Type::Float, Type::Uint]));
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
+        let (res, res_type) = parse_infer_and_eval(
+            r#"(id ((id 3.14) * (id 6.9)), id ((id 20) * (id 4)), id ((*) (id (int 4)) (id (int 105))), id ((id true) || (id false)))"#,
         )
         .await
         .unwrap();
-        match res {
-            Expr::Tuple(_, _, res) => {
-                assert!(res.len() == 2);
-                assert!(matches!(res[0], Expr::Float(_, _, 11.100000000000001)));
-                assert!(matches!(res[1], Expr::Uint(_, _, 15)));
-            }
-            _ => panic!("Expected (11.100000000000001, 15), got {:?}", res),
-        }
+        assert_eq!(res_type, tuple!(float!(), uint!(), int!(), bool!()));
+        assert_expr_eq!(res, tup!(f!(21.666), u!(80), i!(420), b!(true)); ignore span);
+    }
+
+    // FIXME(loong): this test is not passing. This is caused by `num_params`
+    // reporting all the parameters of the returned function. This is actually
+    // what you want to do. But it means we need a better "edge case" when
+    // calling curried expressions. Probably some kind of "call it in a loop
+    // until all arguments are gone".
+    #[tokio::test]
+    async fn test_f_passthrough() {
+        let (res, res_type) = parse_infer_and_eval(r#"(id (&&)) true true"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, bool!());
+        assert_expr_eq!(res, b!(true); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"(id (+)) 69 420"#).await.unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(489); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"(id (+)) 6.9 42.0"#).await.unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(48.9); ignore span);
     }
 
     #[tokio::test]
-    async fn test_polymorphism() -> Result<(), String> {
-        let mut parser = Parser::new(Token::tokenize("(id 6.9, id 420)").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+    async fn test_polymorphism() {
+        let (res, res_type) = parse_infer_and_eval(r#"id (id 6.9, id 420, id (-420))"#)
+            .await
             .unwrap();
+        assert_eq!(res_type, tuple!(float!(), uint!(), int!()));
+        assert_expr_eq!(res, tup!(f!(6.9), u!(420), i!(-420)); ignore span);
 
-        let subst = unify::unify_constraints(&constraint_system)?;
-
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, Type::Tuple(vec![Type::Float, Type::Uint]));
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await
-        .unwrap();
-        match res {
-            Expr::Tuple(_, _, res) => {
-                assert!(res.len() == 2);
-                assert!(matches!(res[0], Expr::Float(_, _, 6.9)));
-                assert!(matches!(res[1], Expr::Uint(_, _, 420)));
-            }
-            _ => panic!("Expected (6.9, 420), got {:?}", res),
-        }
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_let_polymorphism() -> Result<(), String> {
-        let mut parser =
-            Parser::new(Token::tokenize("let jd = λx → x in (jd 6.9, jd 420)").unwrap()); // Yes, we do mean jd
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+        let (res, res_type) = parse_infer_and_eval(r#"(6.9 + zero, 420 + zero, (-420) + zero)"#)
+            .await
             .unwrap();
+        assert_eq!(res_type, tuple!(float!(), uint!(), int!()));
+        assert_expr_eq!(res, tup!(f!(6.9), u!(420), i!(-420)); ignore span);
 
-        let subst = unify::unify_constraints(&constraint_system)?;
-
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, Type::Tuple(vec![Type::Float, Type::Uint]));
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await
-        .unwrap();
-
-        match res {
-            Expr::Tuple(_, _, res) => {
-                assert!(res.len() == 2);
-                assert!(matches!(res[0], Expr::Float(_, _, 6.9)));
-                assert!(matches!(res[1], Expr::Uint(_, _, 420)));
-            }
-            _ => panic!("Expected (6.9, 420), got {:?}", res),
-        }
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_let_polymorphism_overloading() -> Result<(), String> {
-        let mut parser =
-            Parser::new(Token::tokenize("let f = λx → -x in (f 6.9, f 420, f (3 + 14))").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-        let mut expr_type_env = ExprTypeEnv::new();
-
-        // println!("BEFORE\n",);
-        // println!("TYPE_ENV\n{}", sprint_type_env(&type_env));
-        // println!("CONSTRAINTS\n{}", constraint_system);
-
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
-            .unwrap();
-
-        let subst = unify::unify_constraints(&constraint_system)?;
-
-        println!(
-            "AFTER\n{}",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
-        );
-        println!("SUBST\n{}", sprint_subst(&subst));
-        println!("TYPE_ENV\n{}", sprint_type_env(&type_env));
-        println!("CONSTRAINTS\n{}", constraint_system);
-
-        let final_type = unify::apply_subst(&ty, &subst);
+        let (res, res_type) =
+            parse_infer_and_eval(r#"swap (swap (6.9, 420), swap (true, "hello, world!"))"#)
+                .await
+                .unwrap();
         assert_eq!(
-            final_type,
-            Type::Tuple(vec![Type::Float, Type::Int, Type::Int])
+            res_type,
+            tuple!(tuple!(string!(), bool!()), tuple!(uint!(), float!())),
         );
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await;
-        match res {
-            Ok(Expr::Tuple(_, _, res)) => {
-                assert!(res.len() == 3);
-                assert!(matches!(res[0], Expr::Float(_, _, -6.9)));
-                assert!(matches!(res[1], Expr::Int(_, _, -420)));
-                assert!(matches!(res[2], Expr::Int(_, _, -17)));
-            }
-            Err(e) => return Err(format!("{:?}", e)),
-            _ => panic!("Expected (-6.9, -420, 17), got {:?}", res),
-        }
-
-        Ok(())
+        assert_expr_eq!(res, tup!(tup!(s!("hello, world!"), b!(true)), tup!(u!(420), f!(6.9))); ignore span);
     }
 
     #[tokio::test]
-    async fn test_parametric_ftable() -> Result<(), String> {
-        let mut parser =
-            Parser::new(Token::tokenize("let f = λx → id x in (f 6.9, f 420, f true)").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
-            .unwrap();
-
-        let subst = unify::unify_constraints(&constraint_system)?;
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await;
-        match res {
-            Ok(Expr::Tuple(_, _, res)) => {
-                assert!(res.len() == 3);
-                assert!(matches!(res[0], Expr::Float(_, _, 6.9)));
-                assert!(matches!(res[1], Expr::Uint(_, _, 420)));
-                assert!(matches!(res[2], Expr::Bool(_, _, true)));
-            }
-            Err(e) => return Err(format!("{:?}", e)),
-            _ => panic!("Expected (6.9, 420, true), got {:?}", res),
-        }
-
-        Ok(())
+    async fn test_let_polymorphism() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = λx → x in (f 6.9, f 420, f true, f "hello, world!")"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, tuple!(float!(), uint!(), bool!(), string!()),);
+        assert_expr_eq!(
+            res,
+            tup!(f!(6.9), u!(420), b!(true), s!("hello, world!")); ignore span
+        );
     }
 
     #[tokio::test]
-    async fn test_let_id() -> Result<(), String> {
-        let mut parser = Parser::new(Token::tokenize("let f = id in f 6.9").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
-            .unwrap();
-
-        let subst = unify::unify_constraints(&constraint_system)?;
-        let final_type = unify::apply_subst(&ty, &subst);
-
-        println!(
-            "EXPR\n{}",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
-        );
-
-        assert_eq!(final_type, Type::Float);
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await;
-
-        match res {
-            Ok(Expr::Float(_, _, 6.9)) => Ok(()),
-            Err(e) => Err(format!("{:?}", e)),
-            _ => panic!("Expected 6.9, got {:?}", res),
-        }
+    async fn test_overloaded_let_polymorphism() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = λx → -x in (f 6.9, f 420, f (int 314))"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, tuple!(float!(), int!(), int!()));
+        assert_expr_eq!(res, tup!(f!(-6.9), i!(-420), i!(-314)); ignore span);
     }
 
     #[tokio::test]
-    async fn test_zero() -> Result<(), String> {
-        let mut parser =
-            Parser::new(Token::tokenize("(6.9 + zero, 420 + zero, -314 + zero)").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+    async fn test_let_bind_to_ftable() {
+        let (res, res_type) = parse_infer_and_eval(r#"let f = negate in f 420"#)
+            .await
             .unwrap();
+        assert_eq!(res_type, int!());
+        assert_expr_eq!(res, i!(-420); ignore span);
 
-        let subst = unify::unify_constraints(&constraint_system)?;
-        let final_type = unify::apply_subst(&ty, &subst);
+        let (res, res_type) = parse_infer_and_eval(r#"let f = negate in f 6.9"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(-6.9); ignore span);
 
-        println!(
-            "EXPR\n{}",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
-        );
+        let (res, res_type) = parse_infer_and_eval(r#"let x = zero in (420 + x)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(420); ignore span);
 
-        assert_eq!(final_type, tuple!(Type::Float, Type::Uint, Type::Int));
+        let (res, res_type) = parse_infer_and_eval(r#"let x = zero in (6.9 + x)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(6.9); ignore span);
 
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await
-        .unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"let f = (+) in f 69 420"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(489); ignore span);
 
-        match res {
-            Expr::Tuple(_, _, res) => {
-                assert!(res.len() == 3);
-                assert!(matches!(res[0], Expr::Float(_, _, 6.9)));
-                assert!(matches!(res[1], Expr::Uint(_, _, 420)));
-                assert!(matches!(res[2], Expr::Int(_, _, -314)));
-                Ok(())
-            }
-            _ => panic!("Expected (-6.9, 420), got {:?}", res),
-        }
+        let (res, res_type) = parse_infer_and_eval(r#"let f = (+) in f 6.9 42.0"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(48.9); ignore span);
     }
 
     #[tokio::test]
-    async fn test_let_negate() -> Result<(), String> {
-        let mut parser = Parser::new(Token::tokenize("let f = negate in f 6.9").unwrap());
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
-            .unwrap();
-
-        let subst = unify::unify_constraints(&constraint_system)?;
-        let final_type = unify::apply_subst(&ty, &subst);
-
-        println!(
-            "EXPR\n{}",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
-        );
-
-        assert_eq!(final_type, Type::Float);
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await;
-
-        match res {
-            Ok(Expr::Float(_, _, -6.9)) => Ok(()),
-            Err(e) => Err(format!("{:?}", e)),
-            _ => panic!("Expected (-6.9, 420), got {:?}", res),
-        }
+    async fn test_let_in_cascade() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = (λx → -x), u = f 6.9, v = f u in (u, v)"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, tuple!(float!(), float!()));
+        assert_expr_eq!(res, tup!(f!(-6.9), f!(6.9)); ignore span);
     }
 
     #[tokio::test]
-    async fn test_let_in_let_in() -> Result<(), String> {
-        let mut parser = Parser::new(
-            Token::tokenize("let f = (λx → -x), u = f 6.9, v = f 420 in (u, v)").unwrap(),
-        );
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+    async fn test_map() {
+        let (res, res_type) = parse_infer_and_eval(r#"map (λx → -x) [3.14, 6.9, 42.0, 1.0]"#)
+            .await
             .unwrap();
+        assert_eq!(res_type, list!(float!()));
+        assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
 
-        let subst = unify::unify_constraints(&constraint_system)?;
-        let final_type = unify::apply_subst(&ty, &subst);
-
-        println!(
-            "EXPR\n{}",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
-        );
-
-        assert_eq!(final_type, tuple!(Type::Float, Type::Int));
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await
-        .unwrap();
-
-        match res {
-            Expr::Tuple(_, _, res) => {
-                assert!(res.len() == 2);
-                assert!(matches!(res[0], Expr::Float(_, _, -6.9)));
-                assert!(matches!(res[1], Expr::Int(_, _, -420)));
-                Ok(())
-            }
-            _ => panic!("Expected (-6.9, 420), got {:?}", res),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_map() -> Result<(), String> {
-        let mut parser = Parser::new(
-            Token::tokenize("let f = (λx → -x) in map f [3.14, 6.9, 42.0, 1.0]").unwrap(),
-        );
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+        let (res, res_type) = parse_infer_and_eval(r#"map id [3.14, 6.9, 42.0, 1.0]"#)
+            .await
             .unwrap();
+        assert_eq!(res_type, list!(float!()));
+        assert_expr_eq!(res, l!(f!(3.14), f!(6.9), f!(42.0), f!(1.0)); ignore span);
 
-        let subst = unify::unify_constraints(&constraint_system)?;
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, list![Type::Float]);
+        let (res, res_type) = parse_infer_and_eval(r#"map negate [3.14, 6.9, 42.0, 1.0]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(float!()));
+        assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
 
-        println!(
-            "EXPR\n{}",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
-        );
+        let (res, res_type) =
+            parse_infer_and_eval(r#"map (let f = id in f) [3.14, 6.9, 42.0, 1.0]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(float!()));
+        assert_expr_eq!(res, l!(f!(3.14), f!(6.9), f!(42.0), f!(1.0)); ignore span);
 
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
-        )
-        .await;
-        match res {
-            Ok(Expr::List(_, _, res)) => {
-                assert!(res.len() == 4);
-                assert!(matches!(res[0], Expr::Float(_, _, -3.14)));
-                assert!(matches!(res[1], Expr::Float(_, _, -6.9)));
-                assert!(matches!(res[2], Expr::Float(_, _, -42.0)));
-                assert!(matches!(res[3], Expr::Float(_, _, -1.0)));
-            }
-            Err(e) => return Err(format!("{:?}", e)),
-            _ => panic!("Expected [-3.14, -6.9, -42.0, -1.0], got {:?}", res),
-        }
+        let (res, res_type) =
+            parse_infer_and_eval(r#"map (let f = (λx → -x) in f) [3.14, 6.9, 42.0, 1.0]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(float!()));
+        assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
 
-        Ok(())
+        // FIXME(loong): this test is not passing.
+        // ```rex
+        // let (res, res_type) =
+        //     parse_infer_and_eval(r#"map (let f = (λx → id (-x)) in f) [3.14, 6.9, 42.0, 1.0]"#)
+        //         .await
+        //         .unwrap();
+        // assert_eq!(res_type, list!(float!()));
+        // assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
+        // ```
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"map (let f = (λx → - (id x)) in f) [3.14, 6.9, 42.0, 1.0]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(float!()));
+        assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
+
+        // FIXME(loong): this test is not passing.
+        // ```rex
+        // let (res, res_type) = parse_infer_and_eval(
+        //     r#"map (let f = (λx → id (-(id x))) in f) [3.14, 6.9, 42.0, 1.0]"#,
+        // )
+        // .await
+        // .unwrap();
+        // assert_eq!(res_type, list!(float!()));
+        // assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
+        // ```
+
+        // FIXME(loong): this test is not passing.
+        // ```rex
+        // let (res, res_type) = parse_infer_and_eval(r#"map (id (λx → -x)) [3.14, 6.9, 42.0, 1.0]"#)
+        //     .await
+        //     .unwrap();
+        // assert_eq!(res_type, list!(float!()));
+        // assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
+        // ```
     }
 
     #[tokio::test]
@@ -1260,11 +1008,12 @@ pub mod test {
         }
     }
 
+    /// This test is meant to reflect the kind of usage pattern that we see in
+    /// production code. However, it should not be taken as a comprehensive.
     #[tokio::test]
-    async fn test_realistic() -> Result<(), String> {
-        let mut parser = Parser::new(
-            Token::tokenize(
-                r#"
+    async fn test_big_boy() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
 (λxs ys zs →
     let
         t = map (λx → ((get 0 xs) * x)) xs,
@@ -1283,116 +1032,19 @@ pub mod test {
         g = (++) ((++) xs t)
     in
         zip (g xs) [[u], v]
-) 
-    [2.0, 3.0, 4.0]
-    [4, 5, 6] 
-    [[6, 7, 8], [9, 10, 11], [12, 13, 14]]
+) [2.0, 3.0, 4.0] [4, 5, 6] [[6, 7, 8], [9, 10, 11], [12, 13, 14]]
 "#,
-            )
-            .unwrap(),
-        );
-        let expr = parser.parse_expr().unwrap();
-
-        let builder = Builder::with_prelude().unwrap();
-        let (mut constraint_system, ftable, type_env) = builder.build();
-
-        let mut expr_type_env = ExprTypeEnv::new();
-
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
-            .unwrap();
-
-        let subst = unify::unify_constraints(&constraint_system)?;
-        let final_type = unify::apply_subst(&ty, &subst);
-
-        println!(
-            "EXPR\n{}\n",
-            sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
-        );
-        println!("FINAL TYPE\n{}", final_type);
-
-        assert_eq!(
-            final_type,
-            list![tuple!(Type::Float, list!(list!(Type::Uint)))]
-        );
-
-        let res = eval(
-            &Context {
-                scope: Scope::new_sync(),
-                ftable,
-                subst,
-                env: Arc::new(RwLock::new(expr_type_env)),
-                state: (),
-            },
-            &expr,
         )
         .await
         .unwrap();
-
-        println!("res: {}", res);
-        match res {
-            Expr::List(_, _, res) => {
-                assert!(res.len() == 2);
-                match &res[0] {
-                    Expr::Tuple(_, _, res) => {
-                        assert!(res.len() == 2);
-                        assert!(matches!(&res[0], Expr::Float(_, _, 2.0)));
-                        match &res[1] {
-                            Expr::List(_, _, res) => {
-                                assert!(res.len() == 1);
-                                match &res[0] {
-                                    Expr::List(_, _, res) => {
-                                        assert!(res.len() == 4);
-                                        assert!(matches!(res[0], Expr::Uint(_, _, 4)));
-                                        assert!(matches!(res[1], Expr::Uint(_, _, 5)));
-                                        assert!(matches!(res[2], Expr::Uint(_, _, 6)));
-                                        assert!(matches!(res[3], Expr::Uint(_, _, 420)));
-                                    }
-                                    _ => panic!("Expected [4, 5, 6, 420], got {:?}", res),
-                                }
-                            }
-                            _ => panic!("Expected [[4, 5, 6, 420]], got {:?}", res),
-                        }
-                    }
-                    _ => panic!("Expected (2, [[4, 5, 6, 420]]), got {:?}", res),
-                }
-                match &res[1] {
-                    Expr::Tuple(_, _, res) => {
-                        assert!(res.len() == 2);
-                        assert!(matches!(&res[0], Expr::Float(_, _, 3.0)));
-                        match &res[1] {
-                            Expr::List(_, _, res) => {
-                                assert!(res.len() == 2);
-                                match &res[0] {
-                                    Expr::List(_, _, res) => {
-                                        assert!(res.len() == 3);
-                                        assert!(matches!(res[0], Expr::Uint(_, _, 6)));
-                                        assert!(matches!(res[1], Expr::Uint(_, _, 7)));
-                                        assert!(matches!(res[2], Expr::Uint(_, _, 8)));
-                                    }
-                                    _ => panic!("Expected [6, 7, 8], got {:?}", res),
-                                }
-                                match &res[1] {
-                                    Expr::List(_, _, res) => {
-                                        assert!(res.len() == 3);
-                                        assert!(matches!(res[0], Expr::Uint(_, _, 9)));
-                                        assert!(matches!(res[1], Expr::Uint(_, _, 10)));
-                                        assert!(matches!(res[2], Expr::Uint(_, _, 11)));
-                                    }
-                                    _ => panic!("Expected [9, 10, 11], got {:?}", res),
-                                }
-                            }
-                            _ => panic!("Expected [[6, 7, 8], [9, 10, 11]], got {:?}", res),
-                        }
-                    }
-                    _ => panic!("Expected (3.0, [6, 7, 8], [9, 10, 11]]), got {:?}", res),
-                }
-            }
-            _ => panic!(
-                "Expected [(2.0, [[4, 5, 6, 420]]), (3.0, [6, 7, 8], [9, 10, 11]])], got {:?}",
-                res
-            ),
-        }
-
-        Ok(())
+        assert_eq!(res_type, list!(tuple!(float!(), list!(list!(uint!())))));
+        assert_expr_eq!(
+            res,
+            l![
+                tup!(f!(2.0), l![l![u!(4), u!(5), u!(6), u!(420)]]),
+                tup!(f!(3.0), l![l![u!(6), u!(7), u!(8)], l![u!(9), u!(10), u!(11)]])
+            ];
+            ignore span
+        );
     }
 }

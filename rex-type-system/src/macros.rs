@@ -56,10 +56,10 @@ macro_rules! result {
 
 #[macro_export]
 macro_rules! dict {
-    ( $($k:expr => $v:expr),* $(,)?) => {
+    ( $($k:ident : $v:expr),* $(,)?) => {
         $crate::types::Type::Dict({
             let mut btree = ::std::collections::BTreeMap::new();
-            $(btree.insert(($k).to_string(), $v);)*
+            $(btree.insert(stringify!($k).to_string(), $v);)*
             btree
         })
     };
@@ -206,22 +206,24 @@ mod test {
 
         // with trailing comma
         assert_eq!(
-            dict!("a" => bool!(), String::from("b") => uint!(), c => int!(),),
+            dict!(a: bool!(), b: uint!(), c: int!(),),
             Type::Dict({
                 let mut btree = ::std::collections::BTreeMap::new();
                 btree.insert("a".to_string(), bool!());
                 btree.insert("b".to_string(), uint!());
+                btree.insert("c".to_string(), int!());
                 btree
             })
         );
 
         // without trailing comma
         assert_eq!(
-            dict!("a" => bool!(), String::from("b") => uint!(), c => int!()),
+            dict!(a: bool!(), b: uint!(), c: int!()),
             Type::Dict({
                 let mut btree = ::std::collections::BTreeMap::new();
                 btree.insert("a".to_string(), bool!());
                 btree.insert("b".to_string(), uint!());
+                btree.insert("c".to_string(), int!());
                 btree
             })
         );
@@ -241,11 +243,11 @@ mod test {
                 variants: vec![
                     ADTVariant {
                         name: "MyVariant1".to_string(),
-                        t: Some(Box::new(dict! { "a" => bool!(), "b" => uint!() })),
+                        t: Some(Box::new(dict! { a: bool!(), b: uint!() })),
                     },
                     ADTVariant {
                         name: "MyVariant2".to_string(),
-                        t: Some(Box::new(dict! { "c" => string!() })),
+                        t: Some(Box::new(dict! { c: string!() })),
                     },
                     ADTVariant {
                         name: "MyVariant3".to_string(),

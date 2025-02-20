@@ -46,6 +46,10 @@ impl Var {
     pub fn reset_id(&mut self) {
         self.id = Id::default();
     }
+
+    pub fn reset_span(&mut self) {
+        self.span = Span::default();
+    }
 }
 
 impl Display for Var {
@@ -226,6 +230,64 @@ impl Expr {
                 g.reset_id();
                 for arg in args {
                     arg.reset_ids();
+                }
+            }
+        }
+    }
+
+    pub fn reset_spans(&mut self) {
+        match self {
+            Self::Bool(_, span, ..) => *span = Span::default(),
+            Self::Uint(_, span, ..) => *span = Span::default(),
+            Self::Int(_, span, ..) => *span = Span::default(),
+            Self::Float(_, span, ..) => *span = Span::default(),
+            Self::String(_, span, ..) => *span = Span::default(),
+            Self::Tuple(_, span, elems) => {
+                *span = Span::default();
+                for elem in elems {
+                    elem.reset_spans();
+                }
+            }
+            Self::List(_, span, elems) => {
+                *span = Span::default();
+                for elem in elems {
+                    elem.reset_spans();
+                }
+            }
+            Self::Dict(_, span, kvs) => {
+                *span = Span::default();
+                for (_k, v) in kvs {
+                    v.reset_spans();
+                }
+            }
+            Self::Var(var) => var.reset_span(),
+            Self::App(_, span, g, x) => {
+                *span = Span::default();
+                g.reset_spans();
+                x.reset_spans();
+            }
+            Self::Lam(_, span, _scope, param, body) => {
+                *span = Span::default();
+                param.reset_span();
+                body.reset_spans();
+            }
+            Self::Let(_, span, var, def, body) => {
+                *span = Span::default();
+                var.reset_span();
+                def.reset_spans();
+                body.reset_spans();
+            }
+            Self::Ite(_, span, cond, then, r#else) => {
+                *span = Span::default();
+                cond.reset_spans();
+                then.reset_spans();
+                r#else.reset_spans();
+            }
+            Self::Curry(_, span, g, args) => {
+                *span = Span::default();
+                g.reset_span();
+                for arg in args {
+                    arg.reset_spans();
                 }
             }
         }

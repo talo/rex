@@ -22,6 +22,8 @@ impl Default for Id {
 
 impl Display for Id {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.0.as_hyphenated().fmt(f)
+        let (fst, snd, thrd, _frth) = self.0.as_fields();
+        let id = (fst as u64) << 32 | (snd as u64) << 16 | (thrd as u64);
+        id.fmt(f)
     }
 }

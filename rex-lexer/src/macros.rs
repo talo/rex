@@ -1,5 +1,9 @@
 #[macro_export]
 macro_rules! span {
+    () => {
+        $crate::span::Span::default()
+    };
+
     ($begin_ln:literal : $begin_col:literal - $end_ln:literal : $end_col:literal) => {
         $crate::span::Span {
             begin: $crate::span::Position {

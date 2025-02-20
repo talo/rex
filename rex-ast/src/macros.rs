@@ -12,14 +12,31 @@ macro_rules! assert_expr_eq {
         assert_eq!(lhs, rhs);
     }};
 
-    ($lhs:expr, $rhs:expr; with id) => {{
-        // override nothing
-        assert_eq!($lhs, $rhs);
+    ($lhs:expr, $rhs:expr; ignore span) => {{
+        // override the id so we can assert equality without worrying about
+        // them, because they are usually randomly generated UUIDs
+        let mut lhs = $lhs.clone();
+        lhs.reset_ids();
+        lhs.reset_spans();
+
+        let mut rhs = $rhs.clone();
+        rhs.reset_ids();
+        rhs.reset_spans();
+
+        assert_eq!(lhs, rhs);
     }};
 }
 
 #[macro_export]
 macro_rules! b {
+    ($x:expr) => {
+        $crate::expr::Expr::Bool(
+            $crate::id::Id::new(),
+            ::rex_lexer::span::Span::default(),
+            $x,
+        )
+    };
+
     ($span:expr; $x:expr) => {
         $crate::expr::Expr::Bool($crate::id::Id::new(), ($span).into(), $x)
     };
@@ -31,6 +48,14 @@ macro_rules! b {
 
 #[macro_export]
 macro_rules! u {
+    ($x:expr) => {
+        $crate::expr::Expr::Uint(
+            $crate::id::Id::new(),
+            ::rex_lexer::span::Span::default(),
+            $x,
+        )
+    };
+
     ($span:expr; $x:expr) => {
         $crate::expr::Expr::Uint($crate::id::Id::new(), ($span).into(), $x)
     };
@@ -42,6 +67,14 @@ macro_rules! u {
 
 #[macro_export]
 macro_rules! i {
+    ($x:expr) => {
+        $crate::expr::Expr::Int(
+            $crate::id::Id::new(),
+            ::rex_lexer::span::Span::default(),
+            $x,
+        )
+    };
+
     ($span:expr; $x:expr) => {
         $crate::expr::Expr::Int($crate::id::Id::new(), ($span).into(), $x)
     };
@@ -53,6 +86,14 @@ macro_rules! i {
 
 #[macro_export]
 macro_rules! f {
+    ($x:expr) => {
+        $crate::expr::Expr::Float(
+            $crate::id::Id::new(),
+            ::rex_lexer::span::Span::default(),
+            $x,
+        )
+    };
+
     ($span:expr; $x:expr) => {
         $crate::expr::Expr::Float($crate::id::Id::new(), ($span).into(), $x)
     };
@@ -64,17 +105,29 @@ macro_rules! f {
 
 #[macro_export]
 macro_rules! s {
+    ($x:expr) => {
+        $crate::expr::Expr::String(
+            $crate::id::Id::new(),
+            ::rex_lexer::span::Span::default(),
+            $x.to_string(),
+        )
+    };
+
     ($span:expr; $x:expr) => {
-        $crate::expr::Expr::String($crate::id::Id::new(), ($span).into(), $x)
+        $crate::expr::Expr::String($crate::id::Id::new(), ($span).into(), ($x).to_string())
     };
 
     ($id:expr, $span:expr; $x:expr) => {
-        $crate::expr::Expr::String(($id).into(), ($span).into(), $x)
+        $crate::expr::Expr::String(($id).into(), ($span).into(), ($x).to_string())
     };
 }
 
 #[macro_export]
 macro_rules! tup {
+    ($($xs:expr),* $(,)?) => {
+        $crate::expr::Expr::Tuple($crate::id::Id::new(), ::rex_lexer::span::Span::default(), vec![$($xs),*])
+    };
+
     ($span:expr; $($xs:expr),* $(,)?) => {
         $crate::expr::Expr::Tuple($crate::id::Id::new(), ($span).into(), vec![$($xs),*])
     };
@@ -86,6 +139,10 @@ macro_rules! tup {
 
 #[macro_export]
 macro_rules! l {
+    ($($xs:expr),* $(,)?) => {
+        $crate::expr::Expr::List($crate::id::Id::new(), ::rex_lexer::span::Span::default(), vec![$($xs),*])
+    };
+
     ($span:expr; $($xs:expr),* $(,)?) => {
         $crate::expr::Expr::List($crate::id::Id::new(), ($span).into(), vec![$($xs),*])
     };
@@ -97,18 +154,26 @@ macro_rules! l {
 
 #[macro_export]
 macro_rules! d {
-    ($span:expr; $($k:expr => $v:expr),* $(,)?) => {
-        $crate::expr::Expr::Dict($crate::id::Id::new(), ($span).into(), {
+    ($($k:ident = $v:expr),* $(,)?) => {
+        $crate::expr::Expr::Dict($crate::id::Id::new(), ::rex_lexer::span::Span::default(), {
             let mut map = ::std::collections::BTreeMap::new();
-            $(map.insert($k.to_string(), $v);)*
+            $(map.insert(stringify!($k).to_string(), $v);)*
             map
         })
     };
 
-    ($id:expr, $span:expr; $($k:expr => $v:expr),* $(,)?) => {
+    ($span:expr; $($k:ident = $v:expr),* $(,)?) => {
+        $crate::expr::Expr::Dict($crate::id::Id::new(), ($span).into(), {
+            let mut map = ::std::collections::BTreeMap::new();
+            $(map.insert(stringify!($k).to_string(), $v);)*
+            map
+        })
+    };
+
+    ($id:expr, $span:expr; $($k:ident = $v:expr),* $(,)?) => {
         $crate::expr::Expr::Dict(($id).into(), ($span).into(), {
             let mut map = ::std::collections::BTreeMap::new();
-            $(map.insert($k.to_string(), $v);)*
+            $(map.insert(stringify!($k).to_string(), $v);)*
             map
         })
     };
@@ -116,6 +181,14 @@ macro_rules! d {
 
 #[macro_export]
 macro_rules! v {
+    ($x:expr) => {
+        $crate::expr::Expr::Var($crate::expr::Var {
+            id: $crate::id::Id::new(),
+            span: ::rex_lexer::span::Span::default(),
+            name: ($x).to_string(),
+        })
+    };
+
     ($span:expr; $x:expr) => {
         $crate::expr::Expr::Var($crate::expr::Var {
             id: $crate::id::Id::new(),
@@ -135,6 +208,15 @@ macro_rules! v {
 
 #[macro_export]
 macro_rules! app {
+    ($f:expr, $x:expr) => {
+        $crate::expr::Expr::App(
+            $crate::id::Id::new(),
+            ::rex_lexer::span::Span::default(),
+            ($f).into(),
+            ($x).into(),
+        )
+    };
+
     ($span:expr; $f:expr, $x:expr) => {
         $crate::expr::Expr::App(
             $crate::id::Id::new(),
@@ -151,6 +233,16 @@ macro_rules! app {
 
 #[macro_export]
 macro_rules! lam {
+    (λ $x:ident -> $e:expr) => {
+        $crate::expr::Expr::Lam(
+            $crate::id::Id::new(),
+            ::rex_lexer::span::Span::default(),
+            $crate::expr::Scope::new_sync(),
+            ($x).into(),
+            ($e).into(),
+        )
+    };
+
     ($span:expr; λ $x:ident -> $e:expr) => {
         $crate::expr::Expr::Lam(
             $crate::id::Id::new(),
@@ -174,6 +266,16 @@ macro_rules! lam {
 
 #[macro_export]
 macro_rules! let_in {
+    (let $x:ident = ($e1:expr) in $e2:expr) => {
+        $crate::expr::Expr::Let(
+            $crate::id::Id::new(),
+            ::rex_lexer::span::Span::default(),
+            ($x).into(),
+            ($e1).into(),
+            ($e2).into(),
+        )
+    };
+
     ($span:expr; let $x:ident = ($e1:expr) in $e2:expr) => {
         $crate::expr::Expr::Let(
             $crate::id::Id::new(),
@@ -197,6 +299,16 @@ macro_rules! let_in {
 
 #[macro_export]
 macro_rules! ite {
+    (if ($e1:expr) { $e2:expr } else { $e3:expr }) => {
+        $crate::expr::Expr::Ite(
+            $crate::id::Id::new(),
+            ::rex_lexer::span::Span::default(),
+            ($e1).into(),
+            ($e2).into(),
+            ($e3).into(),
+        )
+    };
+
     ($span:expr; if ($e1:expr) { $e2:expr } else { $e3:expr }) => {
         $crate::expr::Expr::Ite(
             $crate::id::Id::new(),

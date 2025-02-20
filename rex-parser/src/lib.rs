@@ -111,6 +111,7 @@ impl Parser {
         // Parse the binary operator.
         let operator = match token {
             Token::Add(..) => Operator::Add,
+            Token::And(..) => Operator::And,
             Token::Concat(..) => Operator::Concat,
             Token::Div(..) => Operator::Div,
             Token::Dot(..) => Operator::Dot,
@@ -120,6 +121,7 @@ impl Parser {
             Token::Le(..) => Operator::Le,
             Token::Lt(..) => Operator::Lt,
             Token::Mul(..) => Operator::Mul,
+            Token::Or(..) => Operator::Or,
             Token::Sub(..) => Operator::Sub,
             _ => {
                 return Ok(lhs_expr);
