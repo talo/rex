@@ -356,6 +356,24 @@ mod test {
     }
 
     #[tokio::test]
+    async fn cast_float() {
+        let val = parse_and_eval("(float (negate 42))", &()).await.unwrap();
+        assert_eq!(val, Value::Float(-42.));
+    }
+
+    #[tokio::test]
+    async fn cast_int() {
+        let val = parse_and_eval("(int 4.2)", &()).await.unwrap();
+        assert_eq!(val, Value::Int(4));
+    }
+
+    #[tokio::test]
+    async fn cast_string() {
+        let val = parse_and_eval("(str 4.2)", &()).await.unwrap();
+        assert_eq!(val, Value::String("4.2".into()));
+    }
+
+    #[tokio::test]
     async fn math_with_precedence() {
         let val = parse_and_eval("1 + 2 * 3", &()).await.unwrap();
         assert_eq!(val, Value::Uint(7));

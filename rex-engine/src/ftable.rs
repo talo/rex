@@ -1236,6 +1236,19 @@ impl<S: Send + Sync + 'static> Ftable<S> {
             }),
         );
 
+        // string cast
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "str".to_string(),
+                params: vec![a!()],
+                ret: Type::Uint,
+            },
+            Box::new(|ctx, ftable, state, args| {
+                Box::pin(async move { cast_to(ctx, state, ftable, args, Type::String).await })
+            }),
+        );
+
         // list cast dict to key value pairss
         this.register_function(
             Function {
@@ -2101,6 +2114,7 @@ async fn cast_to<S: Send + Sync + 'static>(
         (Some(Value::Int(s)), Type::Uint) => Ok(Value::Uint(*s as u64)),
         (Some(Value::Int(s)), Type::Float) => Ok(Value::Float(*s as f64)),
         (Some(Value::Uint(s)), Type::Float) => Ok(Value::Float(*s as f64)),
+        (Some(v), Type::String) => Ok(Value::String(v.to_string())),
         (Some(v), _) => Err(Error::UnexpectedType {
             expected: Type::String,
             got: v.clone(),
