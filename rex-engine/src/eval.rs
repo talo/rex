@@ -159,7 +159,7 @@ where
 
 pub async fn eval_app<State>(
     ctx: &Context<State>,
-    id: &Id,
+    _id: &Id,
     _span: &Span,
     f: &Expr,
     x: &Expr,
@@ -195,10 +195,6 @@ where
     let f = eval(ctx, f.borrow()).await?;
     let x = eval(ctx, x.borrow()).await?;
 
-    let f_type = unify::apply_subst(
-        ctx.env.read().await.get(f.borrow().id()).unwrap(),
-        &ctx.subst,
-    );
     let x_type = unify::apply_subst(
         ctx.env.read().await.get(x.borrow().id()).unwrap(),
         &ctx.subst,
@@ -248,9 +244,7 @@ where
                 panic!("Function not found: {}:{}", var.name, f_type)
             }
         }
-        Expr::Lam(id, _span, scope, param, body) => {
-            let l_type = unify::apply_subst(ctx.env.read().await.get(&id).unwrap(), &ctx.subst);
-
+        Expr::Lam(_id, _span, scope, param, body) => {
             let new_body_id = Id::new();
             let mut body = match *body {
                 Expr::App(_, span, g, y) => {
@@ -280,7 +274,7 @@ where
 
             eval(&ctx, &body).await?
         }
-        Expr::Curry(id, span, var, mut args) => {
+        Expr::Curry(_id, span, var, mut args) => {
             let f_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
 
             args.push(x.clone());
