@@ -4,12 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-recursion = "1.1.1"
-async-trait = "0.1.18"
-chrono = { version = "0.4.38", features = ["serde"] }
-regex = "1.10.4"
 rex-lexer = { path = "../rex-lexer" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0.87" }
-thiserror = "1.0"
-tokio = { version = "1.27.0", features = ["macros", "rt"] }
+serde = { version = "1", features = ["derive"] }

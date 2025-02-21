@@ -27,6 +27,8 @@
             buildInputs = [
               pkgs.cargo-sort
               pkgs.cargo-sweep
+              pkgs.cargo-machete
+              pkgs.cargo-deny
             ];
           };
           craneProjects.rex = {
