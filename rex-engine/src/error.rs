@@ -1,6 +1,8 @@
 use rex_ast::expr::Expr;
 use rex_type_system::types::Type;
 
+// TODO(loong): re-implement traces so that developers can get meaningful
+// errors when something goes wrong.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum Error {
     #[error("expected {expected}, got {got}")]

@@ -237,6 +237,10 @@ where
                         *x.id_mut() = Id::new();
                         ctx.env.write().await.insert(*x.id(), pre_x_type.clone());
 
+                        // NOTE(loong): functions in the ftable having explicit
+                        // ids would probably be very helpful. Right now,
+                        // relying on the var that pointed to the function in
+                        // the ftable makes things a little hard to understand.
                         Expr::Curry(Id::new(), var.span, var, vec![x])
                     }
                 }

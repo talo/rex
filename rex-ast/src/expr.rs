@@ -78,12 +78,26 @@ pub enum Expr {
     List(Id, Span, Vec<Expr>),              // [e1, e2, e3]
     Dict(Id, Span, BTreeMap<String, Expr>), // {k1 = v1, k2 = v2}
 
+    // TODO(loong): in order to properly support ADT constructor function we
+    // need to support an expression like this:
+    //
+    // ```rex
+    // Named(Id, Span, String, Box<Type>), //  MyVariant1 {k1 = v1, k2 = v2}
+    // ```
+    //
+    // Note that it wouldn't be something that you can express in code, but
+    // rather something that can be returned by a function.
     Var(Var),                                       // x
     App(Id, Span, Box<Expr>, Box<Expr>),            // f x
     Lam(Id, Span, Scope, Var, Box<Expr>),           // λx → e
     Let(Id, Span, Var, Box<Expr>, Box<Expr>),       // let x = e1 in e2
     Ite(Id, Span, Box<Expr>, Box<Expr>, Box<Expr>), // if e1 then e2 else e3
 
+    // NOTE(loong): this cannot actually be expressed in code. It is the result
+    // of an application to a multi-argument function from the ftable. We can
+    // probably simplify evaluation massively by having the FtableFn calls be
+    // responsible for capturing arguments and returning curried functions.
+    // Right now this is handled by the engine and it causes some confusion.
     Curry(Id, Span, Var, Vec<Expr>), // f x y z {- for currying external functions -}
 }
 
