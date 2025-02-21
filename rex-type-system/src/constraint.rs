@@ -157,6 +157,8 @@ impl Display for ConstraintSystem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Constraint {
     Eq(Type, Type),
+    // NOTE(loong): this constraint is mostly used to define overloaded
+    // functions.
     OneOf(Type, HashSet<Type>),
 }
 

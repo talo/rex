@@ -655,6 +655,7 @@ dependencies = [
  "rex-engine",
  "rex-lexer",
  "rex-parser",
+ "rex-type-system",
  "tokio",
  "tracing",
  "tracing-subscriber",

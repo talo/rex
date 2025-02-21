@@ -10,6 +10,7 @@ rex-ast = { path = "../rex-ast" }
 rex-engine = { path = "../rex-engine" }
 rex-lexer = { path = "../rex-lexer" }
 rex-parser = { path = "../rex-parser" }
+rex-type-system = { path = "../rex-type-system" }
 tokio = { version = "1.27.0", features = [
     "fs",
     "io-util",

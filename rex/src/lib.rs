@@ -7,6 +7,6 @@ pub mod engine {
 pub mod parser {
     pub use rex_parser::*;
 }
-pub mod resolver {
-    pub use rex_resolver::*;
+pub mod type_system {
+    pub use rex_type_system::*;
 }
