@@ -130,8 +130,37 @@ pub async fn eval_var<State>(ctx: &Context<State>, var: &Var) -> Result<Expr, Er
 where
     State: Clone + Send + Sync + 'static,
 {
-    println!("evaluated var: {}...", var);
-    let pre_var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
+    let var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
+    print!("evaluating var: ({}):({})...", var, var_type);
+
+    if let Some(expr) = ctx.scope.get(&var.name) {
+        let expr_type =
+            unify::apply_subst(ctx.env.read().await.get(expr.id()).unwrap(), &ctx.subst);
+        println!(" found in scope: {}:{}", expr, expr_type);
+
+        let mut new_expr = expr.clone();
+        *new_expr.id_mut() = Id::new();
+        ctx.env
+            .write()
+            .await
+            .insert(*new_expr.id(), var_type.clone());
+
+        let new_expr = if let Expr::Bool(..)
+        | Expr::Uint(..)
+        | Expr::Int(..)
+        | Expr::Float(..)
+        | Expr::String(..) = new_expr
+        {
+            // We have arrived at a concrete value
+            new_expr.clone()
+        } else {
+            println!(" overriding with type: {}", var_type);
+            // We have not arrived at a concrete value
+            eval(ctx, &new_expr).await?
+        };
+
+        return Ok(new_expr.clone());
+    }
 
     let var = match ctx.scope.get(&var.name) {
         None => var,
@@ -139,27 +168,29 @@ where
         Some(non_var_expr) => return eval(ctx, non_var_expr).await, // Ok(non_var_expr.clone()),
     };
 
-    let var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
-
     let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
     if let Some((f, f_type)) = f {
         if f_type.num_params() == 0 {
             let res = f(ctx, &vec![]).await?;
-            ctx.env
-                .write()
-                .await
-                .insert(*res.id(), pre_var_type.clone());
+            ctx.env.write().await.insert(*res.id(), var_type.clone());
+            println!(
+                " found in ftable: {} and evaluated to: ({}):({})",
+                f_type, res, var_type
+            );
             return Ok(res);
         }
+        println!(" found in ftable: {}", var_type);
+
+        return Ok(Expr::Var(var.clone()));
     }
 
-    println!(" into: {}", var);
-    Ok(Expr::Var(var.clone()))
+    println!(" not found in ftable!");
+    Err(Error::VarNotFound { var: var.clone() })
 }
 
 pub async fn eval_app<State>(
     ctx: &Context<State>,
-    _id: &Id,
+    id: &Id,
     _span: &Span,
     f: &Expr,
     x: &Expr,
@@ -167,6 +198,8 @@ pub async fn eval_app<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
+    let fx_type = unify::apply_subst(ctx.env.read().await.get(id).unwrap(), &ctx.subst);
+    println!("applying: ({} {}): {}", f, x, fx_type);
     apply(ctx, f, x).await
 }
 
@@ -178,16 +211,15 @@ pub async fn apply<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let pre_f_type = unify::apply_subst(
+    let f_type = unify::apply_subst(
         ctx.env.read().await.get(f.borrow().id()).unwrap(),
         &ctx.subst,
     );
-    let pre_x_type = unify::apply_subst(
+    let x_type = unify::apply_subst(
         ctx.env.read().await.get(x.borrow().id()).unwrap(),
         &ctx.subst,
     );
-
-    let (_pre_a_type, pre_b_type) = match &pre_f_type {
+    let (_, b_type) = match &f_type {
         Type::Arrow(a, b) => (a.clone(), b.clone()),
         _ => panic!("Function application on non-function type"),
     };
@@ -195,24 +227,8 @@ where
     let f = eval(ctx, f.borrow()).await?;
     let x = eval(ctx, x.borrow()).await?;
 
-    let x_type = unify::apply_subst(
-        ctx.env.read().await.get(x.borrow().id()).unwrap(),
-        &ctx.subst,
-    );
-
-    let (_a_type, b_type) = match &pre_f_type {
-        Type::Arrow(a, b) => (a.clone(), b.clone()),
-        _ => panic!("Function application on non-function type"),
-    };
-
     let res = match f {
         Expr::Var(var) => {
-            // We need to reset the f_type because in order to do function
-            // lookup, we need the f_type of the underlying callee, not the
-            // result of applying the next argument to the callee (which, thanks
-            // to curring, may result in another function).
-            let f_type = pre_f_type; // unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
-
             // TODO(loong): we should be checking if more than one function is
             // found. This is an ambiguity error.
             let f = ctx.ftable.lookup_fns(&var.name, f_type.clone()).next();
@@ -235,7 +251,7 @@ where
 
                         let mut x = x.clone();
                         *x.id_mut() = Id::new();
-                        ctx.env.write().await.insert(*x.id(), pre_x_type.clone());
+                        ctx.env.write().await.insert(*x.id(), x_type.clone());
 
                         // NOTE(loong): functions in the ftable having explicit
                         // ids would probably be very helpful. Right now,
@@ -257,7 +273,7 @@ where
 
                     let mut g = g.clone();
                     *g.id_mut() = new_g_id;
-                    ctx.env.write().await.insert(new_g_id, pre_f_type.clone());
+                    ctx.env.write().await.insert(new_g_id, f_type.clone());
 
                     let mut y = y.clone();
                     *y.id_mut() = new_y_id;
@@ -268,7 +284,7 @@ where
                 body => body,
             };
             *body.id_mut() = new_body_id;
-            ctx.env.write().await.insert(new_body_id, *pre_b_type);
+            ctx.env.write().await.insert(new_body_id, *b_type.clone());
 
             let mut ctx: Context<State> = ctx.clone();
             ctx.scope.insert_mut(param.name, x);
@@ -281,6 +297,28 @@ where
         Expr::Curry(_id, span, var, mut args) => {
             let f_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
 
+            // FIXME(loong): to fix the `test_f_passthrough` test it is pretty
+            // clear to me that we need to differentiate between functions that
+            // return functions, and functions that take in multiple arguments.
+            // This is *only* different for curried functions. The issue with
+            // `test_f_passthrough` is that because `id (&&)` returns `bool ->
+            // bool -> bool` this logic will not call `id` until all the bool
+            // arguments are also pushed (because the type of `id` is known to
+            // be the type of `&&`) but the actual implementation of `id`
+            // ignores the `bool` arguments and they are therefore lost.
+            //
+            // The solution is to alter the way a curried function is actually
+            // called by the `ftable` and it loops until all arguments are
+            // consumed.
+            println!(
+                "pushing to args: {}[{}] arg: {}",
+                var,
+                args.iter()
+                    .map(|a| a.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                x
+            );
             args.push(x.clone());
             if f_type.num_params() < args.len() {
                 panic!("Too many arguments");
@@ -373,9 +411,13 @@ pub async fn eval_let<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let def = eval(ctx, def).await?;
+    // let def = eval(ctx, def).await?;
     let mut ctx = ctx.clone();
-    ctx.scope = ctx.scope.insert(var.name.clone(), def);
+    // NOTE(loong): this is lazy evaluation. We do not compute the definition of
+    // the binding. This is important because it means we do not have to know
+    // all the types until the binding is actually used, and that's where we
+    // will actually have the types available.
+    ctx.scope = ctx.scope.insert(var.name.clone(), def.clone());
     eval(&ctx, body).await
 }
 
@@ -444,6 +486,7 @@ pub mod test {
 
         let res = eval(
             &Context {
+                trace_prefix: String::new(),
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
@@ -764,6 +807,7 @@ pub mod test {
         assert_eq!(res_type, uint!());
         assert_expr_eq!(res, u!(420); ignore span);
 
+        // FIXME(loong): this test is failing.
         let (res, res_type) = parse_infer_and_eval(r#"let x = zero in (6.9 + x)"#)
             .await
             .unwrap();
@@ -886,6 +930,7 @@ pub mod test {
 
         let res = eval(
             &Context {
+                trace_prefix: String::new(),
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
@@ -940,6 +985,7 @@ pub mod test {
 
         let res = eval(
             &Context {
+                trace_prefix: String::new(),
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
@@ -989,6 +1035,7 @@ pub mod test {
 
         let res = eval(
             &Context {
+                trace_prefix: String::new(),
                 scope: Scope::new_sync(),
                 ftable,
                 subst,

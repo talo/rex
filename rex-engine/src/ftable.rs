@@ -31,8 +31,11 @@ macro_rules! impl_register_fn {
                 + Sync
                 + 'static
         {
+            let t = <fn($($($param,)*)?) -> B as ToType>::to_type();
+            let t_num_params = t.num_params();
+
             self.0.entry(n.to_string()).or_default().push((
-                <fn($($($param,)*)?) -> B as ToType>::to_type(),
+                t,
                 Box::new(move |ctx, args| {
                     let f = f.clone();
                     Box::pin(async move {

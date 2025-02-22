@@ -1,10 +1,12 @@
-use rex_ast::expr::Expr;
+use rex_ast::expr::{Expr, Var};
 use rex_type_system::types::Type;
 
 // TODO(loong): re-implement traces so that developers can get meaningful
 // errors when something goes wrong.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum Error {
+    #[error("variable not found {var}")]
+    VarNotFound { var: Var },
     #[error("expected {expected}, got {got}")]
     ExpectedTypeGotValue { expected: Type, got: Expr },
     #[error("missing argument {argument}")]
