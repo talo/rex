@@ -684,6 +684,10 @@ pub mod test {
         assert_eq!(res_type, tuple!(float!(), uint!(), bool!()));
         assert_expr_eq!(res, tup!(f!(6.9), u!(420), b!(true)); ignore span);
 
+        let (res, res_type) = parse_infer_and_eval(r#"(6.9, 420, true, )"#).await.unwrap();
+        assert_eq!(res_type, tuple!(float!(), uint!(), bool!()));
+        assert_expr_eq!(res, tup!(f!(6.9), u!(420), b!(true)); ignore span);
+
         let (res, res_type) =
             parse_infer_and_eval(r#"(3.14 * 6.9, 20 * 4, (*) (int 4) (int 105), true || false)"#)
                 .await
@@ -714,6 +718,65 @@ pub mod test {
         .unwrap();
         assert_eq!(res_type, tuple!(float!(), uint!(), int!(), bool!()));
         assert_expr_eq!(res, tup!(f!(21.666), u!(80), i!(420), b!(true)); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_list() {
+        // Empty list
+        let (res, res_type) = parse_infer_and_eval(r#"[]"#).await.unwrap();
+        assert!(match res_type {
+            Type::List(inner) => matches!(&*inner, Type::Var(_)),
+            _ => false,
+        });
+        assert_expr_eq!(res, l!(); ignore span);
+
+        // Single item
+        let (res, res_type) = parse_infer_and_eval(r#"[420]"#).await.unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(420)); ignore span);
+
+        // Single item with trailing comma
+        let (res, res_type) = parse_infer_and_eval(r#"[420,]"#).await.unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(420)); ignore span);
+
+        // Multiple items
+        let (res, res_type) = parse_infer_and_eval(r#"[420, 69, 555]"#).await.unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(420), u!(69), u!(555)); ignore span);
+
+        // Multiple items with trailing comma
+        let (res, res_type) = parse_infer_and_eval(r#"[420, 69, 555,]"#).await.unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(420), u!(69), u!(555)); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_dict() {
+        // Empty dictionary
+        let (res, res_type) = parse_infer_and_eval(r#"{}"#).await.unwrap();
+        assert_eq!(res_type, dict! { });
+        assert_expr_eq!(res, d!(); ignore span);
+
+        // Single item
+        let (res, res_type) = parse_infer_and_eval(r#"{ a = 420 }"#).await.unwrap();
+        assert_eq!(res_type, dict! { a: uint!() });
+        assert_expr_eq!(res, d!(a = u!(420)); ignore span);
+
+        // Single item with trailing comma
+        let (res, res_type) = parse_infer_and_eval(r#"{ a = 420, }"#).await.unwrap();
+        assert_eq!(res_type, dict! { a: uint!() });
+        assert_expr_eq!(res, d!( a = u!(420)); ignore span);
+
+        // Multiple items
+        let (res, res_type) = parse_infer_and_eval(r#"{ a = 420, b = 3.14, c = "hello" }"#).await.unwrap();
+        assert_eq!(res_type, dict! { a: uint!(), b: float!(), c: string!() });
+        assert_expr_eq!(res, d!(a = u!(420), b = f!(3.14), c = s!("hello")); ignore span);
+
+        // Multiple items with trailing comma
+        let (res, res_type) = parse_infer_and_eval(r#"{ a = 420, b = 3.14, c = "hello", }"#).await.unwrap();
+        assert_eq!(res_type, dict! { a: uint!(), b: float!(), c: string!() });
+        assert_expr_eq!(res, d!(a = u!(420), b = f!(3.14), c = s!("hello")); ignore span);
     }
 
     // FIXME(loong): this test is not passing. This is caused by `num_params`
