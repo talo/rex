@@ -296,7 +296,7 @@ where
             })
         })?;
 
-        this.register_fn_async3("compose", |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
+        this.register_fn_async3(".", |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
             Box::pin(async move {
                 let x = apply(ctx, &g, &x).await?;
                 let x = apply(ctx, &f, &x).await?;

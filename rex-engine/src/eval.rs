@@ -605,6 +605,15 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_let_overloaded_in() {
+        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → id (x + x) in (f 6.9, f 420)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, tuple!(float!(), uint!()));
+        assert_expr_eq!(res, tup!(f!(13.8), u!(840)); ignore span);
+    }
+
+    #[tokio::test]
     async fn test_let_add_in_add() {
         let (res, res_type) = parse_infer_and_eval(r#"let f = λx → x + x in f (6.9 + 3.14)"#)
             .await
@@ -906,6 +915,35 @@ pub mod test {
         // assert_eq!(res_type, list!(float!()));
         // assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
         // ```
+    }
+
+    #[tokio::test]
+    async fn test_compose() {
+        let (res, res_type) = parse_infer_and_eval(r#"(((*) 6.9) . ((+) 42.0)) 3.14"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(311.466); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = ((*) 6.9), g = ((+) 42.0) in (f . g) 3.14"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(311.466); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"((λx → x * 6.9) . (λx → x + 42.0)) 3.14"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(311.466); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = (λx → x * 6.9), g = (λx → x + 42.0) in (f . g) 3.14"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(311.466); ignore span);
     }
 
     #[tokio::test]
