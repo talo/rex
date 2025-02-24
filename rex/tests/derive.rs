@@ -4,6 +4,7 @@ use rex_type_system::{
     types::{ADTVariant, ADT},
 };
 
+#[allow(dead_code)]
 #[test]
 pub fn derive_struct() {
     use rex_type_system::{
@@ -91,7 +92,7 @@ pub fn derive_struct() {
     );
 
     #[derive(Rex)]
-    struct MyEmptyStruct {};
+    struct MyEmptyStruct {}
 
     assert_eq!(
         MyEmptyStruct::to_type(),
@@ -133,6 +134,8 @@ pub fn derive_struct() {
     );
 }
 
+
+#[allow(dead_code)]
 #[test]
 pub fn derive_enum() {
     use rex_type_system::{
@@ -174,6 +177,7 @@ pub fn derive_enum() {
             y: i64,
             z: f64,
             w: Vec<String>,
+            #[serde(rename = "renamed")]
             t: (bool, i64, f64, Vec<String>),
         },
         #[serde(rename = "Renamed")]
@@ -212,7 +216,7 @@ pub fn derive_enum() {
                         y: int!(),
                         z: float!(),
                         w: list![string!()],
-                        t: tuple!(bool!(), int!(), float!(), list![string!()]),
+                        renamed: tuple!(bool!(), int!(), float!(), list![string!()]),
                     })),
                 },
                 ADTVariant {
