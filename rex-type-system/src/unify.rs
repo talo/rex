@@ -32,7 +32,7 @@ pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, 
                     // overloaded type variables. This is because we are resolving
                     // all constraints, not just the ones that are actually used by
                     // the expression.
-                    unify_one_of(t1, t2_possibilties, &mut subst);
+                    unify_one_of(t1, t2_possibilties, &mut subst)?;
                 }
             }
         }
