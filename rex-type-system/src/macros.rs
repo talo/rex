@@ -90,8 +90,10 @@ macro_rules! tuple {
 macro_rules! adt_variant {
     ($name:ident) => {{
         $crate::types::ADTVariant {
+            doc: None,
             name: stringify!($name).to_string(),
             t: None,
+            field_docs: None,
         }
     }};
 
@@ -99,8 +101,10 @@ macro_rules! adt_variant {
         let mut fields = ::std::collections::BTreeMap::new();
         $(fields.insert(stringify!($key).to_string(), $value);)*
         $crate::types::ADTVariant {
+            doc: None,
             name: stringify!($name).to_string(),
             t: Some(Box::new($crate::types::Type::Dict(fields))),
+            field_docs: None,
         }
     }};
 }
@@ -109,6 +113,7 @@ macro_rules! adt_variant {
 macro_rules! adt {
     ($name:ident = $($v:ident $($vs:tt)?)|*) => {{
         $crate::types::ADT {
+            doc: None,
             name: stringify!($name).to_string(),
             variants: vec![$(adt_variant!{ $v $($vs)? }),*],
         }
@@ -237,19 +242,26 @@ mod test {
         assert_eq!(
             adt,
             ADT {
+                doc: None,
                 name: "MyADT".to_string(),
                 variants: vec![
                     ADTVariant {
+                        doc: None,
                         name: "MyVariant1".to_string(),
                         t: Some(Box::new(dict! { a: bool!(), b: uint!() })),
+                        field_docs: None,
                     },
                     ADTVariant {
+                        doc: None,
                         name: "MyVariant2".to_string(),
                         t: Some(Box::new(dict! { c: string!() })),
+                        field_docs: None,
                     },
                     ADTVariant {
+                        doc: None,
                         name: "MyVariant3".to_string(),
                         t: None,
+                        field_docs: None,
                     },
                 ],
             }

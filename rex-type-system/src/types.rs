@@ -332,15 +332,9 @@ impl Display for Type {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub struct ADT {
+    pub doc: Option<String>,
     pub name: String,
     pub variants: Vec<ADTVariant>,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub struct ADTVariant {
-    pub name: String,
-    pub t: Option<Box<Type>>,
 }
 
 impl Display for ADT {
@@ -357,6 +351,15 @@ impl Display for ADT {
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub struct ADTVariant {
+    pub doc: Option<String>,
+    pub name: String,
+    pub t: Option<Box<Type>>,
+    pub field_docs: Option<BTreeMap<String, String>>,
 }
 
 impl Display for ADTVariant {

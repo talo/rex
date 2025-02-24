@@ -1,20 +1,22 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Data, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Type};
+use syn::{Attribute, Data, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Type};
 
 #[proc_macro_derive(Rex)]
 pub fn derive_rex(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
     let name = &ast.ident;
     let name_as_str = format!("{name}");
+    let docs = docs_from_attrs(&ast.attrs);
 
     let r#impl = match &ast.data {
         Data::Struct(data) => match &data.fields {
             // Turns into an ADT with one dictionary variant
             Fields::Named(named) => {
-                let adt_variant = fields_named_to_adt_variant(&name_as_str, named);
+                let adt_variant = fields_named_to_adt_variant(&docs, &name_as_str, named);
                 quote!(
                     ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
+                        doc: #docs,
                         name: String::from(#name_as_str),
                         variants: vec![#adt_variant],
                     })
@@ -23,9 +25,10 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
             // Turns into an ADT with one tuple variant (we drop the tuple if it
             // only has one element)
             Fields::Unnamed(unnamed) => {
-                let adt_variant = fields_unnamed_to_adt_variant(&name_as_str, unnamed);
+                let adt_variant = fields_unnamed_to_adt_variant(&docs, &name_as_str, unnamed);
                 quote!(
                     ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
+                        doc: #docs,
                         name: String::from(#name_as_str),
                         variants: vec![#adt_variant],
                     })
@@ -33,34 +36,38 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
             }
             _ => quote! {
                 ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
+                    doc: #docs,
                     name: String::from(#name_as_str),
-                    variants: vec![::rex_type_system::types::ADTVariant {
-                        name: String::from(#name_as_str),
-                        t: None,
-                    }],
+                    variants: vec![],
                 })
             },
         },
         Data::Enum(data) => {
             let variants = data.variants.iter().map(|variant| {
+                let variant_docs = docs_from_attrs(&variant.attrs);
                 let mut variant_name = format!("{}", variant.ident.clone());
                 rename_variant(&mut variant_name, variant);
 
                 match &variant.fields {
                     Fields::Unnamed(unnamed) => {
-                        fields_unnamed_to_adt_variant(&variant_name, unnamed)
+                        fields_unnamed_to_adt_variant(&variant_docs, &variant_name, unnamed)
                     }
-                    Fields::Named(named) => fields_named_to_adt_variant(&variant_name, named),
+                    Fields::Named(named) => {
+                        fields_named_to_adt_variant(&variant_docs, &variant_name, named)
+                    }
                     Fields::Unit => quote! {
                         ::rex_type_system::types::ADTVariant {
+                            doc: #variant_docs,
                             name: String::from(#variant_name),
                             t: None,
+                            field_docs: None,
                         }
                     },
                 }
             });
             quote! {
                 ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
+                    doc: #docs,
                     name: String::from(#name_as_str),
                     variants: vec![#(#variants,)*],
                 })
@@ -84,6 +91,7 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
 }
 
 fn fields_unnamed_to_adt_variant(
+    variant_docs: &proc_macro2::TokenStream,
     variant_name: &str,
     fields: &FieldsUnnamed,
 ) -> proc_macro2::TokenStream {
@@ -100,16 +108,20 @@ fn fields_unnamed_to_adt_variant(
     if ts.len() == 0 {
         quote!(
             ::rex_type_system::types::ADTVariant {
+                doc: #variant_docs,
                 name: String::from(#variant_name),
                 t: None,
+                field_docs: None,
             }
         )
     } else if ts.len() == 1 {
         let t = &ts[0];
         quote!(
             ::rex_type_system::types::ADTVariant {
+                doc: #variant_docs,
                 name: String::from(#variant_name),
                 t: Some(Box::new(#t)),
+                field_docs: None,
             }
         )
     } else {
@@ -117,45 +129,99 @@ fn fields_unnamed_to_adt_variant(
             let mut elems = ::std::vec::Vec::new();
             #(elems.push(#ts);)*
             ::rex_type_system::types::ADTVariant {
+                doc: #variant_docs,
                 name: String::from(#variant_name),
                 t: Some(Box::new(::rex_type_system::types::Type::Tuple(elems))),
+                field_docs: None,
             }
         })
     }
 }
 
 fn fields_named_to_adt_variant(
+    variant_docs: &proc_macro2::TokenStream,
     variant_name: &str,
     fields: &FieldsNamed,
 ) -> proc_macro2::TokenStream {
-    let fields = fields
+    let docs_and_fields = fields
         .named
         .iter()
         .map(|field| {
+            let docs = docs_from_attrs(&field.attrs);
             let mut name = format!("{}", field.ident.as_ref().unwrap());
             let t = to_type(&field.ty);
             rename_field(&mut name, field);
             quote! {
+                if let Some(d) = #docs {
+                    docs.insert(String::from(#name), d);
+                }
                 fields.insert(String::from(#name), #t);
             }
         })
         .collect::<Vec<_>>();
-    if fields.len() == 0 {
+    if docs_and_fields.len() == 0 {
         quote!(
             ::rex_type_system::types::ADTVariant {
+                doc: #variant_docs,
                 name: String::from(#variant_name),
                 t: None,
+                field_docs: None,
             }
         )
     } else {
         quote!({
+            let mut docs = ::std::collections::BTreeMap::new();
             let mut fields = ::std::collections::BTreeMap::new();
-            #(#fields;)*
+            #(#docs_and_fields;)*
             ::rex_type_system::types::ADTVariant {
+                doc: #variant_docs,
                 name: String::from(#variant_name),
                 t: Some(Box::new(::rex_type_system::types::Type::Dict(fields))),
+                field_docs: if docs.len() > 0 { Some(docs) } else { None },
             }
         })
+    }
+}
+
+fn docs_from_attrs(attrs: &[Attribute]) -> proc_macro2::TokenStream {
+    let docs = attrs
+        .iter()
+        .filter_map(|attr| {
+            if attr.path().is_ident("doc") {
+                Some(attr.meta.clone())
+            } else {
+                None
+            }
+        })
+        .filter_map(|meta| {
+            if let syn::Meta::NameValue(value) = meta {
+                if let syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(lit_str),
+                    ..
+                }) = value.value
+                {
+                    let doc_str = lit_str.token().to_string();
+                    if doc_str.starts_with("\" ") && doc_str.ends_with('\"') {
+                        Some(doc_str[2..doc_str.len() - 1].to_string())
+                    } else if doc_str.starts_with('\"') && doc_str.ends_with('\"') {
+                        Some(doc_str[1..doc_str.len() - 1].to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if docs.is_empty() {
+        quote! { None }
+    } else {
+        quote! { Some(String::from(#docs)) }
     }
 }
 
