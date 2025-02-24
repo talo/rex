@@ -16,9 +16,9 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
                 let adt_variant = fields_named_to_adt_variant(&docs, &name_as_str, named);
                 quote!(
                     ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
-                        doc: #docs,
                         name: String::from(#name_as_str),
                         variants: vec![#adt_variant],
+                        docs: #docs,
                     })
                 )
             }
@@ -28,17 +28,17 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
                 let adt_variant = fields_unnamed_to_adt_variant(&docs, &name_as_str, unnamed);
                 quote!(
                     ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
-                        doc: #docs,
                         name: String::from(#name_as_str),
                         variants: vec![#adt_variant],
+                        docs: #docs,
                     })
                 )
             }
             _ => quote! {
                 ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
-                    doc: #docs,
                     name: String::from(#name_as_str),
                     variants: vec![],
+                    docs: #docs,
                 })
             },
         },
@@ -57,19 +57,19 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
                     }
                     Fields::Unit => quote! {
                         ::rex_type_system::types::ADTVariant {
-                            doc: #variant_docs,
                             name: String::from(#variant_name),
                             t: None,
-                            field_docs: None,
+                            docs: #variant_docs,
+                            t_docs: None,
                         }
                     },
                 }
             });
             quote! {
                 ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
-                    doc: #docs,
                     name: String::from(#name_as_str),
                     variants: vec![#(#variants,)*],
+                    docs: #docs,
                 })
             }
         }
@@ -108,20 +108,20 @@ fn fields_unnamed_to_adt_variant(
     if ts.len() == 0 {
         quote!(
             ::rex_type_system::types::ADTVariant {
-                doc: #variant_docs,
                 name: String::from(#variant_name),
                 t: None,
-                field_docs: None,
+                docs: #variant_docs,
+                t_docs: None,
             }
         )
     } else if ts.len() == 1 {
         let t = &ts[0];
         quote!(
             ::rex_type_system::types::ADTVariant {
-                doc: #variant_docs,
                 name: String::from(#variant_name),
                 t: Some(Box::new(#t)),
-                field_docs: None,
+                docs: #variant_docs,
+                t_docs: None,
             }
         )
     } else {
@@ -129,10 +129,10 @@ fn fields_unnamed_to_adt_variant(
             let mut elems = ::std::vec::Vec::new();
             #(elems.push(#ts);)*
             ::rex_type_system::types::ADTVariant {
-                doc: #variant_docs,
                 name: String::from(#variant_name),
                 t: Some(Box::new(::rex_type_system::types::Type::Tuple(elems))),
-                field_docs: None,
+                docs: #variant_docs,
+                t_docs: None,
             }
         })
     }
@@ -162,10 +162,10 @@ fn fields_named_to_adt_variant(
     if docs_and_fields.len() == 0 {
         quote!(
             ::rex_type_system::types::ADTVariant {
-                doc: #variant_docs,
                 name: String::from(#variant_name),
                 t: None,
-                field_docs: None,
+                docs: #variant_docs,
+                t_docs: None,
             }
         )
     } else {
@@ -174,10 +174,10 @@ fn fields_named_to_adt_variant(
             let mut fields = ::std::collections::BTreeMap::new();
             #(#docs_and_fields;)*
             ::rex_type_system::types::ADTVariant {
-                doc: #variant_docs,
                 name: String::from(#variant_name),
                 t: Some(Box::new(::rex_type_system::types::Type::Dict(fields))),
-                field_docs: if docs.len() > 0 { Some(docs) } else { None },
+                docs: #variant_docs,
+                t_docs: if docs.len() > 0 { Some(docs) } else { None },
             }
         })
     }

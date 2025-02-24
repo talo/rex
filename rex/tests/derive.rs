@@ -75,10 +75,8 @@ pub fn derive_struct() {
     assert_eq!(
         MyTupleStruct::to_type(),
         Type::ADT(ADT {
-            doc: None,
             name: String::from("MyTupleStruct"),
             variants: vec![ADTVariant {
-                doc: None,
                 name: String::from("MyTupleStruct"),
                 t: Some(Box::new(tuple!(
                     bool!(),
@@ -89,8 +87,10 @@ pub fn derive_struct() {
                     MyInnerStruct::to_type(),
                     list![MyInnerStruct::to_type()]
                 ))),
-                field_docs: None,
-            }]
+                docs: None,
+                t_docs: None,
+            }],
+            docs: None,
         })
     );
 
@@ -100,14 +100,14 @@ pub fn derive_struct() {
     assert_eq!(
         MyEmptyStruct::to_type(),
         Type::ADT(ADT {
-            doc: None,
             name: String::from("MyEmptyStruct"),
             variants: vec![ADTVariant {
-                doc: None,
                 name: String::from("MyEmptyStruct"),
                 t: None,
-                field_docs: None,
-            }]
+                docs: None,
+                t_docs: None,
+            }],
+            docs: None,
         })
     );
 
@@ -117,14 +117,14 @@ pub fn derive_struct() {
     assert_eq!(
         MyEmptyTupleStruct::to_type(),
         Type::ADT(ADT {
-            doc: None,
             name: String::from("MyEmptyTupleStruct"),
             variants: vec![ADTVariant {
-                doc: None,
                 name: String::from("MyEmptyTupleStruct"),
                 t: None,
-                field_docs: None,
-            }]
+                docs: None,
+                t_docs: None,
+            }],
+            docs: None,
         })
     );
 
@@ -134,9 +134,9 @@ pub fn derive_struct() {
     assert_eq!(
         MyUnitStruct::to_type(),
         Type::ADT(ADT {
-            doc: None,
             name: String::from("MyUnitStruct"),
             variants: vec![],
+            docs: None,
         })
     );
 }
@@ -210,7 +210,7 @@ pub fn derive_enum() {
     assert_eq!(
         MyEnum::to_type(),
         Type::ADT(ADT {
-            doc: Some(
+            docs: Some(
                 r#"MyEnum has been documented.
 
 ```rust
@@ -225,19 +225,19 @@ These commentsn will appear in the type definition."#
             name: "MyEnum".to_string(),
             variants: vec![
                 ADTVariant {
-                    doc: None,
                     name: "X".to_string(),
                     t: None,
-                    field_docs: None,
+                    docs: None,
+                    t_docs: None,
                 },
                 ADTVariant {
-                    doc: None,
                     name: "Y".to_string(),
                     t: None,
-                    field_docs: None,
+                    docs: None,
+                    t_docs: None,
                 },
                 ADTVariant {
-                    doc: Some(
+                    docs: Some(
                         r#"Z has been documented.
 
 ```rust
@@ -247,22 +247,21 @@ MyEnum::Z{}
                     ),
                     name: "Z".to_string(),
                     t: None,
-                    field_docs: None,
+                    t_docs: None,
                 },
                 ADTVariant {
-                    doc: None,
                     name: "W".to_string(),
                     t: Some(Box::new(bool!())),
-                    field_docs: None,
+                    docs: None,
+                    t_docs: None,
                 },
                 ADTVariant {
-                    doc: None,
                     name: "T".to_string(),
                     t: Some(Box::new(tuple!(int!(), float!(), list![string!()]))),
-                    field_docs: None,
+                    docs: None,
+                    t_docs: None,
                 },
                 ADTVariant {
-                    doc: None,
                     name: "U".to_string(),
                     t: Some(Box::new(dict! {
                         x: bool!(),
@@ -271,7 +270,8 @@ MyEnum::Z{}
                         w: list![string!()],
                         renamed: tuple!(bool!(), int!(), float!(), list![string!()]),
                     })),
-                    field_docs: Some(
+                    docs: None,
+                    t_docs: Some(
                         [
                             (
                                 "w".to_string(),
@@ -287,10 +287,10 @@ MyEnum::Z{}
                     ),
                 },
                 ADTVariant {
-                    doc: None,
                     name: "Renamed".to_string(),
                     t: Some(Box::new(MyInnerStruct::to_type())),
-                    field_docs: None,
+                    docs: None,
+                    t_docs: None,
                 }
             ]
         })

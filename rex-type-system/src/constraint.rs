@@ -596,18 +596,18 @@ fn instantiate(ty: &Type, constraint_system: &mut ConstraintSystem) -> Type {
                 inst_helper(ty, subst, constraint_system)
             }
             Type::ADT(adt) => Type::ADT(ADT {
-                doc: adt.doc.clone(),
+                docs: adt.docs.clone(),
                 name: adt.name.clone(),
                 variants: adt
                     .variants
                     .iter()
                     .map(|v| ADTVariant {
-                        doc: v.doc.clone(),
+                        docs: v.docs.clone(),
                         name: v.name.clone(),
                         t: v.t
                             .as_ref()
                             .map(|t| Box::new(inst_helper(t, subst, constraint_system))),
-                        field_docs: v.field_docs.clone(),
+                        t_docs: v.t_docs.clone(),
                     })
                     .collect(),
             }),
