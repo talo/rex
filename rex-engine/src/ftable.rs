@@ -40,10 +40,12 @@ macro_rules! impl_register_fn {
                     let f = f.clone();
                     Box::pin(async move {
                         let mut i = 0;
-                        let r = f(ctx $(, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),* )?)?;
-
-                        // FIXME(loong): assign a proper span
-                        r.try_encode(Id::new(), Span::default())
+                        let mut r = f(ctx $(, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*)?)?
+                            .try_encode(Id::new(), Span::default())?; // FIXME(loong): assign a proper span
+                        while i < args.len() {
+                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }]).await?;
+                        }
+                        Ok(r)
                     })
                 }),
             ))
@@ -76,10 +78,13 @@ macro_rules! impl_register_fn_async {
                     let f = f.clone();
                     Box::pin(async move {
                         let mut i = 0;
-                        let r = f(ctx, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*).await?;
-
-                        // FIXME(loong): assign a proper span
-                        r.try_encode(Id::new(), Span::default())
+                        let mut r = f(ctx, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*)
+                            .await?
+                            .try_encode(Id::new(), Span::default())?; // FIXME(loong): assign a proper span
+                        while i < args.len() {
+                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }]).await?;
+                        }
+                        Ok(r)
                     })
                 }),
             ))
@@ -135,7 +140,7 @@ where
 
 impl<State> Ftable<State>
 where
-    State: Clone + Sync + 'static,
+    State: Clone + Send + Sync + 'static,
 {
     pub fn new() -> Self {
         Self(Default::default())
