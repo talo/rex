@@ -655,7 +655,9 @@ dependencies = [
  "rex-engine",
  "rex-lexer",
  "rex-parser",
+ "rex-proc-macro",
  "rex-type-system",
+ "serde",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -715,6 +717,15 @@ dependencies = [
  "rex-ast",
  "rex-lexer",
  "thiserror",
+]
+
+[[package]]
+name = "rex-proc-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

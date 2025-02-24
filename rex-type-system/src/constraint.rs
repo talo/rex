@@ -385,10 +385,19 @@ pub fn generate_constraints(
             // expression. This could be because the free variables are being
             // computed incorrectly, or it could be the way we instantiate `y`
             // when we see it at the `in` expression.
+            //
+            // Old version:
+            // ```rex
+            // let gen_type = generalize(env, &solved_def_type, gen_deps);
+            // ```
+            //
+            // New version:
+            // ```rex
             let gen_type = match solved_def_type {
                 Type::Arrow(..) => generalize(env, &solved_def_type, gen_deps),
                 _ => solved_def_type,
             };
+            // ```
 
             // Add generalized type to environment
             let mut new_env = env.clone();

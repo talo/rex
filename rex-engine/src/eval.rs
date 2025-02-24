@@ -605,15 +605,6 @@ pub mod test {
     }
 
     #[tokio::test]
-    async fn test_let_overloaded_in() {
-        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → id (x + x) in (f 6.9, f 420)"#)
-            .await
-            .unwrap();
-        assert_eq!(res_type, tuple!(float!(), uint!()));
-        assert_expr_eq!(res, tup!(f!(13.8), u!(840)); ignore span);
-    }
-
-    #[tokio::test]
     async fn test_let_add_in_add() {
         let (res, res_type) = parse_infer_and_eval(r#"let f = λx → x + x in f (6.9 + 3.14)"#)
             .await
@@ -786,13 +777,36 @@ pub mod test {
     }
 
     #[tokio::test]
-    async fn test_overloaded_let_polymorphism() {
+    async fn test_let_parametric_polymorphism() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = id in (f 6.9, f 420, f true, f "hello, world!")"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, tuple!(float!(), uint!(), bool!(), string!()),);
+        assert_expr_eq!(
+            res,
+            tup!(f!(6.9), u!(420), b!(true), s!("hello, world!")); ignore span
+        );
+    }
+
+    #[tokio::test]
+    async fn test_let_overloaded_polymorphism() {
         let (res, res_type) =
             parse_infer_and_eval(r#"let f = λx → -x in (f 6.9, f 420, f (int 314))"#)
                 .await
                 .unwrap();
         assert_eq!(res_type, tuple!(float!(), int!(), int!()));
         assert_expr_eq!(res, tup!(f!(-6.9), i!(-420), i!(-314)); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_parametric_overloaded_let_polymorphism() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = λx → id (x + x) in (f 6.9, f 420, f (-314))"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, tuple!(float!(), uint!(), int!()));
+        assert_expr_eq!(res, tup!(f!(13.8), u!(840), i!(-628)); ignore span);
     }
 
     #[tokio::test]
