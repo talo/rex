@@ -486,7 +486,6 @@ pub mod test {
 
         let res = eval(
             &Context {
-                trace_prefix: String::new(),
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
@@ -930,7 +929,6 @@ pub mod test {
 
         let res = eval(
             &Context {
-                trace_prefix: String::new(),
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
@@ -985,7 +983,6 @@ pub mod test {
 
         let res = eval(
             &Context {
-                trace_prefix: String::new(),
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
@@ -1035,7 +1032,6 @@ pub mod test {
 
         let res = eval(
             &Context {
-                trace_prefix: String::new(),
                 scope: Scope::new_sync(),
                 ftable,
                 subst,
