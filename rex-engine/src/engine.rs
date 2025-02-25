@@ -1,12 +1,13 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     future::Future,
     pin::Pin,
 };
 
+use rex_ast::expr::Expr;
 use rex_type_system::{
     constraint::{Constraint, ConstraintSystem},
-    types::{ToType, Type, TypeEnv},
+    types::{ADTVariant, ToType, Type, TypeEnv, ADT},
 };
 
 use crate::{
@@ -305,6 +306,61 @@ where
         })?;
 
         Ok(this)
+    }
+
+    pub fn register_type<T>(&mut self, t: &T) -> Result<(), Error>
+    where
+        T: ToType + Decode + Send + Sync + 'static,
+    {
+        let res_type = T::to_type();
+        if let Type::ADT(adt) = &res_type {
+            for ADTVariant { name, t, .. } in &adt.variants {
+                match t {
+                    None => {
+                        self.register_fn0(name, move |_ctx: &Context<_>| {
+                            todo!("return named expression")
+                        })?;
+                    }
+                    Some(t) => match t.as_ref() {
+                        Type::Tuple(unnamed_fields) => {
+                            self.register_fn1(name, move |_ctx: &Context<_>, x: Vec<Expr>| {
+                                todo!("return named expression")
+                            })?;
+                            for (i, elem) in unnamed_fields.iter().enumerate() {
+                                self.register_fn1(
+                                    &format!("elem{}", i),
+                                    move |_ctx: &Context<_>, x: NamedExpr| {
+                                        todo!("return named expression")
+                                    },
+                                )?;
+                            }
+                        }
+                        Type::Dict(named_fields) => {
+                            self.register_fn1(
+                                name,
+                                move |_ctx: &Context<_>, x: BTreeMap<String, Expr>| {
+                                    todo!("return named expression")
+                                },
+                            )?;
+                            for (i, (field_name, field_type)) in named_fields.iter().enumerate() {
+                                self.register_fn1(
+                                    field_name,
+                                    move |_ctx: &Context<_>, x: NamedExpr| {
+                                        todo!("return named expression")
+                                    },
+                                )?;
+                            }
+                        }
+                        _ => {
+                            self.register_fn1(name, move |_ctx: &Context<_>, x: Expr| {
+                                todo!("return named expression")
+                            })?;
+                        }
+                    },
+                }
+            }
+        }
+        Ok(())
     }
 
     impl_register_fn!(register_fn0);

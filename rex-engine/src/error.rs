@@ -5,6 +5,8 @@ use rex_type_system::types::Type;
 // errors when something goes wrong.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum Error {
+    #[error("unimplemented")]
+    Unimplemented,
     #[error("variable not found {var}")]
     VarNotFound { var: Var },
     #[error("expected {expected}, got {got}")]

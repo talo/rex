@@ -82,7 +82,7 @@ pub enum Expr {
     // need to support an expression like this:
     //
     // ```rex
-    // Named(Id, Span, String, Box<Type>), //  MyVariant1 {k1 = v1, k2 = v2}
+    // Named(Id, Span, String, Box<Expr>), // MyVariant1 {k1 = v1, k2 = v2}
     // ```
     //
     // Note that it wouldn't be something that you can express in code, but
