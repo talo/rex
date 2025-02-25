@@ -32,7 +32,12 @@ where
     State: Clone + Send + Sync + 'static,
 {
     match expr {
-        Expr::Bool(..) | Expr::Uint(..) | Expr::Int(..) | Expr::Float(..) | Expr::String(..) => {
+        Expr::Bool(..) |
+        Expr::Uint(..) |
+        Expr::Int(..) |
+        Expr::Float(..) |
+        Expr::String(..) |
+        Expr::Named(..) => {
             Ok(expr.clone())
         }
         Expr::Tuple(id, span, tuple) => eval_tuple(ctx, id, span, tuple).await,
@@ -442,7 +447,7 @@ where
 
 #[cfg(test)]
 pub mod test {
-    use rex_ast::{assert_expr_eq, b, d, f, i, l, s, tup, u};
+    use rex_ast::{assert_expr_eq, b, d, f, i, l, s, tup, u, n};
     use rex_lexer::Token;
     use rex_parser::Parser;
     use rex_type_system::{
@@ -453,6 +458,8 @@ pub mod test {
         tuple,
         types::Type,
         uint,
+        result,
+        option,
         unify::{self},
     };
 
@@ -857,6 +864,54 @@ pub mod test {
                 .unwrap();
         assert_eq!(res_type, tuple!(float!(), float!()));
         assert_expr_eq!(res, tup!(f!(-6.9), f!(6.9)); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_result() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let a = Ok 4, b = Err "bad" in [a, b]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(result!(uint!(), string!())));
+        assert_expr_eq!(res, l!(n!("Ok", u!(4)), n!("Err", s!("bad"))); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"
+                let
+                    a = Ok 4,
+                    b = Err "bad",
+                    f = map_result (\x -> [x, x + 1, x + 2])
+                in
+                    map f [a, b]
+                "#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(result!(list!(uint!()), string!())));
+        assert_expr_eq!(res, l!(n!("Ok", l!(u!(4), u!(5), u!(6))), n!("Err", s!("bad"))); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_option() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let a = Some 4, b = None in [a, b]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(option!(uint!())));
+        assert_expr_eq!(res, l!(n!("Some", u!(4)), n!("None", tup!())); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"
+                let
+                    a = Some 4,
+                    b = None,
+                    f = map_option (\x -> [x, x + 1, x + 2])
+                in
+                    map f [a, b]
+                "#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(option!(list!(uint!()))));
+        assert_expr_eq!(res, l!(n!("Some", l!(u!(4), u!(5), u!(6))), n!("None", tup!())); ignore span);
     }
 
     #[tokio::test]

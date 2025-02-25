@@ -304,6 +304,31 @@ where
             })
         })?;
 
+        // Result
+        this.register_fn1("Ok", |_ctx: &Context<_>, x: A| Ok(Ok::<A, B>(x)))?;
+        this.register_fn1("Err", |_ctx: &Context<_>, x: B| Ok(Err::<A, B>(x)))?;
+        this.register_fn_async2("map_result", |ctx, f: Func<A, B>, x: Result<A, C>| {
+            Box::pin(async move {
+                match x {
+                    Ok(x) => Ok(Ok(B(apply(ctx, &f, &x).await?))),
+                    Err(e) => Ok(Err(e)),
+                }
+            })
+        })?;
+
+
+        // Option
+        this.register_fn0("None", |_ctx: &Context<_>| Ok(None::<A>))?;
+        this.register_fn1("Some", |_ctx: &Context<_>, x: A| Ok(Some(x)))?;
+        this.register_fn_async2("map_option", |ctx, f: Func<A, B>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(Some(B(apply(ctx, &f, &x).await?))),
+                    None => Ok(None),
+                }
+            })
+        })?;
+
         Ok(this)
     }
 

@@ -150,6 +150,9 @@ pub fn sprint_expr_with_type(expr: &Expr, env: &ExprTypeEnv, subst: Option<&Subs
             );
             s
         }
+        Expr::Named(..) => {
+            unimplemented!("Named expressions are not expected to be present in the AST")
+        }
         Expr::Var(Var { id, name, .. }) => format!(
             "{}:{}",
             name,

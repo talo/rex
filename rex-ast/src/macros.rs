@@ -180,6 +180,18 @@ macro_rules! d {
 }
 
 #[macro_export]
+macro_rules! n {
+    ($n: expr, $x:expr) => {
+        $crate::expr::Expr::Named(
+            $crate::id::Id::new(),
+            ::rex_lexer::span::Span::default(),
+            $n.to_string(),
+            Box::new($x),
+        )
+    };
+}
+
+#[macro_export]
 macro_rules! v {
     ($x:expr) => {
         $crate::expr::Expr::Var($crate::expr::Var {
