@@ -913,6 +913,37 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_let_in() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let a = 420 in a"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(420); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let a = 420, in a"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(420); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let a = 420, b = 69 in (420, 69)"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, tuple!(uint!(), uint!()));
+        assert_expr_eq!(res, tup!(u!(420), u!(69)); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let a = 420, b = 69, in (420, 69)"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, tuple!(uint!(), uint!()));
+        assert_expr_eq!(res, tup!(u!(420), u!(69)); ignore span);
+    }
+
+    #[tokio::test]
     async fn test_let_in_cascade() {
         let (res, res_type) =
             parse_infer_and_eval(r#"let f = (λx → -x), u = f 6.9, v = f u in (u, v)"#)
