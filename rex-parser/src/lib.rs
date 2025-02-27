@@ -405,19 +405,12 @@ impl Parser {
             }
         };
 
-        // Catch the case where the list is empty.
-        let token = self.current_token();
-        if let Some(Token::BracketR(span, ..)) = token {
-            self.next_token();
-            return Ok(Expr::List(
-                Id::new(),
-                Span::from_begin_end(span_begin, span.end),
-                vec![],
-            ));
-        }
-
         let mut exprs = Vec::new();
         loop {
+            if let Some(Token::BracketR(..)) = self.current_token() {
+                break;
+            }
+
             // Parse the next expression.
             let expr = self.parse_expr()?;
             let span_expr = *expr.span();
@@ -496,19 +489,12 @@ impl Parser {
             }
         };
 
-        // Catch the case where the dict is empty.
-        let token = self.current_token();
-        if let Some(Token::BraceR(span, ..)) = token {
-            self.next_token();
-            return Ok(Expr::Dict(
-                Id::new(),
-                Span::from_begin_end(span_begin, span.end),
-                Default::default(),
-            ));
-        }
-
         let mut kvs = Vec::new();
         loop {
+            if let Some(Token::BraceR(_, ..)) = self.current_token() {
+                break;
+            }
+
             // Parse the ident.
             let var = match self.parse_ident_expr()? {
                 Expr::Var(var) => var,
