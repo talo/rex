@@ -18,6 +18,8 @@ use crate::{
 use rex_ast::expr::Expr;
 use rex_ast::id::Id;
 use rex_lexer::span::Span;
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 macro_rules! impl_register_fn_core {
     ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
@@ -396,6 +398,14 @@ where
                 }
             })
         })?;
+
+        // Uuid
+        this.register_fn1("string", |_ctx: &Context<_>, x: Uuid| Ok(format!("{}", x)))?;
+        this.register_fn0("random_uuid", |_ctx: &Context<_>| Ok(Uuid::new_v4()))?;
+
+        // DateTime
+        this.register_fn1("string", |_ctx: &Context<_>, x: DateTime<Utc>| Ok(format!("{}", x)))?;
+        this.register_fn0("now", |_ctx: &Context<_>| Ok(Utc::now()))?;
 
         Ok(this)
     }

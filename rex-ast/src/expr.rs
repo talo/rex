@@ -7,6 +7,8 @@ use rex_lexer::span::{Position, Span};
 use rpds::HashTrieMapSync;
 
 use crate::id::Id;
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 pub type Scope = HashTrieMapSync<String, Expr>;
 
@@ -73,6 +75,8 @@ pub enum Expr {
     Int(Id, Span, i64),       // -420
     Float(Id, Span, f64),     // 3.14
     String(Id, Span, String), // "hello"
+    Uuid(Id, Span, Uuid),
+    DateTime(Id, Span, DateTime<Utc>),
 
     Tuple(Id, Span, Vec<Expr>),             // (e1, e2, e3)
     List(Id, Span, Vec<Expr>),              // [e1, e2, e3]
@@ -100,6 +104,8 @@ impl Expr {
             | Self::Int(id, ..)
             | Self::Float(id, ..)
             | Self::String(id, ..)
+            | Self::Uuid(id, ..)
+            | Self::DateTime(id, ..)
             | Self::Tuple(id, ..)
             | Self::List(id, ..)
             | Self::Dict(id, ..)
@@ -120,6 +126,8 @@ impl Expr {
             | Self::Int(id, ..)
             | Self::Float(id, ..)
             | Self::String(id, ..)
+            | Self::Uuid(id, ..)
+            | Self::DateTime(id, ..)
             | Self::Tuple(id, ..)
             | Self::List(id, ..)
             | Self::Dict(id, ..)
@@ -140,6 +148,8 @@ impl Expr {
             | Self::Int(_, span, ..)
             | Self::Float(_, span, ..)
             | Self::String(_, span, ..)
+            | Self::Uuid(_, span, ..)
+            | Self::DateTime(_, span, ..)
             | Self::Tuple(_, span, ..)
             | Self::List(_, span, ..)
             | Self::Dict(_, span, ..)
@@ -160,6 +170,8 @@ impl Expr {
             | Self::Int(_, span, ..)
             | Self::Float(_, span, ..)
             | Self::String(_, span, ..)
+            | Self::Uuid(_, span, ..)
+            | Self::DateTime(_, span, ..)
             | Self::Tuple(_, span, ..)
             | Self::List(_, span, ..)
             | Self::Dict(_, span, ..)
@@ -193,6 +205,8 @@ impl Expr {
             Self::Int(id, ..) => *id = Id::default(),
             Self::Float(id, ..) => *id = Id::default(),
             Self::String(id, ..) => *id = Id::default(),
+            Self::Uuid(id, ..) => *id = Id::default(),
+            Self::DateTime(id, ..) => *id = Id::default(),
             Self::Tuple(id, _span, elems) => {
                 *id = Id::default();
                 for elem in elems {
@@ -257,6 +271,8 @@ impl Expr {
             Self::Int(_, span, ..) => *span = Span::default(),
             Self::Float(_, span, ..) => *span = Span::default(),
             Self::String(_, span, ..) => *span = Span::default(),
+            Self::Uuid(_, span, ..) => *span = Span::default(),
+            Self::DateTime(_, span, ..) => *span = Span::default(),
             Self::Tuple(_, span, elems) => {
                 *span = Span::default();
                 for elem in elems {
@@ -323,6 +339,8 @@ impl Display for Expr {
             Self::Int(_id, _span, x) => x.fmt(f),
             Self::Float(_id, _span, x) => x.fmt(f),
             Self::String(_id, _span, x) => x.fmt(f),
+            Self::Uuid(_id, _span, x) => x.fmt(f),
+            Self::DateTime(_id, _span, x) => x.fmt(f),
             Self::List(_id, _span, xs) => {
                 '['.fmt(f)?;
                 for (i, x) in xs.iter().enumerate() {

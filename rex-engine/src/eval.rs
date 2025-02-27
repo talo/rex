@@ -37,6 +37,8 @@ where
         Expr::Int(..) |
         Expr::Float(..) |
         Expr::String(..) |
+        Expr::Uuid(..) |
+        Expr::DateTime(..) |
         Expr::Named(..) => {
             Ok(expr.clone())
         }
@@ -783,6 +785,44 @@ pub mod test {
         let (res, res_type) = parse_infer_and_eval(r#"{ a = 420, b = 3.14, c = "hello", }"#).await.unwrap();
         assert_eq!(res_type, dict! { a: uint!(), b: float!(), c: string!() });
         assert_expr_eq!(res, d!(a = u!(420), b = f!(3.14), c = s!("hello")); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_uuid() -> Result<(), String> {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"random_uuid"#)
+                .await
+                .unwrap();
+        assert!(matches!(res_type, Type::Uuid));
+        assert!(matches!(res, Expr::Uuid(..))); // Don't check value; it's random!
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"string random_uuid"#)
+                .await
+                .unwrap();
+        assert!(matches!(res_type, Type::String));
+        assert!(matches!(res, Expr::String(..))); // Don't check value; it's random!
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_datetime() -> Result<(), String> {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"now"#)
+                .await
+                .unwrap();
+        assert!(matches!(res_type, Type::DateTime));
+        assert!(matches!(res, Expr::DateTime(..))); // Don't check value; depends on current time
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"string now"#)
+                .await
+                .unwrap();
+        assert!(matches!(res_type, Type::String));
+        assert!(matches!(res, Expr::String(..))); // Don't check value; depends on current time
+
+        Ok(())
     }
 
     #[tokio::test]

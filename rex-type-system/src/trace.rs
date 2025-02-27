@@ -77,6 +77,22 @@ pub fn sprint_expr_with_type(expr: &Expr, env: &ExprTypeEnv, subst: Option<&Subs
                 .map(|t| t.to_string())
                 .unwrap_or("_".to_string())
         ),
+        Expr::Uuid(id, _, u) => format!(
+            "{}:{}",
+            u,
+            env.get(id)
+                .and_then(|t| subst.map(|s| apply_subst(t, s)))
+                .map(|t| t.to_string())
+                .unwrap_or("_".to_string())
+        ),
+        Expr::DateTime(id, _, dt) => format!(
+            "{}:{}",
+            dt,
+            env.get(id)
+                .and_then(|t| subst.map(|s| apply_subst(t, s)))
+                .map(|t| t.to_string())
+                .unwrap_or("_".to_string())
+        ),
         Expr::List(id, _, xs) => {
             let mut s = String::new();
             s.push('[');
