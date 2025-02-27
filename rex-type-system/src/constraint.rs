@@ -267,6 +267,17 @@ pub fn generate_constraints(
             Ok(Type::Dict(kvs))
         }
 
+        Expr::Named(..) => {
+            // Named expressions are for values created by constructors of sum types
+            // (e.g. Result or Option). They should not be present in the source tree.
+            //
+            // TODO: Consider using a separate type for representing values created at
+            // runtime vs. expressions parsed from the source file. Some expressions
+            // (if/then/else) will not be part of the value type, and some values (Named, Curry)
+            // will not be part of the expression type.
+            unimplemented!("Named expressions are not expected to be present in the AST")
+        }
+
         Expr::Tuple(id, _span, exprs) => {
             let mut types = Vec::new();
 

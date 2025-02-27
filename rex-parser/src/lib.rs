@@ -273,6 +273,15 @@ impl Parser {
 
         // Parse the inner expression.
         let mut expr = match self.current_token() {
+            Some(Token::ParenR(span, ..)) => {
+                self.next_token();
+                // Empty tuple
+                return Ok(Expr::Tuple(
+                    Id::new(),
+                    Span::from_begin_end(span_begin.begin, span.end),
+                    vec![],
+                ));
+            }
             Some(Token::Add(span, ..)) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "+"))

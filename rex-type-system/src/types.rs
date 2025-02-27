@@ -587,6 +587,13 @@ where
     }
 }
 
+impl ToType for ()
+{
+    fn to_type() -> Type {
+        Type::Tuple(vec![])
+    }
+}
+
 impl<T0> ToType for (T0,)
 where
     T0: ToType,

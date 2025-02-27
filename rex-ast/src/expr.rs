@@ -77,16 +77,7 @@ pub enum Expr {
     Tuple(Id, Span, Vec<Expr>),             // (e1, e2, e3)
     List(Id, Span, Vec<Expr>),              // [e1, e2, e3]
     Dict(Id, Span, BTreeMap<String, Expr>), // {k1 = v1, k2 = v2}
-
-    // TODO(loong): in order to properly support ADT constructor function we
-    // need to support an expression like this:
-    //
-    // ```rex
-    // Named(Id, Span, String, Box<Type>), //  MyVariant1 {k1 = v1, k2 = v2}
-    // ```
-    //
-    // Note that it wouldn't be something that you can express in code, but
-    // rather something that can be returned by a function.
+    Named(Id, Span, String, Option<Box<Expr>>), //  MyVariant1 {k1 = v1, k2 = v2}
     Var(Var),                                       // x
     App(Id, Span, Box<Expr>, Box<Expr>),            // f x
     Lam(Id, Span, Scope, Var, Box<Expr>),           // λx → e
@@ -112,6 +103,7 @@ impl Expr {
             | Self::Tuple(id, ..)
             | Self::List(id, ..)
             | Self::Dict(id, ..)
+            | Self::Named(id, ..)
             | Self::Var(Var { id, .. })
             | Self::App(id, ..)
             | Self::Lam(id, ..)
@@ -131,6 +123,7 @@ impl Expr {
             | Self::Tuple(id, ..)
             | Self::List(id, ..)
             | Self::Dict(id, ..)
+            | Self::Named(id, ..)
             | Self::Var(Var { id, .. })
             | Self::App(id, ..)
             | Self::Lam(id, ..)
@@ -150,6 +143,7 @@ impl Expr {
             | Self::Tuple(_, span, ..)
             | Self::List(_, span, ..)
             | Self::Dict(_, span, ..)
+            | Self::Named(_, span, ..)
             | Self::Var(Var { span, .. })
             | Self::App(_, span, ..)
             | Self::Lam(_, span, ..)
@@ -169,6 +163,7 @@ impl Expr {
             | Self::Tuple(_, span, ..)
             | Self::List(_, span, ..)
             | Self::Dict(_, span, ..)
+            | Self::Named(_, span, ..)
             | Self::Var(Var { span, .. })
             | Self::App(_, span, ..)
             | Self::Lam(_, span, ..)
@@ -214,6 +209,12 @@ impl Expr {
                 *id = Id::default();
                 for (_k, v) in kvs {
                     v.reset_ids();
+                }
+            }
+            Self::Named(id, _span, _name, inner) => {
+                *id = Id::default();
+                if let Some(inner) = inner {
+                    inner.reset_ids();
                 }
             }
             Self::Var(var) => var.reset_id(),
@@ -272,6 +273,12 @@ impl Expr {
                 *span = Span::default();
                 for (_k, v) in kvs {
                     v.reset_spans();
+                }
+            }
+            Self::Named(_, span, _name, inner) => {
+                *span = Span::default();
+                if let Some(inner) = inner {
+                    inner.reset_spans();
                 }
             }
             Self::Var(var) => var.reset_span(),
@@ -348,7 +355,15 @@ impl Display for Expr {
                 }
                 '}'.fmt(f)
             }
-
+            Self::Named(_id, _span, name, inner) => {
+                name.fmt(f)?;
+                if let Some(inner) = inner {
+                    '('.fmt(f)?;
+                    inner.fmt(f)?;
+                    ')'.fmt(f)?;
+                }
+                Ok(())
+            }
             Self::Var(var) => var.fmt(f),
             Self::App(_id, _span, g, x) => {
                 g.fmt(f)?;

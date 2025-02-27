@@ -75,6 +75,17 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
             unify_eq(&b1, &b2, subst)
         }
 
+        // Result
+        (Type::Result(a1, b1), Type::Result(a2, b2)) => {
+            unify_eq(&a1, &a2, subst)?;
+            unify_eq(&b1, &b2, subst)
+        }
+
+        // Option
+        (Type::Option(a1), Type::Option(a2)) => {
+            unify_eq(&a1, &a2, subst)
+        }
+
         // Type variable case requires occurs check
         (Type::Var(v1), Type::Var(v2)) => {
             if v1 != v2 {

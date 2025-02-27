@@ -94,6 +94,13 @@ impl Encode for String {
     }
 }
 
+impl Encode for ()
+{
+    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Tuple(id, span, vec![]))
+    }
+}
+
 impl<T0> Encode for (T0,)
 where
     T0: Encode,
@@ -167,6 +174,39 @@ where
             ys.push(x.try_encode(id, span)?);
         }
         Ok(Expr::List(id, span, ys))
+    }
+}
+
+impl<T, E> Encode for Result<T, E>
+where
+    T: Encode,
+    E: Encode,
+{
+    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+        match self {
+            Ok(x) => {
+                Ok(Expr::Named(id, span, "Ok".to_string(), Some(Box::new(x.try_encode(id, span)?))))
+            }
+            Err(x) => {
+                Ok(Expr::Named(id, span, "Err".to_string(), Some(Box::new(x.try_encode(id, span)?))))
+            }
+        }
+    }
+}
+
+impl<T> Encode for Option<T>
+where
+    T: Encode
+{
+    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+        match self {
+            Some(x) => {
+                Ok(Expr::Named(id, span, "Some".to_string(), Some(Box::new(x.try_encode(id, span)?))))
+            }
+            None => {
+                Ok(Expr::Named(id, span, "None".to_string(), None))
+            }
+        }
     }
 }
 
@@ -344,23 +384,32 @@ impl Decode for String {
     }
 }
 
+impl Decode for ()
+{
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        match v {
+            Expr::Tuple(_id, _span, xs) if xs.len() == 0 => {
+                Ok(())
+            }
+            _ => Err(Error::ExpectedTypeGotValue {
+                expected: Self::to_type(),
+                got: v.clone(),
+            }),
+        }
+    }
+}
+
 impl<T0> Decode for (T0,)
 where
     T0: Decode + ToType,
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) => {
-                if xs.len() != 1 {
-                    return Err(Error::ExpectedTypeGotValue {
-                        expected: Self::to_type(),
-                        got: v.clone(),
-                    });
-                }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 1 => {
                 Ok((T0::try_decode(&xs[0])?,))
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Self::to_type(),
                 got: v.clone(),
             }),
         }
@@ -374,17 +423,11 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) => {
-                if xs.len() != 2 {
-                    return Err(Error::ExpectedTypeGotValue {
-                        expected: Self::to_type(),
-                        got: v.clone(),
-                    });
-                }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 2 => {
                 Ok((T0::try_decode(&xs[0])?, T1::try_decode(&xs[1])?))
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Self::to_type(),
                 got: v.clone(),
             }),
         }
@@ -399,13 +442,7 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) => {
-                if xs.len() != 3 {
-                    return Err(Error::ExpectedTypeGotValue {
-                        expected: Self::to_type(),
-                        got: v.clone(),
-                    });
-                }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 3 => {
                 Ok((
                     T0::try_decode(&xs[0])?,
                     T1::try_decode(&xs[1])?,
@@ -413,7 +450,7 @@ where
                 ))
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Self::to_type(),
                 got: v.clone(),
             }),
         }
@@ -429,13 +466,7 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) => {
-                if xs.len() != 4 {
-                    return Err(Error::ExpectedTypeGotValue {
-                        expected: Self::to_type(),
-                        got: v.clone(),
-                    });
-                }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 4 => {
                 Ok((
                     T0::try_decode(&xs[0])?,
                     T1::try_decode(&xs[1])?,
@@ -444,7 +475,7 @@ where
                 ))
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Self::to_type(),
                 got: v.clone(),
             }),
         }
@@ -466,6 +497,49 @@ where
             }
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Type::Int,
+                got: v.clone(),
+            }),
+        }
+    }
+}
+
+impl<T, E> Decode for Result<T, E>
+where
+    T: Decode + ToType,
+    E: Decode + ToType,
+{
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        match v {
+            Expr::Named(_id, _span, name, Some(x)) if name == "Ok" => {
+                Ok(Ok(T::try_decode(x)?))
+            }
+            Expr::Named(_id, _span, name, Some(x)) if name == "Err" => {
+                Ok(Err(E::try_decode(x)?))
+            }
+            _ => Err(Error::ExpectedTypeGotValue {
+                expected: Type::Result(
+                    Box::new(T::to_type()),
+                    Box::new(E::to_type())),
+                got: v.clone(),
+            }),
+        }
+    }
+}
+
+impl<T> Decode for Option<T>
+where
+    T: Decode + ToType
+{
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        match v {
+            Expr::Named(_id, _span, name, Some(x)) if name == "Some" => {
+                Ok(Some(T::try_decode(x)?))
+            }
+            Expr::Named(_id, _span, name, None) if name == "None" => {
+                Ok(None)
+            }
+            _ => Err(Error::ExpectedTypeGotValue {
+                expected: Type::Option(Box::new(T::to_type())),
                 got: v.clone(),
             }),
         }
