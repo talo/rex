@@ -13,7 +13,7 @@ use crate::{
     codec::{Decode, Encode, Func},
     error::Error,
     eval::{apply, Context},
-    ftable::{Ftable, A, B, C, D, E},
+    ftable::{Ftable, A, B, C, D, E, F},
 };
 use rex_ast::expr::Expr;
 use rex_ast::id::Id;
@@ -211,6 +211,10 @@ where
         this.register_fn2("&&", |_ctx: &Context<_>, x: bool, y: bool| Ok(x && y))?;
         this.register_fn2("||", |_ctx: &Context<_>, x: bool, y: bool| Ok(x || y))?;
 
+        this.register_fn2("==", |_ctx: &Context<_>, x: u64, y: u64| Ok(x == y))?;
+        this.register_fn2("==", |_ctx: &Context<_>, x: i64, y: i64| Ok(x == y))?;
+        this.register_fn2("==", |_ctx: &Context<_>, x: f64, y: f64| Ok(x == y))?;
+
         this.register_fn2("+", |_ctx: &Context<_>, x: u64, y: u64| Ok(x + y))?;
         this.register_fn2("+", |_ctx: &Context<_>, x: i64, y: i64| Ok(x + y))?;
         this.register_fn2("+", |_ctx: &Context<_>, x: f64, y: f64| Ok(x + y))?;
@@ -318,6 +322,22 @@ where
                 }
             })
         })?;
+        this.register_fn_async2("and_then_result", |ctx, f: Func<A, Result<B, E>>, x: Result<A, E>| {
+            Box::pin(async move {
+                match x {
+                    Ok(x) => Ok(Result::<B, E>::try_decode(&apply(ctx, &f, &x).await?)?),
+                    Err(e) => Ok(Err(e)),
+                }
+            })
+        })?;
+        this.register_fn_async2("or_else_result", |ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
+            Box::pin(async move {
+                match x {
+                    Ok(x) => Ok(Ok(x)),
+                    Err(x) => Ok(Result::<A, F>::try_decode(&apply(ctx, &f, &x).await?)?),
+                }
+            })
+        })?;
         this.register_fn_async2("unwrap_or_else_result", |ctx, f: Func<E, A>, x: Result<A, E>| {
             Box::pin(async move {
                 match x {
@@ -335,6 +355,29 @@ where
                 match x {
                     Some(x) => Ok(Some(B(apply(ctx, &f, &x).await?))),
                     None => Ok(None),
+                }
+            })
+        })?;
+        this.register_fn_async2("and_then_option", |ctx, f: Func<A, Option<B>>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(Option::<B>::try_decode(&apply(ctx, &f, &x).await?)?),
+                    None => Ok(None),
+                }
+            })
+        })?;
+        this.register_fn_async2("or_else_option", |ctx, f: Func<(), Option<A>>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(Some(x)),
+                    None => {
+                        let x_id = Id::new();
+                        let x = Expr::Tuple(x_id, Span::default(), vec![]);
+                        ctx.env.write().await.insert(x_id, <()>::to_type());
+                        let res = apply(ctx, &f, &x).await?;
+                        ctx.env.write().await.remove(&x_id);
+                        Ok(Option::<A>::try_decode(&res)?)
+                    }
                 }
             })
         })?;

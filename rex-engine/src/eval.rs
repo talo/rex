@@ -874,7 +874,10 @@ pub mod test {
                 .unwrap();
         assert_eq!(res_type, list!(result!(uint!(), string!())));
         assert_expr_eq!(res, l!(n!("Ok", Some(u!(4))), n!("Err", Some(s!("bad")))); ignore span);
+    }
 
+    #[tokio::test]
+    async fn test_map_result() {
         let (res, res_type) =
             parse_infer_and_eval(r#"
                 let
@@ -892,7 +895,58 @@ pub mod test {
             l!(n!("Ok", Some(l!(u!(4), u!(5), u!(6)))),
                n!("Err", Some(s!("bad"))));
             ignore span);
+    }
 
+    #[tokio::test]
+    async fn test_and_then_result() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"
+                let
+                    a = Ok 0,
+                    b = Ok 1,
+                    c = Err "bad",
+                    f = and_then_result (\x -> if x == 0 then Ok 3.14 else Err "nonzero")
+                in
+                    map f [a, b, c]
+                "#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(result!(float!(), string!())));
+        assert_expr_eq!(
+            res,
+            l!(
+                n!("Ok", Some(f!(3.14))),
+                n!("Err", Some(s!("nonzero"))),
+                n!("Err", Some(s!("bad"))));
+            ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_or_else_result() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"
+                let
+                    a = Ok "one",
+                    b = Err 0,
+                    c = Err 1,
+                    f = or_else_result (\x -> if x == 0 then Ok "yes" else Err 3.14)
+                in
+                    map f [a, b, c]
+                "#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(result!(string!(), float!())));
+        assert_expr_eq!(
+            res,
+            l!(
+                n!("Ok", Some(s!("one"))),
+                n!("Ok", Some(s!("yes"))),
+                n!("Err", Some(f!(3.14))));
+            ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_unwrap_or_else_result() {
         let (res, res_type) =
             parse_infer_and_eval(r#"
                 let
@@ -916,7 +970,10 @@ pub mod test {
                 .unwrap();
         assert_eq!(res_type, list!(option!(uint!())));
         assert_expr_eq!(res, l!(n!("Some", Some(u!(4))), n!("None", None)); ignore span);
+    }
 
+    #[tokio::test]
+    async fn test_map_option() {
         let (res, res_type) =
             parse_infer_and_eval(r#"
                 let
@@ -934,7 +991,75 @@ pub mod test {
             l!(n!("Some", Some(l!(u!(4), u!(5), u!(6)))),
                n!("None", None));
             ignore span);
+    }
 
+    #[tokio::test]
+    async fn test_and_then_option() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"
+                let
+                    a = Some 0,
+                    b = Some 1,
+                    c = None,
+                    f = and_then_option (\x -> if x == 0 then Some 3.14 else None)
+                in
+                    map f [a, b, c]
+                "#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(option!(float!())));
+        assert_expr_eq!(
+            res,
+            l!(
+                n!("Some", Some(f!(3.14))),
+                n!("None", None),
+                n!("None", None));
+            ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_or_else_option() {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"
+                let
+                    a = Some 5.1,
+                    b = None,
+                    f = or_else_option (\x -> Some 3.14)
+                in
+                    map f [a, b]
+                "#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(option!(float!())));
+        assert_expr_eq!(
+            res,
+            l!(
+                n!("Some", Some(f!(5.1))),
+                n!("Some", Some(f!(3.14))));
+            ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"
+                let
+                    a = Some 5.1,
+                    b = None,
+                    f = or_else_option (\x -> None)
+                in
+                    map f [a, b]
+                "#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(option!(float!())));
+        assert_expr_eq!(
+            res,
+            l!(
+                n!("Some", Some(f!(5.1))),
+                n!("None", None));
+            ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_unwrap_or_else_option() {
         let (res, res_type) =
             parse_infer_and_eval(r#"
                 let
