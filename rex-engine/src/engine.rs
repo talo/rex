@@ -15,6 +15,9 @@ use crate::{
     eval::{apply, Context},
     ftable::{Ftable, A, B, C, D, E},
 };
+use rex_ast::expr::Expr;
+use rex_ast::id::Id;
+use rex_lexer::span::Span;
 
 macro_rules! impl_register_fn_core {
     ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
@@ -315,7 +318,14 @@ where
                 }
             })
         })?;
-
+        this.register_fn_async2("unwrap_or_else_result", |ctx, f: Func<E, A>, x: Result<A, E>| {
+            Box::pin(async move {
+                match x {
+                    Ok(x) => Ok(x),
+                    Err(x) => Ok(A(apply(ctx, &f, &x).await?)),
+                }
+            })
+        })?;
 
         // Option
         this.register_fn0("None", |_ctx: &Context<_>| Ok(None::<A>))?;
@@ -325,6 +335,21 @@ where
                 match x {
                     Some(x) => Ok(Some(B(apply(ctx, &f, &x).await?))),
                     None => Ok(None),
+                }
+            })
+        })?;
+        this.register_fn_async2("unwrap_or_else_option", |ctx, f: Func<(), A>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(x),
+                    None => {
+                        let x_id = Id::new();
+                        let x = Expr::Tuple(x_id, Span::default(), vec![]);
+                        ctx.env.write().await.insert(x_id, <()>::to_type());
+                        let res = apply(ctx, &f, &x).await?;
+                        ctx.env.write().await.remove(&x_id);
+                        Ok(A(res))
+                    }
                 }
             })
         })?;

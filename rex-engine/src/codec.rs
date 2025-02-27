@@ -94,6 +94,13 @@ impl Encode for String {
     }
 }
 
+impl Encode for ()
+{
+    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Tuple(id, span, vec![]))
+    }
+}
+
 impl<T0> Encode for (T0,)
 where
     T0: Encode,
@@ -374,6 +381,13 @@ impl Decode for String {
                 got: v.clone(),
             }),
         }
+    }
+}
+
+impl Decode for ()
+{
+    fn try_decode(_v: &Expr) -> Result<Self, Error> {
+        Ok(())
     }
 }
 

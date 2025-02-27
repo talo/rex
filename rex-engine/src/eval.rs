@@ -216,11 +216,11 @@ pub async fn apply<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let f_type = unify::apply_subst(
+    let f_type: Type = unify::apply_subst(
         ctx.env.read().await.get(f.borrow().id()).unwrap(),
         &ctx.subst,
     );
-    let x_type = unify::apply_subst(
+    let x_type: Type = unify::apply_subst(
         ctx.env.read().await.get(x.borrow().id()).unwrap(),
         &ctx.subst,
     );
@@ -892,6 +892,20 @@ pub mod test {
             l!(n!("Ok", Some(l!(u!(4), u!(5), u!(6)))),
                n!("Err", Some(s!("bad"))));
             ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"
+                let
+                    a = Ok 4,
+                    b = Err "bad",
+                    f = unwrap_or_else_result (\x -> 99)
+                in
+                    map f [a, b]
+                "#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(4), u!(99)); ignore span);
     }
 
     #[tokio::test]
@@ -920,6 +934,20 @@ pub mod test {
             l!(n!("Some", Some(l!(u!(4), u!(5), u!(6)))),
                n!("None", None));
             ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"
+                let
+                    a = Some 4,
+                    b = None,
+                    f = unwrap_or_else_option (\x -> 99)
+                in
+                    map f [a, b]
+                "#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(4), u!(99)); ignore span);
     }
 
     #[tokio::test]
