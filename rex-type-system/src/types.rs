@@ -4,6 +4,8 @@ use std::{
 };
 
 use rex_ast::id::Id;
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 pub type TypeEnv = HashMap<String, Type>;
 
@@ -29,6 +31,8 @@ pub enum Type {
     Int,
     Float,
     String,
+    Uuid,
+    DateTime,
 }
 
 impl Type {
@@ -94,6 +98,8 @@ impl Type {
             Type::Int => {}
             Type::Float => {}
             Type::String => {}
+            Type::Uuid => {}
+            Type::DateTime => {}
         }
     }
 
@@ -110,6 +116,8 @@ impl Type {
             (Self::Int, Self::Int) => Ok(()),
             (Self::Float, Self::Float) => Ok(()),
             (Self::String, Self::String) => Ok(()),
+            (Self::Uuid, Self::Uuid) => Ok(()),
+            (Self::DateTime, Self::DateTime) => Ok(()),
 
             (Self::Arrow(a1, b1), Self::Arrow(a2, b2)) => {
                 a1.maybe_compatible(a2)?;
@@ -236,6 +244,8 @@ impl Type {
             Type::Int => {}
             Type::Float => {}
             Type::String => {}
+            Type::Uuid => {}
+            Type::DateTime => {}
         }
     }
 }
@@ -248,6 +258,8 @@ impl Display for Type {
             Type::Int => "int".fmt(f),
             Type::Float => "float".fmt(f),
             Type::String => "string".fmt(f),
+            Type::Uuid => "uuid".fmt(f),
+            Type::DateTime => "datetime".fmt(f),
             Type::Option(x) => {
                 "Option (".fmt(f)?;
                 x.fmt(f)?;
@@ -468,6 +480,18 @@ impl ToType for String {
     }
 }
 
+impl ToType for Uuid {
+    fn to_type() -> Type {
+        Type::Uuid
+    }
+}
+
+impl ToType for DateTime<Utc> {
+    fn to_type() -> Type {
+        Type::DateTime
+    }
+}
+
 impl<B> ToType for fn() -> B
 where
     B: ToType,
@@ -584,6 +608,13 @@ where
 {
     fn to_type() -> Type {
         Type::List(Box::new(T::to_type()))
+    }
+}
+
+impl ToType for ()
+{
+    fn to_type() -> Type {
+        Type::Tuple(vec![])
     }
 }
 

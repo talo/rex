@@ -14,8 +14,13 @@ use crate::{
     codec::{Decode, Encode, Func},
     error::Error,
     eval::{apply, Context},
-    ftable::{Ftable, A, B, C, D},
+    ftable::{Ftable, A, B, C, D, E, F},
 };
+use rex_ast::expr::Expr;
+use rex_ast::id::Id;
+use rex_lexer::span::Span;
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 macro_rules! impl_register_fn_core {
     ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
@@ -209,6 +214,10 @@ where
         this.register_fn2("&&", |_ctx: &Context<_>, x: bool, y: bool| Ok(x && y))?;
         this.register_fn2("||", |_ctx: &Context<_>, x: bool, y: bool| Ok(x || y))?;
 
+        this.register_fn2("==", |_ctx: &Context<_>, x: u64, y: u64| Ok(x == y))?;
+        this.register_fn2("==", |_ctx: &Context<_>, x: i64, y: i64| Ok(x == y))?;
+        this.register_fn2("==", |_ctx: &Context<_>, x: f64, y: f64| Ok(x == y))?;
+
         this.register_fn2("+", |_ctx: &Context<_>, x: u64, y: u64| Ok(x + y))?;
         this.register_fn2("+", |_ctx: &Context<_>, x: i64, y: i64| Ok(x + y))?;
         this.register_fn2("+", |_ctx: &Context<_>, x: f64, y: f64| Ok(x + y))?;
@@ -297,6 +306,32 @@ where
             })
         })?;
 
+        this.register_fn_async3("foldl", |ctx, f: Func<A, Func<B, A>>, base: A, xs: Vec<B>| {
+            Box::pin(async move {
+                let mut res = base;
+                for x in xs {
+                    let ares1 = apply(ctx, &f, &res).await?;
+                    let ares2 = apply(ctx, &ares1, &x).await?;
+                    res = A(ares2)
+                }
+                Ok(res)
+
+            })
+        })?;
+
+        this.register_fn_async3("foldr", |ctx, f: Func<A, Func<B, B>>, base: B, xs: Vec<A>| {
+            Box::pin(async move {
+                let mut res = base;
+                for x in xs.iter().rev() {
+                    let ares1 = apply(ctx, &f, x).await?;
+                    let ares2 = apply(ctx, &ares1, &res).await?;
+                    res = B(ares2);
+                }
+                Ok(res)
+
+            })
+        })?;
+
         this.register_fn_async3(".", |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
             Box::pin(async move {
                 let x = apply(ctx, &g, &x).await?;
@@ -304,6 +339,100 @@ where
                 Ok(C(x))
             })
         })?;
+
+        // Result
+        this.register_fn1("Ok", |_ctx: &Context<_>, x: A| Ok(Ok::<A, B>(x)))?;
+        this.register_fn1("Err", |_ctx: &Context<_>, x: B| Ok(Err::<A, B>(x)))?;
+        this.register_fn_async2("map_result", |ctx, f: Func<A, B>, x: Result<A, E>| {
+            Box::pin(async move {
+                match x {
+                    Ok(x) => Ok(Ok(B(apply(ctx, &f, &x).await?))),
+                    Err(e) => Ok(Err(e)),
+                }
+            })
+        })?;
+        this.register_fn_async2("and_then_result", |ctx, f: Func<A, Result<B, E>>, x: Result<A, E>| {
+            Box::pin(async move {
+                match x {
+                    Ok(x) => Ok(Result::<B, E>::try_decode(&apply(ctx, &f, &x).await?)?),
+                    Err(e) => Ok(Err(e)),
+                }
+            })
+        })?;
+        this.register_fn_async2("or_else_result", |ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
+            Box::pin(async move {
+                match x {
+                    Ok(x) => Ok(Ok(x)),
+                    Err(x) => Ok(Result::<A, F>::try_decode(&apply(ctx, &f, &x).await?)?),
+                }
+            })
+        })?;
+        this.register_fn_async2("unwrap_or_else_result", |ctx, f: Func<E, A>, x: Result<A, E>| {
+            Box::pin(async move {
+                match x {
+                    Ok(x) => Ok(x),
+                    Err(x) => Ok(A(apply(ctx, &f, &x).await?)),
+                }
+            })
+        })?;
+
+        // Option
+        this.register_fn0("None", |_ctx: &Context<_>| Ok(None::<A>))?;
+        this.register_fn1("Some", |_ctx: &Context<_>, x: A| Ok(Some(x)))?;
+        this.register_fn_async2("map_option", |ctx, f: Func<A, B>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(Some(B(apply(ctx, &f, &x).await?))),
+                    None => Ok(None),
+                }
+            })
+        })?;
+        this.register_fn_async2("and_then_option", |ctx, f: Func<A, Option<B>>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(Option::<B>::try_decode(&apply(ctx, &f, &x).await?)?),
+                    None => Ok(None),
+                }
+            })
+        })?;
+        this.register_fn_async2("or_else_option", |ctx, f: Func<(), Option<A>>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(Some(x)),
+                    None => {
+                        let x_id = Id::new();
+                        let x = Expr::Tuple(x_id, Span::default(), vec![]);
+                        ctx.env.write().await.insert(x_id, <()>::to_type());
+                        let res = apply(ctx, &f, &x).await?;
+                        ctx.env.write().await.remove(&x_id);
+                        Ok(Option::<A>::try_decode(&res)?)
+                    }
+                }
+            })
+        })?;
+        this.register_fn_async2("unwrap_or_else_option", |ctx, f: Func<(), A>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(x),
+                    None => {
+                        let x_id = Id::new();
+                        let x = Expr::Tuple(x_id, Span::default(), vec![]);
+                        ctx.env.write().await.insert(x_id, <()>::to_type());
+                        let res = apply(ctx, &f, &x).await?;
+                        ctx.env.write().await.remove(&x_id);
+                        Ok(A(res))
+                    }
+                }
+            })
+        })?;
+
+        // Uuid
+        this.register_fn1("string", |_ctx: &Context<_>, x: Uuid| Ok(format!("{}", x)))?;
+        this.register_fn0("random_uuid", |_ctx: &Context<_>| Ok(Uuid::new_v4()))?;
+
+        // DateTime
+        this.register_fn1("string", |_ctx: &Context<_>, x: DateTime<Utc>| Ok(format!("{}", x)))?;
+        this.register_fn0("now", |_ctx: &Context<_>| Ok(Utc::now()))?;
 
         Ok(this)
     }

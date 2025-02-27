@@ -267,6 +267,17 @@ pub fn generate_constraints(
             Ok(Type::Dict(kvs))
         }
 
+        Expr::Named(..) => {
+            // Named expressions are for values created by constructors of sum types
+            // (e.g. Result or Option). They should not be present in the source tree.
+            //
+            // TODO: Consider using a separate type for representing values created at
+            // runtime vs. expressions parsed from the source file. Some expressions
+            // (if/then/else) will not be part of the value type, and some values (Named, Curry)
+            // will not be part of the expression type.
+            unimplemented!("Named expressions are not expected to be present in the AST")
+        }
+
         Expr::Tuple(id, _span, exprs) => {
             let mut types = Vec::new();
 
@@ -446,6 +457,14 @@ pub fn generate_constraints(
             expr_env.insert(*id, Type::String);
             Ok(Type::String)
         }
+        Expr::Uuid(id, _span, _x) => {
+            expr_env.insert(*id, Type::Uuid);
+            Ok(Type::Uuid)
+        }
+        Expr::DateTime(id, _span, _x) => {
+            expr_env.insert(*id, Type::DateTime);
+            Ok(Type::DateTime)
+        }
 
         Expr::Curry(..) => {
             todo!("generate_constraints for Expr::Curry just like we do for Expr::App")
@@ -504,7 +523,13 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
             vars
         }
 
-        Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => HashSet::new(),
+        Type::Bool |
+        Type::Uint |
+        Type::Int |
+        Type::Float |
+        Type::String |
+        Type::Uuid |
+        Type::DateTime => HashSet::new(),
     }
 }
 
@@ -632,7 +657,13 @@ fn instantiate(ty: &Type, constraint_system: &mut ConstraintSystem) -> Type {
                     .collect(),
             ),
 
-            Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => ty.clone(),
+            Type::Bool |
+            Type::Uint |
+            Type::Int |
+            Type::Float |
+            Type::String |
+            Type::Uuid |
+            Type::DateTime => ty.clone(),
         };
         result
     }
