@@ -873,7 +873,7 @@ pub mod test {
                 .await
                 .unwrap();
         assert_eq!(res_type, list!(result!(uint!(), string!())));
-        assert_expr_eq!(res, l!(n!("Ok", u!(4)), n!("Err", s!("bad"))); ignore span);
+        assert_expr_eq!(res, l!(n!("Ok", Some(u!(4))), n!("Err", Some(s!("bad")))); ignore span);
 
         let (res, res_type) =
             parse_infer_and_eval(r#"
@@ -887,7 +887,11 @@ pub mod test {
                 .await
                 .unwrap();
         assert_eq!(res_type, list!(result!(list!(uint!()), string!())));
-        assert_expr_eq!(res, l!(n!("Ok", l!(u!(4), u!(5), u!(6))), n!("Err", s!("bad"))); ignore span);
+        assert_expr_eq!(
+            res,
+            l!(n!("Ok", Some(l!(u!(4), u!(5), u!(6)))),
+               n!("Err", Some(s!("bad"))));
+            ignore span);
     }
 
     #[tokio::test]
@@ -897,7 +901,7 @@ pub mod test {
                 .await
                 .unwrap();
         assert_eq!(res_type, list!(option!(uint!())));
-        assert_expr_eq!(res, l!(n!("Some", u!(4)), n!("None", tup!())); ignore span);
+        assert_expr_eq!(res, l!(n!("Some", Some(u!(4))), n!("None", None)); ignore span);
 
         let (res, res_type) =
             parse_infer_and_eval(r#"
@@ -911,7 +915,11 @@ pub mod test {
                 .await
                 .unwrap();
         assert_eq!(res_type, list!(option!(list!(uint!()))));
-        assert_expr_eq!(res, l!(n!("Some", l!(u!(4), u!(5), u!(6))), n!("None", tup!())); ignore span);
+        assert_expr_eq!(
+            res,
+            l!(n!("Some", Some(l!(u!(4), u!(5), u!(6)))),
+               n!("None", None));
+            ignore span);
     }
 
     #[tokio::test]

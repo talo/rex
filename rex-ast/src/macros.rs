@@ -185,8 +185,24 @@ macro_rules! n {
         $crate::expr::Expr::Named(
             $crate::id::Id::new(),
             ::rex_lexer::span::Span::default(),
-            $n.to_string(),
-            Box::new($x),
+            ($n).to_string(),
+            ($x).map(|x| Box::new(x)),
+        )
+    };
+    ($span:expr; $n: expr, $x:expr) => {
+        $crate::expr::Expr::Named(
+            $crate::id::Id::new(),
+            ($span).into(),
+            ($n).to_string(),
+            ($x).map(|x| Box::new(x)),
+        )
+    };
+    ($id:expr, $span:expr; $n: expr, $x:expr) => {
+        $crate::expr::Expr::Named(
+            ($id).into(),
+            ($span).into(),
+            ($n).to_string(),
+            ($x).map(|x| Box::new(x)),
         )
     };
 }

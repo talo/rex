@@ -178,10 +178,10 @@ where
     fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
         match self {
             Ok(x) => {
-                Ok(Expr::Named(id, span, "Ok".to_string(), Box::new(x.try_encode(id, span)?)))
+                Ok(Expr::Named(id, span, "Ok".to_string(), Some(Box::new(x.try_encode(id, span)?))))
             }
             Err(x) => {
-                Ok(Expr::Named(id, span, "Err".to_string(), Box::new(x.try_encode(id, span)?)))
+                Ok(Expr::Named(id, span, "Err".to_string(), Some(Box::new(x.try_encode(id, span)?))))
             }
         }
     }
@@ -194,10 +194,10 @@ where
     fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
         match self {
             Some(x) => {
-                Ok(Expr::Named(id, span, "Some".to_string(), Box::new(x.try_encode(id, span)?)))
+                Ok(Expr::Named(id, span, "Some".to_string(), Some(Box::new(x.try_encode(id, span)?))))
             }
             None => {
-                Ok(Expr::Named(id, span, "None".to_string(), Box::new(Expr::Tuple(id, span, vec![]))))
+                Ok(Expr::Named(id, span, "None".to_string(), None))
             }
         }
     }
@@ -507,21 +507,21 @@ where
 
 impl<T, E> Decode for Result<T, E>
 where
-    T: Decode,
-    E: Decode,
+    T: Decode + ToType,
+    E: Decode + ToType,
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Named(_id, _span, name, x) if name == "Ok" => {
+            Expr::Named(_id, _span, name, Some(x)) if name == "Ok" => {
                 Ok(Ok(T::try_decode(x)?))
             }
-            Expr::Named(_id, _span, name, x) if name == "Err" => {
+            Expr::Named(_id, _span, name, Some(x)) if name == "Err" => {
                 Ok(Err(E::try_decode(x)?))
             }
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Type::Result(
-                    Box::new(Type::Var(Id::new())),
-                    Box::new(Type::Var(Id::new()))),
+                    Box::new(T::to_type()),
+                    Box::new(E::to_type())),
                 got: v.clone(),
             }),
         }
@@ -530,18 +530,18 @@ where
 
 impl<T> Decode for Option<T>
 where
-    T: Decode
+    T: Decode + ToType
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Named(_id, _span, name, x) if name == "Some" => {
+            Expr::Named(_id, _span, name, Some(x)) if name == "Some" => {
                 Ok(Some(T::try_decode(x)?))
             }
-            Expr::Named(_id, _span, name, _x) if name == "None" => {
+            Expr::Named(_id, _span, name, None) if name == "None" => {
                 Ok(None)
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Option(Box::new(Type::Var(Id::new()))),
+                expected: Type::Option(Box::new(T::to_type())),
                 got: v.clone(),
             }),
         }

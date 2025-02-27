@@ -13,7 +13,7 @@ use crate::{
     codec::{Decode, Encode, Func},
     error::Error,
     eval::{apply, Context},
-    ftable::{Ftable, A, B, C, D},
+    ftable::{Ftable, A, B, C, D, E},
 };
 
 macro_rules! impl_register_fn_core {
@@ -307,7 +307,7 @@ where
         // Result
         this.register_fn1("Ok", |_ctx: &Context<_>, x: A| Ok(Ok::<A, B>(x)))?;
         this.register_fn1("Err", |_ctx: &Context<_>, x: B| Ok(Err::<A, B>(x)))?;
-        this.register_fn_async2("map_result", |ctx, f: Func<A, B>, x: Result<A, C>| {
+        this.register_fn_async2("map_result", |ctx, f: Func<A, B>, x: Result<A, E>| {
             Box::pin(async move {
                 match x {
                     Ok(x) => Ok(Ok(B(apply(ctx, &f, &x).await?))),

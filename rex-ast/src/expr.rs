@@ -77,7 +77,7 @@ pub enum Expr {
     Tuple(Id, Span, Vec<Expr>),             // (e1, e2, e3)
     List(Id, Span, Vec<Expr>),              // [e1, e2, e3]
     Dict(Id, Span, BTreeMap<String, Expr>), // {k1 = v1, k2 = v2}
-    Named(Id, Span, String, Box<Expr>), //  MyVariant1 {k1 = v1, k2 = v2}
+    Named(Id, Span, String, Option<Box<Expr>>), //  MyVariant1 {k1 = v1, k2 = v2}
     Var(Var),                                       // x
     App(Id, Span, Box<Expr>, Box<Expr>),            // f x
     Lam(Id, Span, Scope, Var, Box<Expr>),           // λx → e
@@ -213,7 +213,9 @@ impl Expr {
             }
             Self::Named(id, _span, _name, inner) => {
                 *id = Id::default();
-                inner.reset_ids();
+                if let Some(inner) = inner {
+                    inner.reset_ids();
+                }
             }
             Self::Var(var) => var.reset_id(),
             Self::App(id, _span, g, x) => {
@@ -275,7 +277,9 @@ impl Expr {
             }
             Self::Named(_, span, _name, inner) => {
                 *span = Span::default();
-                inner.reset_spans();
+                if let Some(inner) = inner {
+                    inner.reset_spans();
+                }
             }
             Self::Var(var) => var.reset_span(),
             Self::App(_, span, g, x) => {
@@ -353,9 +357,12 @@ impl Display for Expr {
             }
             Self::Named(_id, _span, name, inner) => {
                 name.fmt(f)?;
-                '('.fmt(f)?;
-                inner.fmt(f)?;
-                ')'.fmt(f)
+                if let Some(inner) = inner {
+                    '('.fmt(f)?;
+                    inner.fmt(f)?;
+                    ')'.fmt(f)?;
+                }
+                Ok(())
             }
             Self::Var(var) => var.fmt(f),
             Self::App(_id, _span, g, x) => {
