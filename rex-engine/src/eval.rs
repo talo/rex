@@ -1343,6 +1343,25 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_fold() -> Result<(), String> {
+        let (res, res_type) =
+            parse_infer_and_eval(r#"foldl (-) 200.0 [100.0, 40.0, 8.0, 3.0]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(49.0); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"foldr (-) 200.0 [100.0, 40.0, 8.0, 3.0]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(265.0); ignore span);
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_lambda_let_in_var() -> Result<(), String> {
         let (res, res_type) =
             parse_infer_and_eval(r#"(λx → let y = id x in y + y) 6.9"#)
