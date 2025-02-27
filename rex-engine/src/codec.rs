@@ -6,6 +6,8 @@ use std::{
 use rex_ast::{expr::Expr, id::Id};
 use rex_lexer::span::Span;
 use rex_type_system::types::{ToType, Type};
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 use crate::error::Error;
 
@@ -91,6 +93,18 @@ impl Encode for &str {
 impl Encode for String {
     fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
         Ok(Expr::String(id, span, self))
+    }
+}
+
+impl Encode for Uuid {
+    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Uuid(id, span, self))
+    }
+}
+
+impl Encode for DateTime<Utc> {
+    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::DateTime(id, span, self))
     }
 }
 
@@ -378,6 +392,30 @@ impl Decode for String {
             Expr::String(_, _, x) => Ok(x.clone()),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Type::Int,
+                got: v.clone(),
+            }),
+        }
+    }
+}
+
+impl Decode for Uuid {
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        match v {
+            Expr::Uuid(_, _, u) => Ok(u.clone()),
+            _ => Err(Error::ExpectedTypeGotValue {
+                expected: Self::to_type(),
+                got: v.clone(),
+            }),
+        }
+    }
+}
+
+impl Decode for DateTime<Utc> {
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        match v {
+            Expr::DateTime(_, _, dt) => Ok(dt.clone()),
+            _ => Err(Error::ExpectedTypeGotValue {
+                expected: Self::to_type(),
                 got: v.clone(),
             }),
         }

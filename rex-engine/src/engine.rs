@@ -18,6 +18,8 @@ use crate::{
 use rex_ast::expr::Expr;
 use rex_ast::id::Id;
 use rex_lexer::span::Span;
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 macro_rules! impl_register_fn_core {
     ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
@@ -303,6 +305,32 @@ where
             })
         })?;
 
+        this.register_fn_async3("foldl", |ctx, f: Func<A, Func<B, A>>, base: A, xs: Vec<B>| {
+            Box::pin(async move {
+                let mut res = base;
+                for x in xs {
+                    let ares1 = apply(ctx, &f, &res).await?;
+                    let ares2 = apply(ctx, &ares1, &x).await?;
+                    res = A(ares2)
+                }
+                Ok(res)
+
+            })
+        })?;
+
+        this.register_fn_async3("foldr", |ctx, f: Func<A, Func<B, B>>, base: B, xs: Vec<A>| {
+            Box::pin(async move {
+                let mut res = base;
+                for x in xs.iter().rev() {
+                    let ares1 = apply(ctx, &f, x).await?;
+                    let ares2 = apply(ctx, &ares1, &res).await?;
+                    res = B(ares2);
+                }
+                Ok(res)
+
+            })
+        })?;
+
         this.register_fn_async3(".", |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
             Box::pin(async move {
                 let x = apply(ctx, &g, &x).await?;
@@ -396,6 +424,14 @@ where
                 }
             })
         })?;
+
+        // Uuid
+        this.register_fn1("string", |_ctx: &Context<_>, x: Uuid| Ok(format!("{}", x)))?;
+        this.register_fn0("random_uuid", |_ctx: &Context<_>| Ok(Uuid::new_v4()))?;
+
+        // DateTime
+        this.register_fn1("string", |_ctx: &Context<_>, x: DateTime<Utc>| Ok(format!("{}", x)))?;
+        this.register_fn0("now", |_ctx: &Context<_>| Ok(Utc::now()))?;
 
         Ok(this)
     }

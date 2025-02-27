@@ -52,6 +52,8 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
         (Type::Int, Type::Int) => Ok(()),
         (Type::Float, Type::Float) => Ok(()),
         (Type::String, Type::String) => Ok(()),
+        (Type::Uuid, Type::Uuid) => Ok(()),
+        (Type::DateTime, Type::DateTime) => Ok(()),
 
         // Tuples
         (Type::Tuple(ts1), Type::Tuple(ts2)) => {
@@ -193,7 +195,13 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
         ),
         Type::Tuple(ts) => Type::Tuple(ts.iter().map(|t| apply_subst(t, subst)).collect()),
 
-        Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => t.clone(),
+        Type::Bool |
+        Type::Uint |
+        Type::Int |
+        Type::Float |
+        Type::String |
+        Type::Uuid |
+        Type::DateTime => t.clone(),
     }
 }
 
@@ -222,7 +230,13 @@ pub fn occurs_check(var: Id, t: &Type) -> bool {
         Type::Dict(kts) => kts.values().any(|t| occurs_check(var, t)),
         Type::Tuple(ts) => ts.iter().any(|t| occurs_check(var, t)),
 
-        Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => false,
+        Type::Bool |
+        Type::Uint |
+        Type::Int |
+        Type::Float |
+        Type::String |
+        Type::Uuid |
+        Type::DateTime => false,
     }
 }
 

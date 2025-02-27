@@ -457,6 +457,14 @@ pub fn generate_constraints(
             expr_env.insert(*id, Type::String);
             Ok(Type::String)
         }
+        Expr::Uuid(id, _span, _x) => {
+            expr_env.insert(*id, Type::Uuid);
+            Ok(Type::Uuid)
+        }
+        Expr::DateTime(id, _span, _x) => {
+            expr_env.insert(*id, Type::DateTime);
+            Ok(Type::DateTime)
+        }
 
         Expr::Curry(..) => {
             todo!("generate_constraints for Expr::Curry just like we do for Expr::App")
@@ -515,7 +523,13 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
             vars
         }
 
-        Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => HashSet::new(),
+        Type::Bool |
+        Type::Uint |
+        Type::Int |
+        Type::Float |
+        Type::String |
+        Type::Uuid |
+        Type::DateTime => HashSet::new(),
     }
 }
 
@@ -643,7 +657,13 @@ fn instantiate(ty: &Type, constraint_system: &mut ConstraintSystem) -> Type {
                     .collect(),
             ),
 
-            Type::Bool | Type::Uint | Type::Int | Type::Float | Type::String => ty.clone(),
+            Type::Bool |
+            Type::Uint |
+            Type::Int |
+            Type::Float |
+            Type::String |
+            Type::Uuid |
+            Type::DateTime => ty.clone(),
         };
         result
     }
