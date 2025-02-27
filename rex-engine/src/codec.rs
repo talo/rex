@@ -386,8 +386,16 @@ impl Decode for String {
 
 impl Decode for ()
 {
-    fn try_decode(_v: &Expr) -> Result<Self, Error> {
-        Ok(())
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        match v {
+            Expr::Tuple(_id, _span, xs) if xs.len() == 0 => {
+                Ok(())
+            }
+            _ => Err(Error::ExpectedTypeGotValue {
+                expected: Self::to_type(),
+                got: v.clone(),
+            }),
+        }
     }
 }
 
@@ -397,17 +405,11 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) => {
-                if xs.len() != 1 {
-                    return Err(Error::ExpectedTypeGotValue {
-                        expected: Self::to_type(),
-                        got: v.clone(),
-                    });
-                }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 1 => {
                 Ok((T0::try_decode(&xs[0])?,))
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Self::to_type(),
                 got: v.clone(),
             }),
         }
@@ -421,17 +423,11 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) => {
-                if xs.len() != 2 {
-                    return Err(Error::ExpectedTypeGotValue {
-                        expected: Self::to_type(),
-                        got: v.clone(),
-                    });
-                }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 2 => {
                 Ok((T0::try_decode(&xs[0])?, T1::try_decode(&xs[1])?))
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Self::to_type(),
                 got: v.clone(),
             }),
         }
@@ -446,13 +442,7 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) => {
-                if xs.len() != 3 {
-                    return Err(Error::ExpectedTypeGotValue {
-                        expected: Self::to_type(),
-                        got: v.clone(),
-                    });
-                }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 3 => {
                 Ok((
                     T0::try_decode(&xs[0])?,
                     T1::try_decode(&xs[1])?,
@@ -460,7 +450,7 @@ where
                 ))
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Self::to_type(),
                 got: v.clone(),
             }),
         }
@@ -476,13 +466,7 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) => {
-                if xs.len() != 4 {
-                    return Err(Error::ExpectedTypeGotValue {
-                        expected: Self::to_type(),
-                        got: v.clone(),
-                    });
-                }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 4 => {
                 Ok((
                     T0::try_decode(&xs[0])?,
                     T1::try_decode(&xs[1])?,
@@ -491,7 +475,7 @@ where
                 ))
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Self::to_type(),
                 got: v.clone(),
             }),
         }
