@@ -3,19 +3,63 @@ use std::{
     marker::PhantomData,
 };
 
+use chrono::{DateTime, Utc};
 use rex_ast::{expr::Expr, id::Id};
 use rex_lexer::span::Span;
 use rex_type_system::types::{ToType, Type};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 use crate::error::Error;
+
+pub struct StaticTypeExpr<T>
+where
+    T: ToType,
+{
+    pub expr: Expr,
+    pub _t: PhantomData<T>,
+}
+
+impl<T> ToType for StaticTypeExpr<T>
+where
+    T: ToType,
+{
+    fn to_type() -> Type {
+        T::to_type()
+    }
+}
+
+impl<T> Encode for StaticTypeExpr<T>
+where
+    T: ToType,
+{
+    fn try_encode(self, _id: Id, _span: Span) -> Result<Expr, Error> {
+        Ok(self.expr)
+    }
+}
+
+impl<T> Decode for StaticTypeExpr<T>
+where
+    T: ToType,
+{
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        Ok(Self {
+            expr: v.clone(),
+            _t: PhantomData,
+        })
+    }
+}
 
 pub trait Encode
 where
     Self: Sized,
 {
     fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error>;
+}
+
+impl Encode for Expr {
+    fn try_encode(self, _id: Id, _span: Span) -> Result<Expr, Error> {
+        Ok(self)
+    }
 }
 
 impl Encode for bool {
@@ -108,8 +152,7 @@ impl Encode for DateTime<Utc> {
     }
 }
 
-impl Encode for ()
-{
+impl Encode for () {
     fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
         Ok(Expr::Tuple(id, span, vec![]))
     }
@@ -198,28 +241,35 @@ where
 {
     fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
         match self {
-            Ok(x) => {
-                Ok(Expr::Named(id, span, "Ok".to_string(), Some(Box::new(x.try_encode(id, span)?))))
-            }
-            Err(x) => {
-                Ok(Expr::Named(id, span, "Err".to_string(), Some(Box::new(x.try_encode(id, span)?))))
-            }
+            Ok(x) => Ok(Expr::Named(
+                id,
+                span,
+                "Ok".to_string(),
+                Some(Box::new(x.try_encode(id, span)?)),
+            )),
+            Err(x) => Ok(Expr::Named(
+                id,
+                span,
+                "Err".to_string(),
+                Some(Box::new(x.try_encode(id, span)?)),
+            )),
         }
     }
 }
 
 impl<T> Encode for Option<T>
 where
-    T: Encode
+    T: Encode,
 {
     fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
         match self {
-            Some(x) => {
-                Ok(Expr::Named(id, span, "Some".to_string(), Some(Box::new(x.try_encode(id, span)?))))
-            }
-            None => {
-                Ok(Expr::Named(id, span, "None".to_string(), None))
-            }
+            Some(x) => Ok(Expr::Named(
+                id,
+                span,
+                "Some".to_string(),
+                Some(Box::new(x.try_encode(id, span)?)),
+            )),
+            None => Ok(Expr::Named(id, span, "None".to_string(), None)),
         }
     }
 }
@@ -229,6 +279,12 @@ where
     Self: Sized,
 {
     fn try_decode(v: &Expr) -> Result<Self, Error>;
+}
+
+impl Decode for Expr {
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        Ok(v.clone())
+    }
 }
 
 impl Decode for bool {
@@ -422,13 +478,10 @@ impl Decode for DateTime<Utc> {
     }
 }
 
-impl Decode for ()
-{
+impl Decode for () {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) if xs.len() == 0 => {
-                Ok(())
-            }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 0 => Ok(()),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Self::to_type(),
                 got: v.clone(),
@@ -443,9 +496,7 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) if xs.len() == 1 => {
-                Ok((T0::try_decode(&xs[0])?,))
-            }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 1 => Ok((T0::try_decode(&xs[0])?,)),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Self::to_type(),
                 got: v.clone(),
@@ -480,13 +531,11 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) if xs.len() == 3 => {
-                Ok((
-                    T0::try_decode(&xs[0])?,
-                    T1::try_decode(&xs[1])?,
-                    T2::try_decode(&xs[2])?,
-                ))
-            }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 3 => Ok((
+                T0::try_decode(&xs[0])?,
+                T1::try_decode(&xs[1])?,
+                T2::try_decode(&xs[2])?,
+            )),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Self::to_type(),
                 got: v.clone(),
@@ -504,14 +553,12 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) if xs.len() == 4 => {
-                Ok((
-                    T0::try_decode(&xs[0])?,
-                    T1::try_decode(&xs[1])?,
-                    T2::try_decode(&xs[2])?,
-                    T3::try_decode(&xs[3])?,
-                ))
-            }
+            Expr::Tuple(_id, _span, xs) if xs.len() == 4 => Ok((
+                T0::try_decode(&xs[0])?,
+                T1::try_decode(&xs[1])?,
+                T2::try_decode(&xs[2])?,
+                T3::try_decode(&xs[3])?,
+            )),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Self::to_type(),
                 got: v.clone(),
@@ -548,16 +595,10 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Named(_id, _span, name, Some(x)) if name == "Ok" => {
-                Ok(Ok(T::try_decode(x)?))
-            }
-            Expr::Named(_id, _span, name, Some(x)) if name == "Err" => {
-                Ok(Err(E::try_decode(x)?))
-            }
+            Expr::Named(_id, _span, name, Some(x)) if name == "Ok" => Ok(Ok(T::try_decode(x)?)),
+            Expr::Named(_id, _span, name, Some(x)) if name == "Err" => Ok(Err(E::try_decode(x)?)),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Result(
-                    Box::new(T::to_type()),
-                    Box::new(E::to_type())),
+                expected: Type::Result(Box::new(T::to_type()), Box::new(E::to_type())),
                 got: v.clone(),
             }),
         }
@@ -566,16 +607,12 @@ where
 
 impl<T> Decode for Option<T>
 where
-    T: Decode + ToType
+    T: Decode + ToType,
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Named(_id, _span, name, Some(x)) if name == "Some" => {
-                Ok(Some(T::try_decode(x)?))
-            }
-            Expr::Named(_id, _span, name, None) if name == "None" => {
-                Ok(None)
-            }
+            Expr::Named(_id, _span, name, Some(x)) if name == "Some" => Ok(Some(T::try_decode(x)?)),
+            Expr::Named(_id, _span, name, None) if name == "None" => Ok(None),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Type::Option(Box::new(T::to_type())),
                 got: v.clone(),

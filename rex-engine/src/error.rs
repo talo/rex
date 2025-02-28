@@ -7,6 +7,8 @@ use rex_type_system::types::Type;
 pub enum Error {
     #[error("unimplemented")]
     Unimplemented,
+    #[error("index out of bounds {index}")]
+    IndexOutOfBounds { index: usize },
     #[error("variable not found {var}")]
     VarNotFound { var: Var },
     #[error("expected {expected}, got {got}")]
