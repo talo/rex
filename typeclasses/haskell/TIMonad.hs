@@ -20,11 +20,23 @@ import Subst
 import Unify
 import Pred
 import Scheme
+import Control.Monad(ap, liftM)
 
 newtype TI a = TI (Subst -> Int -> (Subst, Int, a))
 
+instance Functor TI where
+    fmap = liftM
+
+instance Applicative TI where
+    pure x   = TI (\s n -> (s,n,x))
+    {- pure  = -} {- move the definition of `return` from the `Monad` instance here -}
+    (<*>) = ap
+
+instance MonadFail TI where
+    fail = error
+
 instance Monad TI where
-  return x   = TI (\s n -> (s,n,x))
+  return = pure
   TI f >>= g = TI (\s n -> case f s n of
                             (s',m,x) -> let TI gx = g x
                                         in  gx s' m)

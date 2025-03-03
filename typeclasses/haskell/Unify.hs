@@ -17,8 +17,8 @@ import Kind
 import Type
 import Subst
 
-mgu     :: Monad m => Type -> Type -> m Subst
-varBind :: Monad m => Tyvar -> Type -> m Subst
+mgu     :: MonadFail m => Type -> Type -> m Subst
+varBind :: MonadFail m => Tyvar -> Type -> m Subst
 
 mgu (TAp l r) (TAp l' r') = do s1 <- mgu l l'
                                s2 <- mgu (apply s1 r) (apply s1 r')
@@ -34,7 +34,7 @@ varBind u t | t == TVar u      = return nullSubst
             | kind u /= kind t = fail "kinds do not match"
             | otherwise        = return (u +-> t)
 
-match :: Monad m => Type -> Type -> m Subst
+match :: MonadFail m => Type -> Type -> m Subst
 
 match (TAp l r) (TAp l' r') = do sl <- match l l'
                                  sr <- match r r'

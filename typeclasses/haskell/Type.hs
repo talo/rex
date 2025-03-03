@@ -16,6 +16,7 @@ module Type where
 import Id
 import Kind
 import PPrint
+import Text.PrettyPrint(text, int, (<+>))
 
 data Type  = TVar Tyvar | TCon Tycon | TAp  Type Type | TGen Int
              deriving Eq

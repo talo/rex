@@ -5,4 +5,5 @@ which we can subsequently integrate into `rex-type-system`.
 
 The `haskell` directory contains the code from `thih-Nov23-2000.zip` obtained
 from the article's site ([archived
-copy](https://web.archive.org/web/20050505064704/http://www.cse.ogi.edu/~mpj/thih/)).
+copy](https://web.archive.org/web/20050505064704/http://www.cse.ogi.edu/~mpj/thih/)),
+modified to compile with modern versions of GHC.

@@ -13,6 +13,7 @@
 -----------------------------------------------------------------------------
 
 module Kind where
+import Text.PrettyPrint
 import PPrint
 
 data Kind  = Star | Kfun Kind Kind

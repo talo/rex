@@ -13,14 +13,15 @@
 -----------------------------------------------------------------------------
 
 module Pred where
-import List(union,(\\))
-import Monad(msum)
+import Data.List(union,(\\))
+import Control.Monad(msum)
 import Id
 import Kind
 import Type
 import Subst
 import Unify
 import PPrint
+import Text.PrettyPrint((<+>), text, nest, ($$))
 
 data Qual t = [Pred] :=> t
               deriving Eq
@@ -158,11 +159,11 @@ inHnf (IsIn c t) = hnf t
        hnf (TCon tc) = False
        hnf (TAp t _) = hnf t
 
-toHnfs      :: Monad m => ClassEnv -> [Pred] -> m [Pred]
+toHnfs      :: MonadFail m => ClassEnv -> [Pred] -> m [Pred]
 toHnfs ce ps = do pss <- mapM (toHnf ce) ps
                   return (concat pss)
 
-toHnf                 :: Monad m => ClassEnv -> Pred -> m [Pred]
+toHnf                 :: MonadFail m => ClassEnv -> Pred -> m [Pred]
 toHnf ce p | inHnf p   = return [p]
            | otherwise = case byInst ce p of
                            Nothing -> fail "context reduction"
@@ -174,7 +175,7 @@ simplify ce = loop []
        loop rs (p:ps) | entail ce (rs++ps) p = loop rs ps
                       | otherwise            = loop (p:rs) ps
 
-reduce      :: Monad m => ClassEnv -> [Pred] -> m [Pred]
+reduce      :: MonadFail m => ClassEnv -> [Pred] -> m [Pred]
 reduce ce ps = do qs <- toHnfs ce ps
                   return (simplify ce qs)
 

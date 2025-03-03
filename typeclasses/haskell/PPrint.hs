@@ -12,8 +12,9 @@
 -- 
 -----------------------------------------------------------------------------
 
-module PPrint(module PPrint, module Pretty) where
-import Pretty
+module PPrint(module PPrint) where
+import qualified Text.PrettyPrint as P
+import Text.PrettyPrint(comma, sep, parens, double, float, int, integer, text, char, punctuate, fsep, brackets, render)
 
 -----------------------------------------------------------------------------
 -- This module contains definitions that do not appear in the
@@ -25,16 +26,16 @@ import Pretty
 pretty  :: PPrint a => a -> String
 pretty   = render . pprint
 
-ppParen    :: Bool -> Doc -> Doc
+ppParen    :: Bool -> P.Doc -> P.Doc
 ppParen t x = if t then parens x else x
 
 class PPrint a where
-  pprint    :: a -> Doc
+  pprint    :: a -> P.Doc
 
-  parPprint :: a -> Doc
+  parPprint :: a -> P.Doc
   parPprint  = parens . pprint
 
-  pplist    :: [a] -> Doc
+  pplist    :: [a] -> P.Doc
   pplist    xs = brackets (fsep (punctuate comma (map pprint xs)))
 
 instance PPrint a => PPrint [a] where
@@ -57,11 +58,11 @@ instance PPrint Double where
   pprint  = double
 
 instance (PPrint a, PPrint b) => PPrint (a,b) where
-  pprint (x,y) = parens (sep [pprint x <> comma, pprint y])
+  pprint (x,y) = parens (sep [pprint x P.<> comma, pprint y])
 
 instance (PPrint a, PPrint b, PPrint c) => PPrint (a,b,c) where
-  pprint (x,y,z) = parens (sep [pprint x <> comma,
-                                pprint y <> comma,
+  pprint (x,y,z) = parens (sep [pprint x P.<> comma,
+                                pprint y P.<> comma,
                                 pprint z])
 
 -----------------------------------------------------------------------------

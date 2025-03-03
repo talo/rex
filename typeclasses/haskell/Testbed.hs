@@ -34,6 +34,7 @@ import Pat
 import TIMain
 import TIProg
 import Static
+import Text.PrettyPrint(punctuate, comma, fsep, brackets, (<+>), text, render, vcat)
 
 test          :: ClassEnv -> [Assump] -> [BindGroup] -> IO ()
 test ce as bgs = putStr $ render $ vcat $ map pprint $ reverse $

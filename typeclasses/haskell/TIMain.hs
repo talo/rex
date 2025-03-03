@@ -13,7 +13,7 @@
 -----------------------------------------------------------------------------
 
 module TIMain where
-import List( (\\), intersect, union, partition )
+import Data.List( (\\), intersect, union, partition )
 import Id
 import Kind
 import Type
@@ -76,6 +76,7 @@ elambda alt     = elet [[ ("_lambda",
                            Nothing,
                            [alt]) ]]
                              (evar "_lambda")
+eguarded :: (Foldable t0) => t0 (Expr, Expr) -> Expr
 eguarded        = foldr (\(c,t) e -> eif c t e) efail
 efail           = Const ("FAIL" :>: Forall [Star] ([] :=> TGen 0))
 esign e t       = elet [[ ("_val", Just t, [([],e)]) ]] (evar "_val")
@@ -141,7 +142,7 @@ tiAlts ce as alts t = do psts <- mapM (tiAlt ce as) alts
 
 -----------------------------------------------------------------------------
 
-split :: Monad m => ClassEnv -> [Tyvar] -> [Tyvar] -> [Pred]
+split :: MonadFail m => ClassEnv -> [Tyvar] -> [Tyvar] -> [Pred]
                       -> m ([Pred], [Pred])
 split ce fs gs ps = do ps' <- reduce ce ps
                        let (ds, rs) = partition (all (`elem` fs) . tv) ps'
@@ -170,7 +171,7 @@ candidates ce (v, qs) = [ t' | let is = [ i | IsIn i t <- qs ]
                                t' <- defaults ce,
                                all (entail ce []) [ IsIn i t' | i <- is ] ]
 
-withDefaults :: Monad m => ([Ambiguity] -> [Type] -> a)
+withDefaults :: MonadFail m => ([Ambiguity] -> [Type] -> a)
                   -> ClassEnv -> [Tyvar] -> [Pred] -> m a
 withDefaults f ce vs ps
     | any null tss  = fail "cannot resolve ambiguity"
@@ -178,10 +179,10 @@ withDefaults f ce vs ps
       where vps = ambiguities ce vs ps
             tss = map (candidates ce) vps
 
-defaultedPreds :: Monad m => ClassEnv -> [Tyvar] -> [Pred] -> m [Pred]
+defaultedPreds :: MonadFail m => ClassEnv -> [Tyvar] -> [Pred] -> m [Pred]
 defaultedPreds  = withDefaults (\vps ts -> concat (map snd vps))
 
-defaultSubst   :: Monad m => ClassEnv -> [Tyvar] -> [Pred] -> m Subst
+defaultSubst   :: MonadFail m => ClassEnv -> [Tyvar] -> [Pred] -> m Subst
 defaultSubst    = withDefaults (\vps ts -> zip (map fst vps) ts)
 
 -----------------------------------------------------------------------------

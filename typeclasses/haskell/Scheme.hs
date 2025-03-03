@@ -18,6 +18,7 @@ import Type
 import Subst
 import Pred
 import PPrint
+import Text.PrettyPrint((<+>), nest, ($$), text)
 
 data Scheme = Forall [Kind] (Qual Type)
               deriving Eq
