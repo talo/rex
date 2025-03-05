@@ -1276,6 +1276,19 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_regex_utils(){ 
+
+        // Test for basic Regex parsing using capture gros 
+        let (res, res_type) = parse_infer_and_eval(r#"regex_captures "\d+" "111a222bc444""#).await.unwrap();
+        assert_eq!(res_type, list!(string!())); 
+        assert_expr_eq!(res, l!(s!("111"), s!("222"), s!("444")); ignore span);
+
+        // Test for basic Regex parsing using simple is_match funnc
+        let (res, _res_type)= parse_infer_and_eval(r#"regex_matches "\b\w{13}\b" "I categorically deny having triskaidekaphobia." "#).await.unwrap();
+        assert_expr_eq!(res, b!(true));
+    }  
+
+    #[tokio::test]
     async fn test_compose() {
         let (res, res_type) = parse_infer_and_eval(r#"(((*) 6.9) . ((+) 42.0)) 3.14"#)
             .await
