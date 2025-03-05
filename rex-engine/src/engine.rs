@@ -1,12 +1,11 @@
+use rex_type_system::{
+    constraint::{Constraint, ConstraintSystem},
+    types::{ToType, Type, TypeEnv},
+}; 
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
-};
-
-use rex_type_system::{
-    constraint::{Constraint, ConstraintSystem},
-    types::{ToType, Type, TypeEnv},
 };
 
 use crate::{
@@ -15,12 +14,12 @@ use crate::{
     eval::{apply, Context},
     ftable::{Ftable, A, B, C, D, E, F},
 };
+use chrono::{DateTime, Utc};
+use regex::Regex;
 use rex_ast::expr::Expr;
 use rex_ast::id::Id;
 use rex_lexer::span::Span;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use regex::Regex;
 
 macro_rules! impl_register_fn_core {
     ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
@@ -267,26 +266,39 @@ where
         })?;
 
         // Registers function with two parameters to match a regex pattern,
-        // Returns True if there is a match, orelse False  
-        // pattern : Pattern to convert into regex (re), 
-        // hay : to match against the re created from pattern 
+        // Returns True if there is a match, orelse False
+        // pattern : Pattern to convert into regex (re),
+        // hay : to match against the re-created from pattern
 
         // Possibly a costly computation while looping, since fn essentially recompiles pattern multiple times (no cache)
-        this.register_fn2("regex_matches", |_ctx : &Context<_>, pattern :std::string :: String, hay :std::string ::String|{ 
-            Ok(Regex::new(&pattern).unwrap().is_match(&hay))
-        })?;
-        
-        // Registers function with two parameters to return successive non-overlapping matches in given haystack 
-        // pattern : Pattern to convert into regex (re), 
-        // hay : to match against the re created from pattern 
+        this.register_fn2(
+            "regex_matches",
+            |_ctx: &Context<_>, pattern: String, hay: String| match Regex::new(&pattern)
+                .map_err(Error::from)
+            {
+                Ok(re) => Ok(re.is_match(&hay)),
+                Err(err) => Err(err), // Return Err(Error)
+            },
+        )?;
+
+        // Registers function with two parameters to return successive non-overlapping matches in given haystack
+        // pattern : Pattern to convert into regex (re),
+        // hay : to match against the re-created from pattern
 
         // Possibly a costly computation while looping, since fn essentially recompiles pattern multiple times (no cache)
-        this.register_fn2("regex_captures" , |_ctx : &Context<_>, pattern :std::string :: String, hay :std::string ::String|{
-            let re = Regex::new(&pattern).unwrap(); 
-            let matches: Vec<_> = re.find_iter(&hay).map(|m| m.as_str().to_string()).collect();
-            return Ok(matches); 
-        })?; 
-
+        this.register_fn2(
+            "regex_captures",
+            |_ctx: &Context<_>, pattern: String, hay: String| match Regex::new(&pattern)
+                .map_err(Error::from)
+            {
+                Ok(re) => {
+                    let matches: Vec<_> =
+                        re.find_iter(&hay).map(|m| m.as_str().to_string()).collect();
+                    return Ok(matches);
+                }
+                Err(err) => Err(err),
+            },
+        )?;
 
         this.register_fn2("skip", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
             Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
@@ -328,31 +340,35 @@ where
             })
         })?;
 
-        this.register_fn_async3("foldl", |ctx, f: Func<A, Func<B, A>>, base: A, xs: Vec<B>| {
-            Box::pin(async move {
-                let mut res = base;
-                for x in xs {
-                    let ares1 = apply(ctx, &f, &res).await?;
-                    let ares2 = apply(ctx, &ares1, &x).await?;
-                    res = A(ares2)
-                }
-                Ok(res)
+        this.register_fn_async3(
+            "foldl",
+            |ctx, f: Func<A, Func<B, A>>, base: A, xs: Vec<B>| {
+                Box::pin(async move {
+                    let mut res = base;
+                    for x in xs {
+                        let ares1 = apply(ctx, &f, &res).await?;
+                        let ares2 = apply(ctx, &ares1, &x).await?;
+                        res = A(ares2)
+                    }
+                    Ok(res)
+                })
+            },
+        )?;
 
-            })
-        })?;
-
-        this.register_fn_async3("foldr", |ctx, f: Func<A, Func<B, B>>, base: B, xs: Vec<A>| {
-            Box::pin(async move {
-                let mut res = base;
-                for x in xs.iter().rev() {
-                    let ares1 = apply(ctx, &f, x).await?;
-                    let ares2 = apply(ctx, &ares1, &res).await?;
-                    res = B(ares2);
-                }
-                Ok(res)
-
-            })
-        })?;
+        this.register_fn_async3(
+            "foldr",
+            |ctx, f: Func<A, Func<B, B>>, base: B, xs: Vec<A>| {
+                Box::pin(async move {
+                    let mut res = base;
+                    for x in xs.iter().rev() {
+                        let ares1 = apply(ctx, &f, x).await?;
+                        let ares2 = apply(ctx, &ares1, &res).await?;
+                        res = B(ares2);
+                    }
+                    Ok(res)
+                })
+            },
+        )?;
 
         this.register_fn_async3(".", |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
             Box::pin(async move {
@@ -373,30 +389,39 @@ where
                 }
             })
         })?;
-        this.register_fn_async2("and_then_result", |ctx, f: Func<A, Result<B, E>>, x: Result<A, E>| {
-            Box::pin(async move {
-                match x {
-                    Ok(x) => Ok(Result::<B, E>::try_decode(&apply(ctx, &f, &x).await?)?),
-                    Err(e) => Ok(Err(e)),
-                }
-            })
-        })?;
-        this.register_fn_async2("or_else_result", |ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
-            Box::pin(async move {
-                match x {
-                    Ok(x) => Ok(Ok(x)),
-                    Err(x) => Ok(Result::<A, F>::try_decode(&apply(ctx, &f, &x).await?)?),
-                }
-            })
-        })?;
-        this.register_fn_async2("unwrap_or_else_result", |ctx, f: Func<E, A>, x: Result<A, E>| {
-            Box::pin(async move {
-                match x {
-                    Ok(x) => Ok(x),
-                    Err(x) => Ok(A(apply(ctx, &f, &x).await?)),
-                }
-            })
-        })?;
+        this.register_fn_async2(
+            "and_then_result",
+            |ctx, f: Func<A, Result<B, E>>, x: Result<A, E>| {
+                Box::pin(async move {
+                    match x {
+                        Ok(x) => Ok(Result::<B, E>::try_decode(&apply(ctx, &f, &x).await?)?),
+                        Err(e) => Ok(Err(e)),
+                    }
+                })
+            },
+        )?;
+        this.register_fn_async2(
+            "or_else_result",
+            |ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
+                Box::pin(async move {
+                    match x {
+                        Ok(x) => Ok(Ok(x)),
+                        Err(x) => Ok(Result::<A, F>::try_decode(&apply(ctx, &f, &x).await?)?),
+                    }
+                })
+            },
+        )?;
+        this.register_fn_async2(
+            "unwrap_or_else_result",
+            |ctx, f: Func<E, A>, x: Result<A, E>| {
+                Box::pin(async move {
+                    match x {
+                        Ok(x) => Ok(x),
+                        Err(x) => Ok(A(apply(ctx, &f, &x).await?)),
+                    }
+                })
+            },
+        )?;
 
         // Option
         this.register_fn0("None", |_ctx: &Context<_>| Ok(None::<A>))?;
@@ -409,51 +434,62 @@ where
                 }
             })
         })?;
-        this.register_fn_async2("and_then_option", |ctx, f: Func<A, Option<B>>, x: Option<A>| {
-            Box::pin(async move {
-                match x {
-                    Some(x) => Ok(Option::<B>::try_decode(&apply(ctx, &f, &x).await?)?),
-                    None => Ok(None),
-                }
-            })
-        })?;
-        this.register_fn_async2("or_else_option", |ctx, f: Func<(), Option<A>>, x: Option<A>| {
-            Box::pin(async move {
-                match x {
-                    Some(x) => Ok(Some(x)),
-                    None => {
-                        let x_id = Id::new();
-                        let x = Expr::Tuple(x_id, Span::default(), vec![]);
-                        ctx.env.write().await.insert(x_id, <()>::to_type());
-                        let res = apply(ctx, &f, &x).await?;
-                        ctx.env.write().await.remove(&x_id);
-                        Ok(Option::<A>::try_decode(&res)?)
+        this.register_fn_async2(
+            "and_then_option",
+            |ctx, f: Func<A, Option<B>>, x: Option<A>| {
+                Box::pin(async move {
+                    match x {
+                        Some(x) => Ok(Option::<B>::try_decode(&apply(ctx, &f, &x).await?)?),
+                        None => Ok(None),
                     }
-                }
-            })
-        })?;
-        this.register_fn_async2("unwrap_or_else_option", |ctx, f: Func<(), A>, x: Option<A>| {
-            Box::pin(async move {
-                match x {
-                    Some(x) => Ok(x),
-                    None => {
-                        let x_id = Id::new();
-                        let x = Expr::Tuple(x_id, Span::default(), vec![]);
-                        ctx.env.write().await.insert(x_id, <()>::to_type());
-                        let res = apply(ctx, &f, &x).await?;
-                        ctx.env.write().await.remove(&x_id);
-                        Ok(A(res))
+                })
+            },
+        )?;
+        this.register_fn_async2(
+            "or_else_option",
+            |ctx, f: Func<(), Option<A>>, x: Option<A>| {
+                Box::pin(async move {
+                    match x {
+                        Some(x) => Ok(Some(x)),
+                        None => {
+                            let x_id = Id::new();
+                            let x = Expr::Tuple(x_id, Span::default(), vec![]);
+                            ctx.env.write().await.insert(x_id, <()>::to_type());
+                            let res = apply(ctx, &f, &x).await?;
+                            ctx.env.write().await.remove(&x_id);
+                            Ok(Option::<A>::try_decode(&res)?)
+                        }
                     }
-                }
-            })
-        })?;
+                })
+            },
+        )?;
+        this.register_fn_async2(
+            "unwrap_or_else_option",
+            |ctx, f: Func<(), A>, x: Option<A>| {
+                Box::pin(async move {
+                    match x {
+                        Some(x) => Ok(x),
+                        None => {
+                            let x_id = Id::new();
+                            let x = Expr::Tuple(x_id, Span::default(), vec![]);
+                            ctx.env.write().await.insert(x_id, <()>::to_type());
+                            let res = apply(ctx, &f, &x).await?;
+                            ctx.env.write().await.remove(&x_id);
+                            Ok(A(res))
+                        }
+                    }
+                })
+            },
+        )?;
 
         // Uuid
         this.register_fn1("string", |_ctx: &Context<_>, x: Uuid| Ok(format!("{}", x)))?;
         this.register_fn0("random_uuid", |_ctx: &Context<_>| Ok(Uuid::new_v4()))?;
 
         // DateTime
-        this.register_fn1("string", |_ctx: &Context<_>, x: DateTime<Utc>| Ok(format!("{}", x)))?;
+        this.register_fn1("string", |_ctx: &Context<_>, x: DateTime<Utc>| {
+            Ok(format!("{}", x))
+        })?;
         this.register_fn0("now", |_ctx: &Context<_>| Ok(Utc::now()))?;
 
         Ok(this)

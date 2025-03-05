@@ -3,9 +3,9 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
+use chrono::{DateTime, Utc};
 use rex_ast::id::Id;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 pub type TypeEnv = HashMap<String, Type>;
 
@@ -611,8 +611,7 @@ where
     }
 }
 
-impl ToType for ()
-{
+impl ToType for () {
     fn to_type() -> Type {
         Type::Tuple(vec![])
     }
