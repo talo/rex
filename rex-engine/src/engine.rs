@@ -20,6 +20,7 @@ use rex_ast::id::Id;
 use rex_lexer::span::Span;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use regex::Regex;
 
 macro_rules! impl_register_fn_core {
     ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
@@ -264,6 +265,28 @@ where
         this.register_fn2("take", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
             Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
         })?;
+
+        // Registers function with two parameters to match a regex pattern,
+        // Returns True if there is a match, orelse False  
+        // pattern : Pattern to convert into regex (re), 
+        // hay : to match against the re created from pattern 
+
+        // Possibly a costly computation while looping, since fn essentially recompiles pattern multiple times (no cache)
+        this.register_fn2("regex_matches", |_ctx : &Context<_>, pattern :std::string :: String, hay :std::string ::String|{ 
+            Ok(Regex::new(&pattern).unwrap().is_match(&hay))
+        })?;
+        
+        // Registers function with two parameters to return successive non-overlapping matches in given haystack 
+        // pattern : Pattern to convert into regex (re), 
+        // hay : to match against the re created from pattern 
+
+        // Possibly a costly computation while looping, since fn essentially recompiles pattern multiple times (no cache)
+        this.register_fn2("regex_captures" , |_ctx : &Context<_>, pattern :std::string :: String, hay :std::string ::String|{
+            let re = Regex::new(&pattern).unwrap(); 
+            let matches: Vec<_> = re.find_iter(&hay).map(|m| m.as_str().to_string()).collect();
+            return Ok(matches); 
+        })?; 
+
 
         this.register_fn2("skip", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
             Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
