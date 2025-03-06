@@ -523,13 +523,13 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
             vars
         }
 
-        Type::Bool |
-        Type::Uint |
-        Type::Int |
-        Type::Float |
-        Type::String |
-        Type::Uuid |
-        Type::DateTime => HashSet::new(),
+        Type::Bool
+        | Type::Uint
+        | Type::Int
+        | Type::Float
+        | Type::String
+        | Type::Uuid
+        | Type::DateTime => HashSet::new(),
     }
 }
 
@@ -657,13 +657,13 @@ fn instantiate(ty: &Type, constraint_system: &mut ConstraintSystem) -> Type {
                     .collect(),
             ),
 
-            Type::Bool |
-            Type::Uint |
-            Type::Int |
-            Type::Float |
-            Type::String |
-            Type::Uuid |
-            Type::DateTime => ty.clone(),
+            Type::Bool
+            | Type::Uint
+            | Type::Int
+            | Type::Float
+            | Type::String
+            | Type::Uuid
+            | Type::DateTime => ty.clone(),
         };
         result
     }

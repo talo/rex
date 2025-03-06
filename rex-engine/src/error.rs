@@ -21,4 +21,6 @@ pub enum Error {
         prev_insts: Vec<Type>,
         curr_inst: Type,
     },
+    #[error("{0}")]
+    RegexCompilationError(#[from] regex::Error),
 }

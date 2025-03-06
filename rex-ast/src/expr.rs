@@ -7,8 +7,8 @@ use rex_lexer::span::{Position, Span};
 use rpds::HashTrieMapSync;
 
 use crate::id::Id;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 pub type Scope = HashTrieMapSync<String, Expr>;
 
@@ -78,10 +78,10 @@ pub enum Expr {
     Uuid(Id, Span, Uuid),
     DateTime(Id, Span, DateTime<Utc>),
 
-    Tuple(Id, Span, Vec<Expr>),             // (e1, e2, e3)
-    List(Id, Span, Vec<Expr>),              // [e1, e2, e3]
-    Dict(Id, Span, BTreeMap<String, Expr>), // {k1 = v1, k2 = v2}
-    Named(Id, Span, String, Option<Box<Expr>>), //  MyVariant1 {k1 = v1, k2 = v2}
+    Tuple(Id, Span, Vec<Expr>),                     // (e1, e2, e3)
+    List(Id, Span, Vec<Expr>),                      // [e1, e2, e3]
+    Dict(Id, Span, BTreeMap<String, Expr>),         // {k1 = v1, k2 = v2}
+    Named(Id, Span, String, Option<Box<Expr>>),     //  MyVariant1 {k1 = v1, k2 = v2}
     Var(Var),                                       // x
     App(Id, Span, Box<Expr>, Box<Expr>),            // f x
     Lam(Id, Span, Scope, Var, Box<Expr>),           // λx → e
