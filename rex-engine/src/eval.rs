@@ -39,6 +39,7 @@ where
         | Expr::String(..)
         | Expr::Uuid(..)
         | Expr::DateTime(..)
+        | Expr::Regex(..)
         | Expr::Named(..) => Ok(expr.clone()),
         Expr::Tuple(id, span, tuple) => eval_tuple(ctx, id, span, tuple).await,
         Expr::List(id, span, list) => eval_list(ctx, id, span, list).await,
@@ -466,7 +467,7 @@ pub mod test {
     use super::*;
 
     /// Helper function for parsing, inferring, and evaluating a given code
-    /// snippet. Pretty much all of the test suites can use this flow for
+    /// snippet. Pretty much all the test suites can use this flow for
     /// testing that the engine is correctly evaluating types and expressions.
     /// In the future, we should probably make this (or some version of this) an
     /// actual function for library users too.
@@ -1263,7 +1264,7 @@ pub mod test {
     }
 
     #[tokio::test]
-    async fn test_regex_utils() {
+    async fn test_regex_utils_unop() {
         // Test for basic Regex parsing using capture gros
         let (res, res_type) = parse_infer_and_eval(r#"regex_captures "\d+" "111a222bc444""#)
             .await
@@ -1285,6 +1286,39 @@ pub mod test {
                 .await
                 .is_err()
         );
+
+    }
+
+    #[tokio::test]
+    async fn test_regex_utils_op() {
+
+        // ensure that regex_new does in fact return type Regex,
+        let (res, res_type) = parse_infer_and_eval(
+            r#"regex_new "\b\w{13}\b" "#,
+        )
+            .await
+            .unwrap();
+        assert_eq!(res_type, Type::Regex);
+
+
+        // check if we are able to pass constructed Regex into the overloaded regex_matches
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            regex_matches (regex_new "\b\w{13}\b") "I categorically deny having triskaidekaphobia."
+            "#
+        ).await.unwrap();
+        assert_eq!(res_type, bool!());
+        assert_expr_eq!(res, b!(true));
+
+        // check if we are able to pass constructed Regex into the overloaded regex_captures
+        let (res, res_type) = parse_infer_and_eval(r#"regex_captures (regex_new "\d+") "111a222bc444""#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(string!()));
+        assert_expr_eq!(res, l!(s!("111"), s!("222"), s!("444")); ignore span);
+
+        
+
     }
 
     #[tokio::test]

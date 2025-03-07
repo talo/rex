@@ -102,6 +102,12 @@ impl Encode for Uuid {
     }
 }
 
+impl Encode for rex_type_wrappers::wrapper_regex::WrapperRegex  {
+    fn try_encode(self , id : Id , span :Span) -> Result<Expr,Error> {
+        Ok(Expr::Regex(id , span , self))
+    }
+}
+
 impl Encode for DateTime<Utc> {
     fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
         Ok(Expr::DateTime(id, span, self))
@@ -424,6 +430,18 @@ impl Decode for DateTime<Utc> {
                 expected: Self::to_type(),
                 got: v.clone(),
             }),
+        }
+    }
+}
+
+impl Decode for rex_type_wrappers::wrapper_regex::WrapperRegex {
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        match v {
+            Expr::Regex(_, _, re) => Ok(re.clone()),
+            _ => Err(Error::ExpectedTypeGotValue{
+                expected : Self::to_type(),
+                got :v.clone(),
+            })
         }
     }
 }
