@@ -1,8 +1,7 @@
+use regex::{Error, Regex};
+use serde::Deserializer;
 use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
-use regex::{Error, Regex};
-use serde::{Deserializer};
-
 
 /// A wrapper around `regex::Regex` with custom serialization, deserialization,
 /// equality, hashing, and display implementations.
@@ -15,16 +14,13 @@ use serde::{Deserializer};
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct WrapperRegex {
     /// The original pattern string used to create the regex. This is used for Equality Checks
-    pattern :String ,
+    pattern: String,
     /// The compiled regular expression.
-    #[serde(with ="serde_regex")]
-    regex : Regex,
+    #[serde(with = "serde_regex")]
+    regex: Regex,
 }
 
-
-
 impl WrapperRegex {
-
     /// Creates a new `WrapperRegex` from the given pattern string.
     ///
     /// # Arguments
@@ -35,20 +31,17 @@ impl WrapperRegex {
     ///
     /// A `Result` containing the `WrapperRegex` on success, or a `regex::Error`
     /// if the pattern is invalid.
-    pub fn new(pattern :String) -> Result<WrapperRegex, Error> {
+    pub fn new(pattern: String) -> Result<WrapperRegex, Error> {
         match Regex::new(&pattern) {
-            Ok(regex) => Ok(WrapperRegex {
-                pattern,
-                regex
-            }),
-            Err(e) => Err(e)
+            Ok(regex) => Ok(WrapperRegex { pattern, regex }),
+            Err(e) => Err(e),
         }
     }
 
     /// Returns a clone of the underlying `Regex`.
     /// This is relative inexpensive, since it doesn't invoke a recompilation
     pub fn get_regex(&self) -> Regex {
-         self.regex.clone()
+        self.regex.clone()
     }
 }
 
@@ -58,25 +51,23 @@ impl PartialEq for WrapperRegex {
     }
 }
 
-impl Eq for WrapperRegex {
+impl Eq for WrapperRegex {}
 
-}
-
-impl Hash for WrapperRegex{
+impl Hash for WrapperRegex {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.pattern.hash (state);
+        self.pattern.hash(state);
     }
 }
 
 /// Module for custom Serde serialization and deserialization of `regex::Regex`.
 mod serde_regex {
-    use serde::{Deserialize, Serializer};
     use super::*;
+    use serde::{Deserialize, Serializer};
 
     /// Serializes a `Regex` into a string that contains the pattern.
     pub fn serialize<S>(regex: &Regex, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S:  Serializer,
+        S: Serializer,
     {
         serializer.serialize_str(regex.as_str())
     }
@@ -91,9 +82,8 @@ mod serde_regex {
     }
 }
 
-impl std::fmt::Display for WrapperRegex{
+impl std::fmt::Display for WrapperRegex {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f , "pattern:{}", self.pattern)
+        write!(f, "pattern:{}", self.pattern)
     }
 }
-

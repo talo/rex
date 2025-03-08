@@ -1,13 +1,3 @@
-use rex_type_system::{
-    constraint::{Constraint, ConstraintSystem},
-    types::{ToType, Type, TypeEnv},
-};
-use rex_type_wrappers ::wrapper_regex::WrapperRegex;
-use std::{
-    collections::{HashMap, HashSet},
-    future::Future,
-    pin::Pin,
-};
 use crate::{
     codec::{Decode, Encode, Func},
     error::Error,
@@ -18,6 +8,16 @@ use chrono::{DateTime, Utc};
 use rex_ast::expr::Expr;
 use rex_ast::id::Id;
 use rex_lexer::span::Span;
+use rex_type_system::{
+    constraint::{Constraint, ConstraintSystem},
+    types::{ToType, Type, TypeEnv},
+};
+use rex_type_wrappers::wrapper_regex::WrapperRegex;
+use std::{
+    collections::{HashMap, HashSet},
+    future::Future,
+    pin::Pin,
+};
 use uuid::Uuid;
 
 macro_rules! impl_register_fn_core {
@@ -161,7 +161,6 @@ macro_rules! impl_register_fn_async {
     };
 }
 
-
 pub struct Builder<State>
 where
     State: Clone + Sync + 'static,
@@ -267,11 +266,10 @@ where
 
         this.register_fn1(
             "regex_new",
-            |_ctx: &Context<_>, pattern: String | match WrapperRegex::new(pattern)
-            {
+            |_ctx: &Context<_>, pattern: String| match WrapperRegex::new(pattern) {
                 Ok(wre) => Ok(wre),
-                Err(e) => Err(Error::from(e))
-            }
+                Err(e) => Err(Error::from(e)),
+            },
         )?;
 
         // Registers function with two parameters to match a regex pattern,
@@ -282,10 +280,8 @@ where
         // Possibly a costly computation while looping, since fn essentially recompiles pattern multiple times (no cache)
         this.register_fn2(
             "regex_matches",
-            |_ctx: &Context<_>, re:WrapperRegex, hay: String |
-                Ok(re.get_regex().is_match(&hay))
+            |_ctx: &Context<_>, re: WrapperRegex, hay: String| Ok(re.get_regex().is_match(&hay)),
         )?;
-
 
         // Registers function with two parameters to match a regex pattern,
         // Returns True if there is a match, orelse False
@@ -309,10 +305,15 @@ where
 
         this.register_fn2(
             "regex_captures",
-            |_ctx: &Context<_>, re : WrapperRegex, hay: String|{
-                let matches :Vec<String>= re.get_regex().find_iter(&hay).map(|m| m.as_str().to_string()).collect();
-                return Ok(matches)
-            })?;
+            |_ctx: &Context<_>, re: WrapperRegex, hay: String| {
+                let matches: Vec<String> = re
+                    .get_regex()
+                    .find_iter(&hay)
+                    .map(|m| m.as_str().to_string())
+                    .collect();
+                return Ok(matches);
+            },
+        )?;
 
         // Registers function with two parameters to return successive non-overlapping matches in given haystack
         // pattern : Pattern to convert into regex (re),
@@ -325,8 +326,11 @@ where
                 .map_err(Error::from)
             {
                 Ok(re) => {
-                    let matches: Vec<String> =
-                        re.get_regex().find_iter(&hay).map(|m| m.as_str().to_string()).collect();
+                    let matches: Vec<String> = re
+                        .get_regex()
+                        .find_iter(&hay)
+                        .map(|m| m.as_str().to_string())
+                        .collect();
                     return Ok(matches);
                 }
                 Err(err) => Err(err),

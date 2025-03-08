@@ -466,7 +466,7 @@ pub fn generate_constraints(
             Ok(Type::DateTime)
         }
 
-        Expr::Regex(id, _span , _x) => {
+        Expr::Regex(id, _span, _x) => {
             expr_env.insert(*id, Type::Regex);
             Ok(Type::Regex)
         }

@@ -280,7 +280,7 @@ impl Expr {
             Self::Float(_, span, ..) => *span = Span::default(),
             Self::String(_, span, ..) => *span = Span::default(),
             Self::Uuid(_, span, ..) => *span = Span::default(),
-            Self::Regex(_, span, ..)=> *span = Span::default(),
+            Self::Regex(_, span, ..) => *span = Span::default(),
             Self::DateTime(_, span, ..) => *span = Span::default(),
             Self::Tuple(_, span, elems) => {
                 *span = Span::default();
@@ -350,7 +350,7 @@ impl Display for Expr {
             Self::String(_id, _span, x) => x.fmt(f),
             Self::Uuid(_id, _span, x) => x.fmt(f),
             Self::DateTime(_id, _span, x) => x.fmt(f),
-            Self::Regex (_id, _span, x) => x.fmt(f),
+            Self::Regex(_id, _span, x) => x.fmt(f),
             Self::List(_id, _span, xs) => {
                 '['.fmt(f)?;
                 for (i, x) in xs.iter().enumerate() {

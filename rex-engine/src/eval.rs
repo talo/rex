@@ -1272,7 +1272,7 @@ pub mod test {
         assert_eq!(res_type, list!(string!()));
         assert_expr_eq!(res, l!(s!("111"), s!("222"), s!("444")); ignore span);
 
-        // Test for basic Regex parsing using simple is_match funnc
+        // Test for basic Regex parsing using simple is_match func
         let (res, _res_type) = parse_infer_and_eval(
             r#"regex_matches "\b\w{13}\b" "I categorically deny having triskaidekaphobia." "#,
         )
@@ -1286,37 +1286,34 @@ pub mod test {
                 .await
                 .is_err()
         );
-
     }
 
     #[tokio::test]
     async fn test_regex_utils_op() {
-
         // ensure that regex_new does in fact return type Regex,
-        let (_res, res_type) = parse_infer_and_eval(
-            r#"regex_new "\b\w{13}\b" "#,
-        )
+        let (_res, res_type) = parse_infer_and_eval(r#"regex_new "\b\w{13}\b" "#)
             .await
             .unwrap();
         assert_eq!(res_type, Type::Regex);
-
 
         // check if we are able to pass constructed Regex into the overloaded regex_matches inline
         let (res, res_type) = parse_infer_and_eval(
             r#"
             regex_matches (regex_new "\b\w{13}\b") "I categorically deny having triskaidekaphobia."
-            "#
-        ).await.unwrap();
+            "#,
+        )
+        .await
+        .unwrap();
         assert_eq!(res_type, bool!());
         assert_expr_eq!(res, b!(true));
 
         // check if we are able to pass constructed Regex into the overloaded regex_captures inline
-        let (res, res_type) = parse_infer_and_eval(r#"regex_captures (regex_new "\d+") "111a222bc444""#)
-            .await
-            .unwrap();
+        let (res, res_type) =
+            parse_infer_and_eval(r#"regex_captures (regex_new "\d+") "111a222bc444""#)
+                .await
+                .unwrap();
         assert_eq!(res_type, list!(string!()));
         assert_expr_eq!(res, l!(s!("111"), s!("222"), s!("444")); ignore span);
-
 
         // check if we are able to hold variable and then pass and do funny stuff, just for semantics
         let (res, res_type) = parse_infer_and_eval(
@@ -1328,9 +1325,10 @@ pub mod test {
             in
                 matches1 || matches2
 
-            "#)
-            .await
-            .unwrap();
+            "#,
+        )
+        .await
+        .unwrap();
         assert_eq!(res_type, bool!());
         assert_expr_eq!(res, b!(true));
 
@@ -1340,8 +1338,6 @@ pub mod test {
                 .await
                 .is_err()
         );
-        
-
     }
 
     #[tokio::test]
