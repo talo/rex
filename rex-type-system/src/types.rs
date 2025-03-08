@@ -23,6 +23,7 @@ pub enum Type {
     Result(Box<Type>, Box<Type>),
     Option(Box<Type>),
     List(Box<Type>),
+    Regex,
     Dict(BTreeMap<String, Type>),
     Tuple(Vec<Type>),
 
@@ -99,6 +100,7 @@ impl Type {
             Type::Float => {}
             Type::String => {}
             Type::Uuid => {}
+            Type::Regex => {}
             Type::DateTime => {}
         }
     }
@@ -117,6 +119,7 @@ impl Type {
             (Self::Float, Self::Float) => Ok(()),
             (Self::String, Self::String) => Ok(()),
             (Self::Uuid, Self::Uuid) => Ok(()),
+            (Self::Regex, Self::Regex) => Ok(()),
             (Self::DateTime, Self::DateTime) => Ok(()),
 
             (Self::Arrow(a1, b1), Self::Arrow(a2, b2)) => {
@@ -245,6 +248,7 @@ impl Type {
             Type::Float => {}
             Type::String => {}
             Type::Uuid => {}
+            Type::Regex => {}
             Type::DateTime => {}
         }
     }
@@ -259,6 +263,7 @@ impl Display for Type {
             Type::Float => "float".fmt(f),
             Type::String => "string".fmt(f),
             Type::Uuid => "uuid".fmt(f),
+            Type::Regex => "regex".fmt(f),
             Type::DateTime => "datetime".fmt(f),
             Type::Option(x) => {
                 "Option (".fmt(f)?;
@@ -489,6 +494,12 @@ impl ToType for Uuid {
 impl ToType for DateTime<Utc> {
     fn to_type() -> Type {
         Type::DateTime
+    }
+}
+
+impl ToType for rex_type_wrappers::wrapper_regex::WrapperRegex {
+    fn to_type() -> Type {
+        Type::Regex
     }
 }
 

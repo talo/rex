@@ -1,0 +1,8 @@
+[package]
+name = "rex-type-wrappers"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1.0.218"
+regex = "1.11.1"
