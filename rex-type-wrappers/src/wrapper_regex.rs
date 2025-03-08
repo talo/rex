@@ -3,14 +3,38 @@ use std::hash::{Hash, Hasher};
 use regex::{Error, Regex};
 use serde::{Deserializer};
 
+
+/// A wrapper around `regex::Regex` with custom serialization, deserialization,
+/// equality, hashing, and display implementations.
+///
+/// This struct stores both the compiled `regex::Regex` and its original pattern string.
+/// It provides custom implementations for Serde serialization/deserialization,
+/// `PartialEq`, `Eq`, `Hash`, and `Display` to make it easier to work with
+/// regular expressions in various contexts, especially when serialization or
+/// hashing is required.
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct WrapperRegex {
+    /// The original pattern string used to create the regex. This is used for Equality Checks
     pattern :String ,
+    /// The compiled regular expression.
     #[serde(with ="serde_regex")]
     regex : Regex,
 }
 
+
+
 impl WrapperRegex {
+
+    /// Creates a new `WrapperRegex` from the given pattern string.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The regular expression pattern string.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the `WrapperRegex` on success, or a `regex::Error`
+    /// if the pattern is invalid.
     pub fn new(pattern :String) -> Result<WrapperRegex, Error> {
         match Regex::new(&pattern) {
             Ok(regex) => Ok(WrapperRegex {
@@ -21,6 +45,8 @@ impl WrapperRegex {
         }
     }
 
+    /// Returns a clone of the underlying `Regex`.
+    /// This is relative inexpensive, since it doesn't invoke a recompilation
     pub fn get_regex(&self) -> Regex {
          self.regex.clone()
     }
@@ -42,10 +68,12 @@ impl Hash for WrapperRegex{
     }
 }
 
+/// Module for custom Serde serialization and deserialization of `regex::Regex`.
 mod serde_regex {
     use serde::{Deserialize, Serializer};
     use super::*;
 
+    /// Serializes a `Regex` into a string that contains the pattern.
     pub fn serialize<S>(regex: &Regex, serializer: S) -> Result<S::Ok, S::Error>
     where
         S:  Serializer,
@@ -53,6 +81,7 @@ mod serde_regex {
         serializer.serialize_str(regex.as_str())
     }
 
+    /// Deserializes a `Regex` from a string.
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Regex, D::Error>
     where
         D: Deserializer<'de>,
