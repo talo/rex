@@ -1293,7 +1293,7 @@ pub mod test {
     async fn test_regex_utils_op() {
 
         // ensure that regex_new does in fact return type Regex,
-        let (res, res_type) = parse_infer_and_eval(
+        let (_res, res_type) = parse_infer_and_eval(
             r#"regex_new "\b\w{13}\b" "#,
         )
             .await
@@ -1301,7 +1301,7 @@ pub mod test {
         assert_eq!(res_type, Type::Regex);
 
 
-        // check if we are able to pass constructed Regex into the overloaded regex_matches
+        // check if we are able to pass constructed Regex into the overloaded regex_matches inline
         let (res, res_type) = parse_infer_and_eval(
             r#"
             regex_matches (regex_new "\b\w{13}\b") "I categorically deny having triskaidekaphobia."
@@ -1310,13 +1310,36 @@ pub mod test {
         assert_eq!(res_type, bool!());
         assert_expr_eq!(res, b!(true));
 
-        // check if we are able to pass constructed Regex into the overloaded regex_captures
+        // check if we are able to pass constructed Regex into the overloaded regex_captures inline
         let (res, res_type) = parse_infer_and_eval(r#"regex_captures (regex_new "\d+") "111a222bc444""#)
             .await
             .unwrap();
         assert_eq!(res_type, list!(string!()));
         assert_expr_eq!(res, l!(s!("111"), s!("222"), s!("444")); ignore span);
 
+
+        // check if we are able to hold variable and then pass and do funny stuff, just for semantics
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let
+                re = regex_new "\d+",
+                matches1 = regex_matches re "111a222bc444",
+                matches2 = regex_matches re "abc"
+            in
+                matches1 || matches2
+
+            "#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, bool!());
+        assert_expr_eq!(res, b!(true));
+
+        // Check how it behaves with inline errors
+        assert!(
+            parse_infer_and_eval(r#"regex_matches (regex_new "[[") "hi there, how are you""#)
+                .await
+                .is_err()
+        );
         
 
     }
