@@ -93,6 +93,14 @@ pub fn sprint_expr_with_type(expr: &Expr, env: &ExprTypeEnv, subst: Option<&Subs
                 .map(|t| t.to_string())
                 .unwrap_or("_".to_string())
         ),
+        Expr::Regex(id, _, re) => format!(
+            "{}:{}",
+            re,
+            env.get(id)
+                .and_then(|t| subst.map(|s| apply_subst(t, s)))
+                .map(|t| t.to_string())
+                .unwrap_or("_".to_string())
+        ),
         Expr::List(id, _, xs) => {
             let mut s = String::new();
             s.push('[');

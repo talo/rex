@@ -466,6 +466,11 @@ pub fn generate_constraints(
             Ok(Type::DateTime)
         }
 
+        Expr::Regex(id, _span , _x) => {
+            expr_env.insert(*id, Type::Regex);
+            Ok(Type::Regex)
+        }
+
         Expr::Curry(..) => {
             todo!("generate_constraints for Expr::Curry just like we do for Expr::App")
         }
@@ -529,6 +534,7 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
         | Type::Float
         | Type::String
         | Type::Uuid
+        | Type::Regex
         | Type::DateTime => HashSet::new(),
     }
 }
@@ -663,6 +669,7 @@ fn instantiate(ty: &Type, constraint_system: &mut ConstraintSystem) -> Type {
             | Type::Float
             | Type::String
             | Type::Uuid
+            | Type::Regex
             | Type::DateTime => ty.clone(),
         };
         result

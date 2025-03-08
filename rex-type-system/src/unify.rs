@@ -53,6 +53,7 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
         (Type::Float, Type::Float) => Ok(()),
         (Type::String, Type::String) => Ok(()),
         (Type::Uuid, Type::Uuid) => Ok(()),
+        (Type::Regex, Type::Regex) => Ok(()),
         (Type::DateTime, Type::DateTime) => Ok(()),
 
         // Tuples
@@ -199,6 +200,7 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
         | Type::Float
         | Type::String
         | Type::Uuid
+        | Type::Regex
         | Type::DateTime => t.clone(),
     }
 }
@@ -234,6 +236,7 @@ pub fn occurs_check(var: Id, t: &Type) -> bool {
         | Type::Float
         | Type::String
         | Type::Uuid
+        | Type::Regex
         | Type::DateTime => false,
     }
 }
