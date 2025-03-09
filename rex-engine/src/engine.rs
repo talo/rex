@@ -501,6 +501,96 @@ where
         Ok(this)
     }
 
+    pub fn register_adt(&mut self, adt_type: &Type) -> Result<(), Error>
+    {
+        let Type::ADT(adt) = adt_type else {
+            panic!("register_adt) called with non-ADT type: {}", adt_type);
+        };
+
+        // TODO: Avoid cloning args in the functions. This applies more generally across
+        // the evaluation code. We should either pass owned Expr values to the functions
+        // or use Rc<Expr> to make cloning cheap.
+
+        // TODO: panic instead of returning Error; this requires register_fn_core to be
+        // modified to do the same.
+
+        for variant in &adt.variants {
+            // We do not support multiple ADTs with overlapping constructor names. The reason
+            // is because in the general case, each constructor may have a different number of
+            // arguments, so we cannot consider them to be overloaded functions. Haskell has the
+            // same restriction.
+            if self.ftable.contains(&variant.name) {
+                panic!("Duplicate constructor name: {}", variant.name);
+            }
+
+            // The functions we register here work directly with Expr values; there is no need
+            // to convert to and from the corresponding native Rust type.
+            let variant_name = variant.name.to_string();
+            match variant.t.as_ref().map(|t| &**t) {
+                None => {
+                    register_fn_core(self, &variant.name, adt_type.clone())?;
+                    self.ftable.0.entry(variant.name.to_string()).or_default().push((
+                        adt_type.clone(),
+                        Box::new(move |_, _| {
+                            let variant_name = variant_name.clone();
+                            Box::pin(async move {
+                                Ok(Expr::Named(
+                                    Id::new(),
+                                    Span::default(),
+                                    variant_name,
+                                    None))
+                            })
+                        }),
+                    ));
+                }
+                Some(Type::Tuple(fields)) => {
+                    let mut fun_type = adt_type.clone();
+                    for field in fields.iter().rev() {
+                        fun_type = Type::Arrow(
+                            Box::new(field.clone()),
+                            Box::new(fun_type));
+                    }
+                    register_fn_core(self, &variant.name, fun_type.clone())?;
+                    self.ftable.0.entry(variant.name.to_string()).or_default().push((
+                        fun_type.clone(),
+                        Box::new(move |_, args| {
+                            let variant_name = variant_name.clone();
+                            Box::pin(async move {
+                                Ok(Expr::Named(
+                                    Id::new(),
+                                    Span::default(),
+                                    variant_name,
+                                    Some(Box::new(Expr::Tuple(
+                                        Id::new(),
+                                        Span::default(),
+                                        args.clone())))))
+                            })
+                        }),
+                    ))
+                }
+                Some(t) => {
+                    let fun_type = Type::Arrow(Box::new(t.clone()), Box::new(adt_type.clone()));
+                    register_fn_core(self, &variant.name, fun_type.clone())?;
+                    self.ftable.0.entry(variant.name.to_string()).or_default().push((
+                        fun_type.clone(),
+                        Box::new(move |_, args| {
+                            let variant_name = variant_name.clone();
+                            Box::pin(async move {
+                                let val = args[0].clone();
+                                Ok(Expr::Named(
+                                    Id::new(),
+                                    Span::default(),
+                                    variant_name,
+                                    Some(Box::new(val))))
+                            })
+                        }),
+                    ))
+                }
+            }
+        }
+        Ok(())
+    }
+
     impl_register_fn!(register_fn0);
     impl_register_fn!(register_fn1, A0);
     impl_register_fn!(register_fn2, A0, A1);
