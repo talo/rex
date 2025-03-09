@@ -27,6 +27,10 @@ import Lit
 import Pat
 import StaticPrelude
 
+head' :: [a] -> a
+head' (x : xs) = x
+head' [] = error "Empty list"
+
 -----------------------------------------------------------------------------
 
 data Expr = Var   Id
@@ -175,7 +179,7 @@ withDefaults :: MonadFail m => ([Ambiguity] -> [Type] -> a)
                   -> ClassEnv -> [Tyvar] -> [Pred] -> m a
 withDefaults f ce vs ps
     | any null tss  = fail "cannot resolve ambiguity"
-    | otherwise     = return (f vps (map head tss))
+    | otherwise     = return (f vps (map head' tss))
       where vps = ambiguities ce vs ps
             tss = map (candidates ce) vps
 

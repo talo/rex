@@ -17,7 +17,7 @@ import Text.PrettyPrint
 import PPrint
 
 data Kind  = Star | Kfun Kind Kind
-             deriving Eq
+             deriving (Eq, Show)
 
 instance PPrint Kind where
   pprint    = ppkind 0

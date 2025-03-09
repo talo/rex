@@ -20,6 +20,7 @@ import PPrint
 import Text.PrettyPrint(nest, ($$), text, (<+>))
 
 data Assump = Id :>: Scheme
+  deriving (Eq, Show)
 
 instance PPrint Assump where
   pprint (i :>: s) = (text (show i) <+> text ":>:") $$ nest 2 (pprint s)

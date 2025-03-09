@@ -1,14 +1,8 @@
-use std::fmt;
 use std::rc::Rc;
-
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub struct Id(pub String);
-
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub enum Kind {
-    Star,                      // *
-    Kfun(Rc<Kind>, Rc<Kind>),  // k1 -> k2
-}
+use std::fmt;
+use crate::extras::Id;
+use crate::kind::Kind;
+use crate::util::fmt_paren;
 
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub enum Type {
@@ -24,106 +18,69 @@ pub struct Tyvar(pub Id, pub Rc<Kind>);
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct Tycon(pub Id, pub Rc<Kind>);
 
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub struct Qual<T>(pub Vec<Pred>, pub T);
-
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub enum Pred {
-    IsIn(Id, Rc<Type>),
-}
-
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub enum Scheme {
-    Forall(Vec<Rc<Kind>>, Qual<Rc<Type>>)
-}
-
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub struct Assump(pub Id, pub Rc<Scheme>);
-
-pub type Class = (Vec<Id>, Vec<Inst>);
-pub type Inst = Qual<Pred>;
-
-pub struct ClassEnv;
-
-pub trait HasKind {
-    fn kind(&self) -> Rc<Kind>;
-}
-
-impl HasKind for Tyvar {
-    fn kind(&self) -> Rc<Kind> {
-        self.1.clone()
-    }
-}
-
-impl HasKind for Tycon {
-    fn kind(&self) -> Rc<Kind> {
-        self.1.clone()
-    }
-}
-
-impl HasKind for Type {
-    fn kind(&self) -> Rc<Kind> {
-        match self {
-            Type::TCon(tc) => tc.kind(),
-            Type::TVar(u) => u.kind(),
-            Type::TAp(t, _) => match &*t.kind() {
-                Kind::Star => panic!("Type::TApp applied to *"),
-                Kind::Kfun(_, k) => k.clone(),
-            }
-            Type::TGen(_) => panic!("Type::TGen has no kind"),
-        }
-    }
-}
-
-impl fmt::Display for Id {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl fmt::Display for Kind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Kind::Star => write!(f, "Star"),
-            Kind::Kfun(l, r) => write!(f, "(Kfun {} {})", l, r),
-        }
-    }
-}
-
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Type::TVar(v) => write!(f, "TVar ({})", v),
-            Type::TCon(c) => write!(f, "TCon ({})", c),
-            Type::TAp(l, r) => write!(f, "TAp ({}) ({})", l, r),
-            Type::TGen(i) => write!(f, "TGen {}", i),
-        }
+        fmt_type(f, self, TypePrec::Min)
     }
 }
 
-pub struct TypeNoKind<'a>(pub &'a Type);
-impl<'a> fmt::Display for TypeNoKind<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        fmt_type_nokind(self.0, false, f)
-    }
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy)]
+enum TypePrec {
+    Min,
+    // Atomic,
+    // Arrow,
+    Pair,
+    Ap,
 }
 
-pub fn fmt_type_nokind(t: &Type, paren: bool, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+fn fmt_type(
+    f: &mut fmt::Formatter<'_>,
+    t: &Type,
+    at: TypePrec,
+) -> Result<(), fmt::Error> {
     match t {
         Type::TVar(v) => write!(f, "{}", v.0.0)?,
         Type::TCon(c) => write!(f, "{}", c.0.0)?,
         Type::TAp(l, r) => {
-            if paren {
-                write!(f, "(")?;
+            if let Type::TAp(l2, r2) = &**l {
+                if let Type::TCon(tc) = &**l2 {
+                    if tc.0.0 == "->" {
+                        fmt_paren(f, at, TypePrec::Ap, |f| {
+                            fmt_type(f, r2, TypePrec::Ap)?;
+                            write!(f, " -> ")?;
+                            fmt_type(f, r, TypePrec::Min)?;
+                            Ok(())
+                        })?;
+                        return Ok(())
+                    }
+                    if tc.0.0 == "(,)" {
+                        fmt_paren(f, at, TypePrec::Pair, |f| {
+                            fmt_type(f, r2, TypePrec::Pair)?;
+                            write!(f, " , ")?;
+                            fmt_type(f, r, TypePrec::Min)?;
+                            Ok(())
+                        })?;
+                        return Ok(())
+                    }
+                }
             }
 
-            fmt_type_nokind(l, true, f)?;
-            write!(f, " ")?;
-            fmt_type_nokind(r, false, f)?;
-
-            if paren {
-                write!(f, ")")?;
+            if let Type::TCon(tc) = &**l {
+                if tc.0.0 == "[]" {
+                    write!(f, "[")?;
+                    fmt_type(f, r, TypePrec::Min)?;
+                    write!(f, "]")?;
+                    return Ok(())
+                }
             }
+
+            fmt_paren(f, at, TypePrec::Ap, |f| {
+                write!(f, "TAp ")?;
+                fmt_type(f, l, TypePrec::Ap)?;
+                write!(f, " ")?;
+                fmt_type(f, r, TypePrec::Min)?;
+                Ok(())
+            })?;
 
         }
         Type::TGen(i) => write!(f, "{}", i)?,
@@ -141,8 +98,4 @@ impl fmt::Display for Tycon {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "Tycon {} {}", self.0, self.1)
     }
-}
-
-pub fn enum_id(i: u64) -> Id {
-    Id(format!("v{}", i))
 }

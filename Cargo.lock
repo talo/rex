@@ -957,6 +957,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef8f7726da4807b58ea5c96fdc122f80702030edc33b35aff9190a51148ccc85"
 
 [[package]]
+name = "typeclasses"
+version = "0.1.0"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"

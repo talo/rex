@@ -1,6 +1,9 @@
 use std::rc::Rc;
 use std::borrow::Borrow;
-use crate::types::{Id, Kind, Type, Tyvar, Tycon, Pred};
+use crate::extras::{Id, Pred};
+use crate::types::{Type, Tyvar, Tycon};
+use crate::kind::Kind;
+use crate::expr::{Literal, Expr, BindGroup};
 
 pub fn id(s: impl Into<String>) -> Id {
     Id(s.into())
@@ -43,5 +46,33 @@ pub fn mapsto(v: impl Borrow<Rc<Tyvar>>, t: impl Borrow<Rc<Type>>) -> (Rc<Tyvar>
 }
 
 pub fn isin(name: impl Into<String>, t: impl Borrow<Rc<Type>>) -> Pred {
-    Pred::IsIn(Id(name.into()), t.borrow().clone())
+    Pred(Id(name.into()), t.borrow().clone())
+}
+
+pub fn evar(name: impl Into<String>) -> Rc<Expr> {
+    Rc::new(Expr::Var(Id(name.into())))
+}
+
+pub fn eint(value: i64) -> Rc<Expr> {
+    Rc::new(Expr::Lit(Literal::Int(value)))
+}
+
+pub fn efloat(value: f64) -> Rc<Expr> {
+    Rc::new(Expr::Lit(Literal::Float(value)))
+}
+
+pub fn echar(value: char) -> Rc<Expr> {
+    Rc::new(Expr::Lit(Literal::Char(value)))
+}
+
+pub fn estring(value: impl Into<String>) -> Rc<Expr> {
+    Rc::new(Expr::Lit(Literal::Str(value.into())))
+}
+
+pub fn eap(l: impl Borrow<Rc<Expr>>, r: impl Borrow<Rc<Expr>>) -> Rc<Expr> {
+    Rc::new(Expr::Ap(l.borrow().clone(), r.borrow().clone()))
+}
+
+pub fn elet(g: BindGroup, e: impl Borrow<Rc<Expr>>) -> Rc<Expr> {
+    Rc::new(Expr::Let(g, e.borrow().clone()))
 }

@@ -1,35 +1,24 @@
 use std::rc::Rc;
-use crate::types::{Id, Kind, Type, Tyvar, Qual, Pred, ClassEnv, Assump, Scheme, enum_id};
-use crate::subst::{Subst, find, concat};
+use std::borrow::Borrow;
+use crate::classes::ClassEnv;
+use crate::extras::{Qual, Pred, Assump, Scheme, enum_id, Instantiate};
+use crate::types::{Type, Tyvar};
+use crate::kind::Kind;
+use crate::subst::{Subst, find, concat, mgu, Types};
 use crate::error::{TypeError};
 use crate::{t_char, t_string};
 use crate::helpers::*;
 use crate::t_arrow;
+use crate::expr::{Literal, Expr, BindGroup};
 
-
-#[derive(PartialEq, Clone, Debug)]
-pub enum Literal {
-    Int(i64),
-    Float(f64),
-    Char(char),
-    Str(String),
-}
-
-#[derive(PartialEq, Clone, Debug)]
-pub enum Expr {
-    Var(Id),
-    Lit(Literal),
-    Const(Assump),
-    Ap(Rc<Expr>, Rc<Expr>),
-    Let(BindGroup, Rc<Expr>),
-}
-
-#[derive(PartialEq, Clone, Debug)]
-pub struct BindGroup;
+pub struct Program(pub Vec<BindGroup>);
 
 pub struct TI {
     pub subst: Subst,
     pub var_id: u64,
+    pub expr_types: Vec<(Rc<Expr>, Rc<Pred>, Rc<Type>)>,
+    pub trace_enabled: bool,
+    pub trace_depth: usize,
 }
 
 impl TI {
@@ -37,6 +26,9 @@ impl TI {
         TI {
             subst: Subst(vec![]),
             var_id: 0,
+            expr_types: vec![],
+            trace_enabled: false,
+            trace_depth: 0,
         }
     }
 
@@ -47,53 +39,34 @@ impl TI {
     }
 
     pub fn fresh_inst(&mut self, scheme: &Scheme) -> Qual<Rc<Type>> {
-        match scheme {
-            Scheme::Forall(ks, qt) => {
-                let ts = ks.iter().map(|k| self.new_tvar(k)).collect::<Vec<_>>();
-                qt.inst(&ts)
+        let ts = scheme.kinds().iter().map(|k| self.new_tvar(k)).collect::<Vec<_>>();
+        scheme.qualified_type().inst(&ts)
+    }
+
+    pub fn unify(&mut self, t1: &Rc<Type>, t2: &Rc<Type>) -> Result<(), TypeError> {
+        // println!("unify {} and {}", t1, t2);
+        let u = mgu(&t1.apply(&self.subst), &t2.apply(&self.subst))?;
+        self.ext_subst(u);
+        Ok(())
+    }
+
+    pub fn ext_subst(&mut self, s: impl Borrow<Subst>) {
+        self.subst = s.borrow().atat(&self.subst)
+    }
+
+    pub fn get_expr_type(&self, expr: &Rc<Expr>) -> Option<(Rc<Pred>, Rc<Type>)> {
+        for et in self.expr_types.iter() {
+            if Rc::ptr_eq(expr, &et.0) {
+                return Some((et.1.clone(), et.2.clone()));
             }
         }
+        None
     }
 
-    pub fn unify(&mut self, _t1: &Rc<Type>, _t2: &Rc<Type>) -> Result<(), TypeError> {
-        unimplemented!()
-    }
-}
-
-pub trait Instantiate {
-    fn inst(&self, ts: &[Rc<Type>]) -> Self;
-}
-
-impl Instantiate for Rc<Type> {
-    fn inst(&self, ts: &[Rc<Type>]) -> Self {
-        match &**self {
-            Type::TAp(l, r) => Rc::new(Type::TAp(l.inst(ts), r.inst(ts))),
-            Type::TGen(n) => ts[*n as usize].clone(),
-            _ => self.clone(),
+    pub fn trace(&mut self, msg: impl Into<String>) {
+        if self.trace_enabled {
+            println!("{:<indent$}{}", " ", msg.into(), indent=4 * self.trace_depth);
         }
-    }
-}
-
-impl<T> Instantiate for Vec<T> where T : Instantiate {
-    fn inst(&self, ts: &[Rc<Type>]) -> Self {
-        self.iter().map(|x| x.inst(ts)).collect()
-    }
-}
-
-impl<T> Instantiate for Qual<T> where T : Instantiate {
-    fn inst(&self, ts: &[Rc<Type>]) -> Self {
-        let ps = &self.0;
-        let t = &self.1;
-        Qual(ps.inst(ts), t.inst(ts))
-    }
-}
-
-impl Instantiate for Pred {
-    fn inst(&self, ts: &[Rc<Type>]) -> Self {
-        match self {
-            Pred::IsIn(c, t) => Pred::IsIn(c.clone(), t.inst(ts)),
-        }
-
     }
 }
 
@@ -116,6 +89,27 @@ pub fn ti_lit(
 }
 
 pub fn ti_expr(
+    ti: &mut TI,
+    ce: &ClassEnv,
+    as_: &[Assump],
+    e: &Rc<Expr>,
+) -> Result<(Vec<Pred>, Rc<Type>), TypeError> {
+    ti.trace_depth += 1;
+    ti.trace(format!(">expr {:?}", e));
+    let res = ti_expr1(ti, ce, as_, e);
+    match &res {
+        Ok((ps, t)) => {
+            ti.trace(format!("<expr {:?} => {:?} {}", e, ps, t));
+        }
+        Err(err) => {
+            ti.trace(format!("<expr {:?} => {}", e, err));
+        }
+    }
+    ti.trace_depth -= 1;
+    res
+}
+
+pub fn ti_expr1(
     ti: &mut TI,
     ce: &ClassEnv,
     as_: &[Assump],
@@ -166,5 +160,19 @@ pub fn ti_bindgroup(
     _as_: &[Assump],
     _bg: &BindGroup
 ) -> Result<(Vec<Pred>, Vec<Assump>), TypeError> {
+    unimplemented!()
+}
+
+pub fn ti_program(
+    _ce: &ClassEnv,
+    _as_: &[Assump],
+    _p: &Program,
+) -> Vec<Assump> {
+    // tiProgram ce as bgs = runTI $
+    //                       do (ps, as') <- tiSeq tiBindGroup ce as bgs
+    //                          s         <- getSubst
+    //                          rs        <- reduce ce (apply s ps)
+    //                          s'        <- defaultSubst ce [] rs
+    //                          return (apply (s'@@s) as')
     unimplemented!()
 }

@@ -19,13 +19,13 @@ import PPrint
 import Text.PrettyPrint(text, int, (<+>))
 
 data Type  = TVar Tyvar | TCon Tycon | TAp  Type Type | TGen Int
-             deriving Eq
+             deriving (Eq, Show)
 
 data Tyvar = Tyvar Id Kind
-             deriving Eq
+             deriving (Eq, Show)
 
 data Tycon = Tycon Id Kind
-             deriving Eq
+             deriving (Eq, Show)
 
 instance PPrint Type where
   pprint    = pptype 0

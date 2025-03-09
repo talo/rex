@@ -1,7 +1,8 @@
 use std::rc::Rc;
 use std::fmt;
 
-use crate::types::*;
+use crate::types::{Type, Tyvar};
+use crate::extras::{Qual, Pred, Scheme, Assump, Id, HasKind};
 use crate::error::TypeError;
 
 #[derive(PartialEq, Eq, Debug)]
@@ -112,29 +113,21 @@ impl<T> Types for Qual<T> where T : Types {
 
 impl Types for Pred {
     fn apply(&self, s: &Subst) -> Self {
-        match self {
-            Pred::IsIn(i, t) => Pred::IsIn(i.clone(), t.apply(s)),
-        }
+        Pred(self.0.clone(), self.1.apply(s))
     }
 
     fn tv(&self) -> Vec<Rc<Tyvar>> {
-        match self {
-            Pred::IsIn(_, t) => t.tv(),
-        }
+        self.1.tv()
     }
 }
 
 impl Types for Scheme {
     fn apply(&self, s: &Subst) -> Self {
-        match self {
-            Scheme::Forall(ks, qt) => Scheme::Forall(ks.clone(), qt.apply(s)),
-        }
+        Scheme(self.kinds().to_vec(), self.qualified_type().apply(s))
     }
 
     fn tv(&self) -> Vec<Rc<Tyvar>> {
-        match self {
-            Scheme::Forall(_, qt) => qt.tv(),
-        }
+        self.qualified_type().tv()
     }
 }
 
@@ -195,6 +188,7 @@ fn intersect_<T>(a: &[T], b: &[T]) -> Vec<T> where T : PartialEq + Clone {
 }
 
 pub fn mgu(t1: &Rc<Type>, t2: &Rc<Type>) -> Result<Subst, TypeError> {
+    // println!("mgu {} and {}", t1, t2);
     match (&**t1, &**t2) {
         (Type::TAp(l1, r1), Type::TAp(l2, r2)) => {
             let s1 = mgu(l1, l2)?;
@@ -204,14 +198,16 @@ pub fn mgu(t1: &Rc<Type>, t2: &Rc<Type>) -> Result<Subst, TypeError> {
         (Type::TVar(u), _) => var_bind(u, t2),
         (_, Type::TVar(u)) => var_bind(u, t1),
         (Type::TCon(tc1), Type::TCon(tc2)) if tc1 == tc2 => Ok(null_subst()),
-        _ => Err(TypeError::TypesDoNotUnify),
+        _ => Err(TypeError::TypesDoNotUnify(t1.clone(), t2.clone())),
     }
 }
 
 pub fn mgu_pred(p1: &Pred, p2: &Pred) -> Result<Subst, TypeError> {
-    match (p1, p2) {
-        (Pred::IsIn(i1, t1), Pred::IsIn(i2, t2)) if i1 == i2 => mgu(t1, t2),
-        _ => Err(TypeError::ClassesDiffer),
+    if p1.id() == p2.id() {
+        mgu(p1.t(), &p2.t())
+    }
+    else {
+        Err(TypeError::ClassesDiffer)
     }
 }
 
@@ -244,9 +240,11 @@ pub fn match_(t1: &Rc<Type>, t2: &Rc<Type>) -> Result<Subst, TypeError> {
 }
 
 pub fn match_pred(p1: &Pred, p2: &Pred) -> Result<Subst, TypeError> {
-    match (p1, p2) {
-        (Pred::IsIn(i1, t1), Pred::IsIn(i2, t2)) if i1 == i2 => match_(t1, t2),
-        _ => Err(TypeError::ClassesDiffer),
+    if p1.id() == p2.id() {
+        match_(p1.t(), p2.t())
+    }
+    else {
+        Err(TypeError::ClassesDiffer)
     }
 }
 

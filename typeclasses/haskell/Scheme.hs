@@ -21,7 +21,7 @@ import PPrint
 import Text.PrettyPrint((<+>), nest, ($$), text)
 
 data Scheme = Forall [Kind] (Qual Type)
-              deriving Eq
+              deriving (Eq, Show)
 
 instance PPrint Scheme where
   pprint (Forall ks qt)

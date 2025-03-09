@@ -24,13 +24,13 @@ import PPrint
 import Text.PrettyPrint((<+>), text, nest, ($$))
 
 data Qual t = [Pred] :=> t
-              deriving Eq
+              deriving (Eq, Show)
 
 instance PPrint t => PPrint (Qual t) where
   pprint (ps  :=> t) = (pprint ps <+> text ":=>") $$ nest 2 (parPprint t)
 
 data Pred   = IsIn Id Type
-              deriving Eq
+              deriving (Eq, Show)
 
 instance PPrint Pred where
   pprint (IsIn i t) = text "isIn1" <+> text ("c" ++ i) <+> parPprint t
