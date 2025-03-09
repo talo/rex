@@ -71,6 +71,24 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
         // Lists
         (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, subst),
 
+        // Dictionaries
+        (Type::Dict(d1), Type::Dict(d2)) => {
+            if d1.len() != d2.len() {
+                return Err(format!("Cannot unify {} with {}: different no. of keys",
+                    Type::Dict(d1), Type::Dict(d2)));
+            }
+            for (key, entry1) in d1.iter() {
+                if let Some(entry2) = d2.get(key) {
+                    unify_eq(entry1, entry2, subst)?;
+                }
+                else {
+                    return Err(format!("Cannot unify {} with {}: different keys",
+                        Type::Dict(d1), Type::Dict(d2)));
+                }
+            }
+            Ok(())
+        }
+
         // For function types, unify arguments and results
         (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
             unify_eq(&a1, &a2, subst)?;
@@ -102,6 +120,38 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
                 subst.insert(v, t);
                 Ok(())
             }
+        }
+
+        // ADTs
+        (Type::ADT(adt1), Type::ADT(adt2)) => {
+            if adt1.name != adt2.name {
+                return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+            }
+
+            if adt1.variants.len() != adt2.variants.len() {
+                return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+            }
+
+            for i in 0..adt1.variants.len() {
+                let v1 = &adt1.variants[i];
+                let v2 = &adt2.variants[i];
+
+                if v1.name != v2.name {
+                    return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+                }
+
+                match (&v1.t, &v2.t) {
+                    (None, None) => (),
+                    (Some(vt1), Some(vt2)) => {
+                        unify_eq(vt1, vt2, subst)?;
+                    }
+                    _ => {
+                        return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+                    }
+                }
+            }
+
+            return Ok(());
         }
 
         // Everything else fails
