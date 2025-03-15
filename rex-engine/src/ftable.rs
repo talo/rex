@@ -1,3 +1,4 @@
+use std::fmt;
 use std::{collections::HashMap, future::Future, pin::Pin};
 
 use rex_ast::{expr::Expr, id::Id};
@@ -146,6 +147,10 @@ where
         Self(Default::default())
     }
 
+    pub fn contains(&self, n: &str) -> bool {
+        self.0.contains_key(n)
+    }
+
     // NOTE(loong): We do not support overloaded parametric polymorphism.
     pub fn lookup_fns(&self, n: &str, t: Type) -> impl Iterator<Item = (&FtableFn<State>, &Type)> {
         self.0
@@ -171,6 +176,30 @@ where
     impl_register_fn_async!(register_fn_async2, A0, A1);
     impl_register_fn_async!(register_fn_async3, A0, A1, A2);
     impl_register_fn_async!(register_fn_async4, A0, A1, A2);
+}
+
+impl<State> fmt::Display for Ftable<State>
+where
+    State: Clone + Sync + 'static
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "Ftable")?;
+        let mut items = self.0.iter().collect::<Vec<_>>();
+        items.sort_by(|(n0, _), (n1, _)| n0.cmp(n1));
+
+        for (name, entries) in items.iter() {
+            if entries.len() == 1 {
+                write!(f, "\n    {} :: {}", name, entries[0].0)?;
+            }
+            else {
+                write!(f, "\n    {} ::", name)?;
+                for entry in entries.iter() {
+                    write!(f, "\n        {}", entry.0)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn decode_arg<A>(args: &Vec<Expr>, i: usize) -> Result<A, Error>

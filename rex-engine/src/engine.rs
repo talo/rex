@@ -3,7 +3,7 @@ use rex_type_system::{
     types::{ToType, Type, TypeEnv},
 }; 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, BTreeSet},
     future::Future,
     pin::Pin,
 };
@@ -21,94 +21,100 @@ use rex_ast::id::Id;
 use rex_lexer::span::Span;
 use uuid::Uuid;
 
-macro_rules! impl_register_fn_core {
-    ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
-        let n = $n.to_string();
-        let t = <fn($($($param,)*)?) -> B as ToType>::to_type();
+fn register_fn_core<State>(builder: &mut Builder<State>, n: &str, t: Type) -> Result<(), Error>
+where
+    State: Clone + Send + Sync + 'static,
+{
+    let unresolved_vars = t.unresolved_vars();
 
-        let unresolved_vars = t.unresolved_vars();
-
-        match $self.fconstraints.get(&n) {
-            None if !unresolved_vars.is_empty() => {
-                if $self.ftenv.contains_key(&n) {
-                    return Err(Error::ParametricOverload {
-                        name: n,
-                        prev_insts: vec![],
-                        curr_inst: t,
-                    });
-                }
-
-                let mut assignments = ::std::collections::HashMap::new();
-                for var in &unresolved_vars {
-                    if let None = assignments.get(var) {
-                        assignments.insert(
-                            var.clone(),
-                            Type::Var(rex_ast::id::Id::new()),
-                        );
-                    }
-                }
-
-                // Temporarily make t mutable so we can resolve its type
-                // unresolved variables
-                let t = {
-                    let mut t = t;
-                    t.resolve_vars(&assignments);
-                    t
-                };
-
-                // Build the type from inside out
-                let mut for_all = t;
-                for var in assignments.into_values() {
-                    if let ::rex_type_system::types::Type::Var(var) = var {
-                        for_all = ::rex_type_system::types::Type::ForAll(
-                            var,
-                            Box::new(for_all),
-                            ::std::collections::BTreeSet::new()
-                        );
-                    } else {
-                        panic!("Expected a type variable");
-                    }
-                }
-
-                $self.ftenv.insert(
-                    n.to_string(),
-                    for_all,
-                );
-            }
-            None => {
-                let new_id = rex_ast::id::Id::new();
-                $self.fconstraints
-                    .insert(n.clone(), Constraint::Eq(Type::Var(new_id), t));
-                $self.ftenv.insert(n.clone(), Type::Var(new_id));
-            }
-            Some(_) if !unresolved_vars.is_empty() => {
+    match builder.fconstraints.get(n) {
+        None if !unresolved_vars.is_empty() => {
+            if builder.ftenv.contains_key(n) {
                 return Err(Error::ParametricOverload {
-                    name: n,
+                    name: n.to_string(),
                     prev_insts: vec![],
                     curr_inst: t,
                 });
             }
-            Some(Constraint::Eq(tid, prev_t)) => {
-                let mut new_ts = HashSet::new();
-                new_ts.insert(prev_t.clone());
-                new_ts.insert(t);
 
-                $self.fconstraints
-                    .insert(n.clone(), Constraint::OneOf(tid.clone(), new_ts));
+            let mut assignments = HashMap::new();
+            for var in &unresolved_vars {
+                if let None = assignments.get(var) {
+                    assignments.insert(
+                        var.clone(),
+                        Type::Var(Id::new()),
+                    );
+                }
             }
-            Some(Constraint::OneOf(tid, prev_ts)) => {
-                let mut new_ts = prev_ts.clone();
-                new_ts.insert(t);
 
-                $self.fconstraints
-                    .insert(n.clone(), Constraint::OneOf(tid.clone(), new_ts));
+            // Temporarily make t mutable so we can resolve its type
+            // unresolved variables
+            let t = {
+                let mut t = t;
+                t.resolve_vars(&assignments);
+                t
+            };
+
+            // Build the type from inside out
+            let mut for_all = t;
+            for var in assignments.into_values() {
+                if let Type::Var(var) = var {
+                    for_all = Type::ForAll(
+                        var,
+                        Box::new(for_all),
+                        BTreeSet::new()
+                    );
+                } else {
+                    panic!("Expected a type variable");
+                }
             }
+
+            builder.ftenv.insert(
+                n.to_string(),
+                for_all,
+            );
         }
+        None => {
+            let new_id = Id::new();
+            builder.fconstraints
+                .insert(n.to_string(), Constraint::Eq(Type::Var(new_id), t));
+            builder.ftenv.insert(n.to_string(), Type::Var(new_id));
+        }
+        Some(_) if !unresolved_vars.is_empty() => {
+            return Err(Error::ParametricOverload {
+                name: n.to_string(),
+                prev_insts: vec![],
+                curr_inst: t,
+            });
+        }
+        Some(Constraint::Eq(tid, prev_t)) => {
+            let mut new_ts = HashSet::new();
+            new_ts.insert(prev_t.clone());
+            new_ts.insert(t);
 
+            builder.fconstraints
+                .insert(n.to_string(), Constraint::OneOf(tid.clone(), new_ts));
+        }
+        Some(Constraint::OneOf(tid, prev_ts)) => {
+            let mut new_ts = prev_ts.clone();
+            new_ts.insert(t);
+
+            builder.fconstraints
+                .insert(n.to_string(), Constraint::OneOf(tid.clone(), new_ts));
+        }
+    }
+
+    Ok(())
+}
+
+macro_rules! impl_register_fn_core {
+    ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
+        let n = $n.to_string();
+        let t = <fn($($($param,)*)?) -> B as ToType>::to_type();
+        register_fn_core($self, &n, t)?;
         $self.ftable.$name(n, $f);
-
         Ok(())
-    }};
+    }}
 }
 
 macro_rules! impl_register_fn {
@@ -493,6 +499,96 @@ where
         this.register_fn0("now", |_ctx: &Context<_>| Ok(Utc::now()))?;
 
         Ok(this)
+    }
+
+    pub fn register_adt(&mut self, adt_type: &Type) -> Result<(), Error>
+    {
+        let Type::ADT(adt) = adt_type else {
+            panic!("register_adt) called with non-ADT type: {}", adt_type);
+        };
+
+        // TODO: Avoid cloning args in the functions. This applies more generally across
+        // the evaluation code. We should either pass owned Expr values to the functions
+        // or use Rc<Expr> to make cloning cheap.
+
+        // TODO: panic instead of returning Error; this requires register_fn_core to be
+        // modified to do the same.
+
+        for variant in &adt.variants {
+            // We do not support multiple ADTs with overlapping constructor names. The reason
+            // is because in the general case, each constructor may have a different number of
+            // arguments, so we cannot consider them to be overloaded functions. Haskell has the
+            // same restriction.
+            if self.ftable.contains(&variant.name) {
+                panic!("Duplicate constructor name: {}", variant.name);
+            }
+
+            // The functions we register here work directly with Expr values; there is no need
+            // to convert to and from the corresponding native Rust type.
+            let variant_name = variant.name.to_string();
+            match variant.t.as_ref().map(|t| &**t) {
+                None => {
+                    register_fn_core(self, &variant.name, adt_type.clone())?;
+                    self.ftable.0.entry(variant.name.to_string()).or_default().push((
+                        adt_type.clone(),
+                        Box::new(move |_, _| {
+                            let variant_name = variant_name.clone();
+                            Box::pin(async move {
+                                Ok(Expr::Named(
+                                    Id::new(),
+                                    Span::default(),
+                                    variant_name,
+                                    None))
+                            })
+                        }),
+                    ));
+                }
+                Some(Type::Tuple(fields)) => {
+                    let mut fun_type = adt_type.clone();
+                    for field in fields.iter().rev() {
+                        fun_type = Type::Arrow(
+                            Box::new(field.clone()),
+                            Box::new(fun_type));
+                    }
+                    register_fn_core(self, &variant.name, fun_type.clone())?;
+                    self.ftable.0.entry(variant.name.to_string()).or_default().push((
+                        fun_type.clone(),
+                        Box::new(move |_, args| {
+                            let variant_name = variant_name.clone();
+                            Box::pin(async move {
+                                Ok(Expr::Named(
+                                    Id::new(),
+                                    Span::default(),
+                                    variant_name,
+                                    Some(Box::new(Expr::Tuple(
+                                        Id::new(),
+                                        Span::default(),
+                                        args.clone())))))
+                            })
+                        }),
+                    ))
+                }
+                Some(t) => {
+                    let fun_type = Type::Arrow(Box::new(t.clone()), Box::new(adt_type.clone()));
+                    register_fn_core(self, &variant.name, fun_type.clone())?;
+                    self.ftable.0.entry(variant.name.to_string()).or_default().push((
+                        fun_type.clone(),
+                        Box::new(move |_, args| {
+                            let variant_name = variant_name.clone();
+                            Box::pin(async move {
+                                let val = args[0].clone();
+                                Ok(Expr::Named(
+                                    Id::new(),
+                                    Span::default(),
+                                    variant_name,
+                                    Some(Box::new(val))))
+                            })
+                        }),
+                    ))
+                }
+            }
+        }
+        Ok(())
     }
 
     impl_register_fn!(register_fn0);
