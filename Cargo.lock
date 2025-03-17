@@ -693,7 +693,6 @@ dependencies = [
  "rex-ast",
  "rex-lexer",
  "rex-parser",
- "rex-proc-macro",
  "rex-type-system",
  "rpds",
  "serde",

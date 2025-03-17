@@ -1,7 +1,11 @@
+use rex_ast::{assert_expr_eq, d, f, n, s, tup, u};
 use rex_proc_macro::Rex;
+use rex_engine::engine::Builder;
+use rex_engine::util::parse_infer_and_eval_b;
 use rex_type_system::{
     adt,
-    types::{ADTVariant, ADT},
+    types::{ADTVariant, ADT, ToType},
+    tuple,
 };
 
 #[allow(dead_code)]
@@ -295,4 +299,157 @@ MyEnum::Z{}
             ]
         })
     );
+}
+
+#[tokio::test]
+async fn adt_enum() {
+    #![allow(dead_code)]
+    #[derive(Rex)]
+    pub enum Color {
+        Red,
+        Green,
+        Blue,
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Color::to_type()).unwrap();
+    let (res, res_type) = parse_infer_and_eval_b(
+        builder,
+        r#"(Red, Green, Blue)"#)
+        .await
+        .unwrap();
+    assert_eq!(
+        res_type,
+        tuple!(Color::to_type(), Color::to_type(), Color::to_type()));
+    assert_expr_eq!(
+        res,
+        tup!(n!("Red", None), n!("Green", None), n!("Blue", None));
+        ignore span);
+}
+
+#[tokio::test]
+async fn adt_variant_tuple() {
+    #![allow(dead_code)]
+    #[derive(Rex)]
+    pub enum Shape {
+        Rectangle(f64, f64),
+        Circle(f64),
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Shape::to_type()).unwrap();
+    let (res, res_type) = parse_infer_and_eval_b(
+        builder,
+        r#"Rectangle (2.0 * 3.0) (4.0 * 5.0)"#)
+        .await
+        .unwrap();
+    assert_eq!(res_type, Shape::to_type());
+    assert_expr_eq!(
+        res,
+        n!("Rectangle", Some(tup!(f!(6.0), f!(20.0))));
+        ignore span);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Shape::to_type()).unwrap();
+    let (res, res_type) = parse_infer_and_eval_b(
+        builder,
+        r#"Circle (3.0 * 4.0)"#)
+        .await
+        .unwrap();
+    assert_eq!(res_type, Shape::to_type());
+    assert_expr_eq!(
+        res,
+        n!("Circle", Some(f!(12.0)));
+        ignore span);
+}
+
+#[tokio::test]
+async fn adt_variant_struct() {
+    #![allow(dead_code)]
+    #[derive(Rex)]
+    pub enum Shape {
+        Rectangle { width: f64, height: f64 },
+        Circle { radius: f64 },
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Shape::to_type()).unwrap();
+    let (res, res_type) = parse_infer_and_eval_b(
+        builder,
+        r#"Rectangle { width = 2.0 * 3.0, height = 4.0 * 5.0 }"#)
+        .await
+        .unwrap();
+    assert_eq!(res_type, Shape::to_type());
+    assert_expr_eq!(
+        res,
+        n!("Rectangle", Some(d!(width = f!(6.0), height = f!(20.0))));
+        ignore span);
+}
+
+#[tokio::test]
+async fn adt_struct() {
+    #![allow(dead_code)]
+    #[derive(Rex)]
+    pub struct Movie {
+        pub title: String,
+        pub year: u16,
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Movie::to_type()).unwrap();
+    let (res, res_type) = parse_infer_and_eval_b(
+        builder,
+        r#"Movie { title = "Godzilla", year = 1954 }"#)
+        .await
+        .unwrap();
+    assert_eq!(res_type, Movie::to_type());
+    assert_expr_eq!(
+        res,
+        n!("Movie", Some(d!(title = s!("Godzilla"), year = u!(1954))));
+        ignore span);
+}
+
+#[tokio::test]
+async fn adt_tuple() {
+    #![allow(dead_code)]
+    #[derive(Rex)]
+    pub struct Movie(pub String, pub u16);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Movie::to_type()).unwrap();
+    let (res, res_type) = parse_infer_and_eval_b(
+        builder,
+        r#"Movie "Godzilla" 1954 }"#)
+        .await
+        .unwrap();
+    assert_eq!(res_type, Movie::to_type());
+    assert_expr_eq!(
+        res,
+        n!("Movie", Some(tup!(s!("Godzilla"), u!(1954))));
+        ignore span);
+}
+
+#[tokio::test]
+async fn adt_curry() {
+    #![allow(dead_code)]
+    #[derive(Rex)]
+    pub enum Shape {
+        Rectangle(f64, f64),
+        Circle(f64),
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Shape::to_type()).unwrap();
+    let (res, res_type) = parse_infer_and_eval_b(
+        builder,
+        r#"let partial = Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#)
+        .await
+        .unwrap();
+    assert_eq!(res_type, tuple!(Shape::to_type(), Shape::to_type()));
+    assert_expr_eq!(
+        res,
+        tup!(
+            n!("Rectangle", Some(tup!(f!(6.0), f!(12.0)))),
+            n!("Rectangle", Some(tup!(f!(6.0), f!(8.0)))));
+        ignore span);
 }
