@@ -4,7 +4,7 @@ use rex_engine::engine::Builder;
 use rex_engine::util::parse_infer_and_eval_b;
 use rex_type_system::{
     adt,
-    types::{ADTVariant, ADT, ToType},
+    types::{ADTVariant, ADT, ToType, Type},
     tuple,
 };
 
@@ -325,6 +325,19 @@ async fn adt_enum() {
         res,
         tup!(n!("Red", None), n!("Green", None), n!("Blue", None));
         ignore span);
+}
+
+#[tokio::test]
+async fn adt_enum_int() {
+    #![allow(dead_code)]
+    #[derive(Rex)]
+    pub enum Color {
+        Red = 1,
+        Green = 2,
+        Blue = 3,
+    }
+
+    assert_eq!(Color::to_type(), Type::Uint);
 }
 
 #[tokio::test]

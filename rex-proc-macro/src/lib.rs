@@ -43,34 +43,55 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
             },
         },
         Data::Enum(data) => {
-            let variants = data.variants.iter().map(|variant| {
-                let variant_docs = docs_from_attrs(&variant.attrs);
-                let mut variant_name = format!("{}", variant.ident.clone());
-                rename_variant(&mut variant_name, variant);
-
-                match &variant.fields {
-                    Fields::Unnamed(unnamed) => {
-                        fields_unnamed_to_adt_variant(&variant_docs, &variant_name, unnamed)
-                    }
-                    Fields::Named(named) => {
-                        fields_named_to_adt_variant(&variant_docs, &variant_name, named)
-                    }
-                    Fields::Unit => quote! {
-                        ::rex::type_system::types::ADTVariant {
-                            name: String::from(#variant_name),
-                            t: None,
-                            docs: #variant_docs,
-                            t_docs: None,
-                        }
-                    },
+            let mut int_count = 0;
+            for variant in data.variants.iter() {
+                if !matches!(variant.fields, Fields::Unit) {
+                    continue;
                 }
-            });
-            quote! {
-                ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
-                    name: String::from(#name_as_str),
-                    variants: vec![#(#variants,)*],
-                    docs: #docs,
-                })
+                if let Some((_, syn::Expr::Lit(ref literal))) = variant.discriminant {
+                    if let syn::Lit::Int(_) = &literal.lit {
+                        int_count += 1;
+                    }
+                }
+            }
+            if int_count > 0 && int_count == data.variants.len() {
+                quote! {
+                    ::rex::type_system::types::Type::Uint
+                }
+            }
+            else if int_count > 0 && int_count != data.variants.len() {
+                panic!("Mixed Enum with only some int values")
+            }
+            else {
+                let variants = data.variants.iter().map(|variant| {
+                    let variant_docs = docs_from_attrs(&variant.attrs);
+                    let mut variant_name = format!("{}", variant.ident.clone());
+                    rename_variant(&mut variant_name, variant);
+
+                    match &variant.fields {
+                        Fields::Unnamed(unnamed) => {
+                            fields_unnamed_to_adt_variant(&variant_docs, &variant_name, unnamed)
+                        }
+                        Fields::Named(named) => {
+                            fields_named_to_adt_variant(&variant_docs, &variant_name, named)
+                        }
+                        Fields::Unit => quote! {
+                            ::rex::type_system::types::ADTVariant {
+                                name: String::from(#variant_name),
+                                t: None,
+                                docs: #variant_docs,
+                                t_docs: None,
+                            }
+                        },
+                    }
+                });
+                quote! {
+                    ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
+                        name: String::from(#name_as_str),
+                        variants: vec![#(#variants,)*],
+                        docs: #docs,
+                    })
+                }
             }
         }
         _ => panic!("Rex can only be derived for structs and enums"),
