@@ -12,7 +12,7 @@ use crate::{
     codec::{Decode, Encode, Func},
     error::Error,
     eval::{apply, Context},
-    ftable::{Ftable, A, B, C, D, E, F},
+    ftable::{Ftable, FtableFn, A, B, C, D, E, F},
 };
 use chrono::{DateTime, Utc};
 use regex::Regex;
@@ -501,6 +501,12 @@ where
         Ok(this)
     }
 
+    pub fn register_fn_raw(&mut self, name: &str, t: &Type, f: FtableFn<State>) -> Result<(), Error> {
+        register_fn_core(self, name, t.clone())?;
+        self.ftable.add_entry(name.to_string(), t.clone(), f);
+        Ok(())
+    }
+
     pub fn register_adt(&mut self, adt_type: &Type) -> Result<(), Error>
     {
         let Type::ADT(adt) = adt_type else {
@@ -528,9 +534,7 @@ where
             let variant_name = variant.name.to_string();
             match variant.t.as_ref().map(|t| &**t) {
                 None => {
-                    register_fn_core(self, &variant.name, adt_type.clone())?;
-                    self.ftable.0.entry(variant.name.to_string()).or_default().push((
-                        adt_type.clone(),
+                    self.register_fn_raw(&variant.name, adt_type,
                         Box::new(move |_, _| {
                             let variant_name = variant_name.clone();
                             Box::pin(async move {
@@ -541,7 +545,7 @@ where
                                     None))
                             })
                         }),
-                    ));
+                    )?;
                 }
                 Some(Type::Tuple(fields)) => {
                     let mut fun_type = adt_type.clone();
@@ -550,9 +554,7 @@ where
                             Box::new(field.clone()),
                             Box::new(fun_type));
                     }
-                    register_fn_core(self, &variant.name, fun_type.clone())?;
-                    self.ftable.0.entry(variant.name.to_string()).or_default().push((
-                        fun_type.clone(),
+                    self.register_fn_raw(&variant.name, &fun_type,
                         Box::new(move |_, args| {
                             let variant_name = variant_name.clone();
                             Box::pin(async move {
@@ -566,13 +568,11 @@ where
                                         args.clone())))))
                             })
                         }),
-                    ))
+                    )?;
                 }
                 Some(t) => {
                     let fun_type = Type::Arrow(Box::new(t.clone()), Box::new(adt_type.clone()));
-                    register_fn_core(self, &variant.name, fun_type.clone())?;
-                    self.ftable.0.entry(variant.name.to_string()).or_default().push((
-                        fun_type.clone(),
+                    self.register_fn_raw(&variant.name, &fun_type,
                         Box::new(move |_, args| {
                             let variant_name = variant_name.clone();
                             Box::pin(async move {
@@ -584,7 +584,7 @@ where
                                     Some(Box::new(val))))
                             })
                         }),
-                    ))
+                    )?;
                 }
             }
         }
