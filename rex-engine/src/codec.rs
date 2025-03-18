@@ -15,102 +15,102 @@ pub trait Encode
 where
     Self: Sized,
 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error>;
+    fn try_encode(self, span: Span) -> Result<Expr, Error>;
 }
 
 impl Encode for bool {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Bool(id, span, self))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Bool(Id::new(), span, self))
     }
 }
 
 impl Encode for u8 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Uint(id, span, self as u64))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Uint(Id::new(), span, self as u64))
     }
 }
 
 impl Encode for u16 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Uint(id, span, self as u64))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Uint(Id::new(), span, self as u64))
     }
 }
 
 impl Encode for u32 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Uint(id, span, self as u64))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Uint(Id::new(), span, self as u64))
     }
 }
 
 impl Encode for u64 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Uint(id, span, self))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Uint(Id::new(), span, self))
     }
 }
 
 impl Encode for i8 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Int(id, span, self as i64))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Int(Id::new(), span, self as i64))
     }
 }
 
 impl Encode for i16 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Int(id, span, self as i64))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Int(Id::new(), span, self as i64))
     }
 }
 
 impl Encode for i32 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Int(id, span, self as i64))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Int(Id::new(), span, self as i64))
     }
 }
 
 impl Encode for i64 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Int(id, span, self))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Int(Id::new(), span, self))
     }
 }
 
 impl Encode for f32 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Float(id, span, self as f64))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Float(Id::new(), span, self as f64))
     }
 }
 
 impl Encode for f64 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Float(id, span, self))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Float(Id::new(), span, self))
     }
 }
 
 impl Encode for &str {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::String(id, span, self.to_string()))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::String(Id::new(), span, self.to_string()))
     }
 }
 
 impl Encode for String {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::String(id, span, self))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::String(Id::new(), span, self))
     }
 }
 
 impl Encode for Uuid {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Uuid(id, span, self))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Uuid(Id::new(), span, self))
     }
 }
 
 impl Encode for DateTime<Utc> {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::DateTime(id, span, self))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::DateTime(Id::new(), span, self))
     }
 }
 
 impl Encode for () {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Tuple(id, span, vec![]))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Tuple(Id::new(), span, vec![]))
     }
 }
 
@@ -118,8 +118,8 @@ impl<T0> Encode for (T0,)
 where
     T0: Encode,
 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Tuple(id, span, vec![self.0.try_encode(id, span)?]))
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Tuple(Id::new(), span, vec![self.0.try_encode(span)?]))
     }
 }
 
@@ -128,11 +128,11 @@ where
     T0: Encode,
     T1: Encode,
 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
         Ok(Expr::Tuple(
-            id,
+            Id::new(),
             span,
-            vec![self.0.try_encode(id, span)?, self.1.try_encode(id, span)?],
+            vec![self.0.try_encode(span)?, self.1.try_encode(span)?],
         ))
     }
 }
@@ -143,14 +143,14 @@ where
     T1: Encode,
     T2: Encode,
 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
         Ok(Expr::Tuple(
-            id,
+            Id::new(),
             span,
             vec![
-                self.0.try_encode(id, span)?,
-                self.1.try_encode(id, span)?,
-                self.2.try_encode(id, span)?,
+                self.0.try_encode(span)?,
+                self.1.try_encode(span)?,
+                self.2.try_encode(span)?,
             ],
         ))
     }
@@ -163,15 +163,15 @@ where
     T2: Encode,
     T3: Encode,
 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
         Ok(Expr::Tuple(
-            id,
+            Id::new(),
             span,
             vec![
-                self.0.try_encode(id, span)?,
-                self.1.try_encode(id, span)?,
-                self.2.try_encode(id, span)?,
-                self.3.try_encode(id, span)?,
+                self.0.try_encode(span)?,
+                self.1.try_encode(span)?,
+                self.2.try_encode(span)?,
+                self.3.try_encode(span)?,
             ],
         ))
     }
@@ -181,12 +181,12 @@ impl<T> Encode for Vec<T>
 where
     T: Encode,
 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
         let mut ys = Vec::with_capacity(self.len());
         for x in self {
-            ys.push(x.try_encode(id, span)?);
+            ys.push(x.try_encode(span)?);
         }
-        Ok(Expr::List(id, span, ys))
+        Ok(Expr::List(Id::new(), span, ys))
     }
 }
 
@@ -195,19 +195,19 @@ where
     T: Encode,
     E: Encode,
 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
         match self {
             Ok(x) => Ok(Expr::Named(
-                id,
+                Id::new(),
                 span,
                 "Ok".to_string(),
-                Some(Box::new(x.try_encode(id, span)?)),
+                Some(Box::new(x.try_encode(span)?)),
             )),
             Err(x) => Ok(Expr::Named(
-                id,
+                Id::new(),
                 span,
                 "Err".to_string(),
-                Some(Box::new(x.try_encode(id, span)?)),
+                Some(Box::new(x.try_encode(span)?)),
             )),
         }
     }
@@ -217,15 +217,15 @@ impl<T> Encode for Option<T>
 where
     T: Encode,
 {
-    fn try_encode(self, id: Id, span: Span) -> Result<Expr, Error> {
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
         match self {
             Some(x) => Ok(Expr::Named(
-                id,
+                Id::new(),
                 span,
                 "Some".to_string(),
-                Some(Box::new(x.try_encode(id, span)?)),
+                Some(Box::new(x.try_encode(span)?)),
             )),
-            None => Ok(Expr::Named(id, span, "None".to_string(), None)),
+            None => Ok(Expr::Named(Id::new(), span, "None".to_string(), None)),
         }
     }
 }
@@ -609,7 +609,7 @@ impl<A, B> BorrowMut<Expr> for &mut Func<A, B> {
 }
 
 impl<A, B> Encode for Func<A, B> {
-    fn try_encode(self, _id: Id, _span: Span) -> Result<Expr, Error> {
+    fn try_encode(self, _span: Span) -> Result<Expr, Error> {
         Ok(self.expr)
     }
 }
