@@ -151,10 +151,6 @@ where
         self.0.contains_key(n)
     }
 
-    pub fn add_entry(&mut self, name: String, t: Type, f: FtableFn<State>) {
-        self.0.entry(name).or_default().push((t, f));
-    }
-
     // NOTE(loong): We do not support overloaded parametric polymorphism.
     pub fn lookup_fns(&self, n: &str, t: Type) -> impl Iterator<Item = (&FtableFn<State>, &Type)> {
         self.0

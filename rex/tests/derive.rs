@@ -1,7 +1,7 @@
 use rex_ast::{assert_expr_eq, d, f, n, s, tup, u};
 use rex_proc_macro::Rex;
 use rex_engine::engine::Builder;
-use rex_engine::util::parse_infer_and_eval_b;
+use rex_engine::util::parse_infer_and_eval_with_builder;
 use rex_type_system::{
     adt,
     types::{ADTVariant, ADT, ToType, Type},
@@ -313,7 +313,7 @@ async fn adt_enum() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Color::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_b(
+    let (res, res_type) = parse_infer_and_eval_with_builder(
         builder,
         r#"(Red, Green, Blue)"#)
         .await
@@ -351,7 +351,7 @@ async fn adt_variant_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_b(
+    let (res, res_type) = parse_infer_and_eval_with_builder(
         builder,
         r#"Rectangle (2.0 * 3.0) (4.0 * 5.0)"#)
         .await
@@ -364,7 +364,7 @@ async fn adt_variant_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_b(
+    let (res, res_type) = parse_infer_and_eval_with_builder(
         builder,
         r#"Circle (3.0 * 4.0)"#)
         .await
@@ -387,7 +387,7 @@ async fn adt_variant_struct() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_b(
+    let (res, res_type) = parse_infer_and_eval_with_builder(
         builder,
         r#"Rectangle { width = 2.0 * 3.0, height = 4.0 * 5.0 }"#)
         .await
@@ -410,7 +410,7 @@ async fn adt_struct() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Movie::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_b(
+    let (res, res_type) = parse_infer_and_eval_with_builder(
         builder,
         r#"Movie { title = "Godzilla", year = 1954 }"#)
         .await
@@ -430,7 +430,7 @@ async fn adt_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Movie::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_b(
+    let (res, res_type) = parse_infer_and_eval_with_builder(
         builder,
         r#"Movie "Godzilla" 1954 }"#)
         .await
@@ -453,7 +453,7 @@ async fn adt_curry() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_b(
+    let (res, res_type) = parse_infer_and_eval_with_builder(
         builder,
         r#"let partial = Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#)
         .await

@@ -9,7 +9,6 @@ use rex_lexer::Token;
 use rex_parser::Parser;
 use rex_type_system::{
     constraint::generate_constraints,
-    trace::sprint_expr_with_type,
     types::{ExprTypeEnv, Type},
     unify,
 };
@@ -21,12 +20,12 @@ use rex_type_system::{
 /// actual function for library users too.
 pub async fn parse_infer_and_eval(code: &str) -> Result<(Expr, Type), Error> {
     let builder: Builder<()> = Builder::with_prelude().unwrap();
-    parse_infer_and_eval_b(builder, code).await
+    parse_infer_and_eval_with_builder(builder, code).await
 }
 
 /// This is similar to parse_infer_and_eval but lets you supply your own Builder,
 /// in case you want to register any extra functions or ADTs.
-pub async fn parse_infer_and_eval_b(
+pub async fn parse_infer_and_eval_with_builder(
     builder: Builder<()>,
     code: &str,
 ) -> Result<(Expr, Type), Error> {
@@ -41,11 +40,6 @@ pub async fn parse_infer_and_eval_b(
 
     let subst = unify::unify_constraints(&constraint_system).unwrap();
     let res_type = unify::apply_subst(&ty, &subst);
-
-    println!(
-        "{}\n",
-        sprint_expr_with_type(&expr, &expr_type_env, Some(&subst))
-    );
 
     let res = eval(
         &Context {
