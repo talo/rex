@@ -15,7 +15,7 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
             Fields::Named(named) => {
                 let adt_variant = fields_named_to_adt_variant(&docs, &name_as_str, named);
                 quote!(
-                    ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
+                    ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
                         name: String::from(#name_as_str),
                         variants: vec![#adt_variant],
                         docs: #docs,
@@ -27,7 +27,7 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
             Fields::Unnamed(unnamed) => {
                 let adt_variant = fields_unnamed_to_adt_variant(&docs, &name_as_str, unnamed);
                 quote!(
-                    ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
+                    ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
                         name: String::from(#name_as_str),
                         variants: vec![#adt_variant],
                         docs: #docs,
@@ -35,7 +35,7 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
                 )
             }
             _ => quote! {
-                ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
+                ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
                     name: String::from(#name_as_str),
                     variants: vec![],
                     docs: #docs,
@@ -43,34 +43,55 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
             },
         },
         Data::Enum(data) => {
-            let variants = data.variants.iter().map(|variant| {
-                let variant_docs = docs_from_attrs(&variant.attrs);
-                let mut variant_name = format!("{}", variant.ident.clone());
-                rename_variant(&mut variant_name, variant);
-
-                match &variant.fields {
-                    Fields::Unnamed(unnamed) => {
-                        fields_unnamed_to_adt_variant(&variant_docs, &variant_name, unnamed)
-                    }
-                    Fields::Named(named) => {
-                        fields_named_to_adt_variant(&variant_docs, &variant_name, named)
-                    }
-                    Fields::Unit => quote! {
-                        ::rex_type_system::types::ADTVariant {
-                            name: String::from(#variant_name),
-                            t: None,
-                            docs: #variant_docs,
-                            t_docs: None,
-                        }
-                    },
+            let mut int_count = 0;
+            for variant in data.variants.iter() {
+                if !matches!(variant.fields, Fields::Unit) {
+                    continue;
                 }
-            });
-            quote! {
-                ::rex_type_system::types::Type::ADT(::rex_type_system::types::ADT {
-                    name: String::from(#name_as_str),
-                    variants: vec![#(#variants,)*],
-                    docs: #docs,
-                })
+                if let Some((_, syn::Expr::Lit(ref literal))) = variant.discriminant {
+                    if let syn::Lit::Int(_) = &literal.lit {
+                        int_count += 1;
+                    }
+                }
+            }
+            if int_count > 0 && int_count == data.variants.len() {
+                quote! {
+                    ::rex::type_system::types::Type::Uint
+                }
+            }
+            else if int_count > 0 && int_count != data.variants.len() {
+                panic!("Mixed Enum with only some int values")
+            }
+            else {
+                let variants = data.variants.iter().map(|variant| {
+                    let variant_docs = docs_from_attrs(&variant.attrs);
+                    let mut variant_name = format!("{}", variant.ident.clone());
+                    rename_variant(&mut variant_name, variant);
+
+                    match &variant.fields {
+                        Fields::Unnamed(unnamed) => {
+                            fields_unnamed_to_adt_variant(&variant_docs, &variant_name, unnamed)
+                        }
+                        Fields::Named(named) => {
+                            fields_named_to_adt_variant(&variant_docs, &variant_name, named)
+                        }
+                        Fields::Unit => quote! {
+                            ::rex::type_system::types::ADTVariant {
+                                name: String::from(#variant_name),
+                                t: None,
+                                docs: #variant_docs,
+                                t_docs: None,
+                            }
+                        },
+                    }
+                });
+                quote! {
+                    ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
+                        name: String::from(#name_as_str),
+                        variants: vec![#(#variants,)*],
+                        docs: #docs,
+                    })
+                }
             }
         }
         _ => panic!("Rex can only be derived for structs and enums"),
@@ -80,8 +101,8 @@ pub fn derive_rex(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics ::rex_type_system::types::ToType for #name #ty_generics #where_clause {
-            fn to_type() -> ::rex_type_system::types::Type {
+        impl #impl_generics ::rex::type_system::types::ToType for #name #ty_generics #where_clause {
+            fn to_type() -> ::rex::type_system::types::Type {
                 #r#impl
             }
         }
@@ -107,7 +128,7 @@ fn fields_unnamed_to_adt_variant(
         .collect::<Vec<_>>();
     if ts.len() == 0 {
         quote!(
-            ::rex_type_system::types::ADTVariant {
+            ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
                 t: None,
                 docs: #variant_docs,
@@ -117,7 +138,7 @@ fn fields_unnamed_to_adt_variant(
     } else if ts.len() == 1 {
         let t = &ts[0];
         quote!(
-            ::rex_type_system::types::ADTVariant {
+            ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
                 t: Some(Box::new(#t)),
                 docs: #variant_docs,
@@ -128,9 +149,9 @@ fn fields_unnamed_to_adt_variant(
         quote!({
             let mut elems = ::std::vec::Vec::new();
             #(elems.push(#ts);)*
-            ::rex_type_system::types::ADTVariant {
+            ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
-                t: Some(Box::new(::rex_type_system::types::Type::Tuple(elems))),
+                t: Some(Box::new(::rex::type_system::types::Type::Tuple(elems))),
                 docs: #variant_docs,
                 t_docs: None,
             }
@@ -161,7 +182,7 @@ fn fields_named_to_adt_variant(
         .collect::<Vec<_>>();
     if docs_and_fields.len() == 0 {
         quote!(
-            ::rex_type_system::types::ADTVariant {
+            ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
                 t: None,
                 docs: #variant_docs,
@@ -173,9 +194,9 @@ fn fields_named_to_adt_variant(
             let mut docs = ::std::collections::BTreeMap::new();
             let mut fields = ::std::collections::BTreeMap::new();
             #(#docs_and_fields;)*
-            ::rex_type_system::types::ADTVariant {
+            ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
-                t: Some(Box::new(::rex_type_system::types::Type::Dict(fields))),
+                t: Some(Box::new(::rex::type_system::types::Type::Dict(fields))),
                 docs: #variant_docs,
                 t_docs: if docs.len() > 0 { Some(docs) } else { None },
             }
@@ -286,11 +307,11 @@ fn to_type(ty: &Type) -> proc_macro2::TokenStream {
         Type::Path(type_path) if type_path.qself.is_none() => {
             let ident = &type_path.path.segments.last().unwrap().ident;
             let inner_types = &type_path.path.segments.last().unwrap().arguments;
-            quote!(<#ident #inner_types as ::rex_type_system::types::ToType>::to_type())
+            quote!(<#ident #inner_types as ::rex::type_system::types::ToType>::to_type())
         }
         Type::Tuple(tuple) => {
             let inner_types = tuple.elems.iter().map(to_type);
-            quote!(::rex_type_system::types::Type::Tuple(
+            quote!(::rex::type_system::types::Type::Tuple(
                 vec![#(#inner_types,)*]
             ))
         }
