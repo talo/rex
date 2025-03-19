@@ -1,7 +1,7 @@
 use std::fmt;
 use std::{collections::HashMap, future::Future, pin::Pin};
 
-use rex_ast::{expr::Expr, id::Id};
+use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
 use rex_type_system::types::{ToType, Type};
 
@@ -42,7 +42,7 @@ macro_rules! impl_register_fn {
                     Box::pin(async move {
                         let mut i = 0;
                         let mut r = f(ctx $(, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*)?)?
-                            .try_encode(Id::new(), Span::default())?; // FIXME(loong): assign a proper span
+                            .try_encode(Span::default())?; // FIXME(loong): assign a proper span
                         while i < args.len() {
                             r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }]).await?;
                         }
@@ -81,7 +81,7 @@ macro_rules! impl_register_fn_async {
                         let mut i = 0;
                         let mut r = f(ctx, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*)
                             .await?
-                            .try_encode(Id::new(), Span::default())?; // FIXME(loong): assign a proper span
+                            .try_encode(Span::default())?; // FIXME(loong): assign a proper span
                         while i < args.len() {
                             r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }]).await?;
                         }
@@ -278,7 +278,7 @@ macro_rules! define_polymorphic_types {
             }
 
             impl Encode for $ty {
-                fn try_encode(self, _id: Id, _span: Span) -> Result<::rex_ast::expr::Expr, Error> {
+                fn try_encode(self, _span: Span) -> Result<::rex_ast::expr::Expr, Error> {
                     Ok(self.0)
                 }
             }
