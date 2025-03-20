@@ -477,7 +477,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                             entries.get(stringify!(#field_ident))
                                 .ok_or_else(||
                                     ::rex::engine::error::Error::ExpectedTypeGotValue {
-                                        expected: Self::to_type(),
+                                        expected: <Self as ::rex::type_system::types::ToType>::to_type(),
                                         got: v.clone(),
                                     })?
                             )? )
@@ -491,7 +491,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                         }
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                expected: Self::to_type(),
+                                expected: <Self as ::rex::type_system::types::ToType>::to_type(),
                                 got: v.clone(),
                             })
                         }
@@ -511,7 +511,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                         }
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                expected: Self::to_type(),
+                                expected: <Self as ::rex::type_system::types::ToType>::to_type(),
                                 got: v.clone(),
                             })
                         }
@@ -526,7 +526,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                         }
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                expected: Self::to_type(),
+                                expected: <Self as ::rex::type_system::types::ToType>::to_type(),
                                 got: v.clone(),
                             })
                         }
@@ -548,7 +548,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                 entries.get(stringify!(#field_ident))
                                     .ok_or_else(||
                                         ::rex::engine::error::Error::ExpectedTypeGotValue {
-                                            expected: Self::to_type(),
+                                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
                                             got: v.clone(),
                                         })?
                                 )? )
@@ -563,7 +563,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                     }
                                     _ => {
                                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                            expected: Self::to_type(),
+                                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
                                             got: v.clone(),
                                         })
                                     }
@@ -589,7 +589,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                     }
                                     _ => {
                                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                            expected: Self::to_type(),
+                                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
                                             got: v.clone(),
                                         })
                                     }
@@ -612,7 +612,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                     #(#variants,)*
                     _ => {
                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                            expected: Self::to_type(),
+                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
                             got: v.clone(),
                         })
                     }
