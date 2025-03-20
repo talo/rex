@@ -1,7 +1,7 @@
-use proc_macro::{TokenStream};
+use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::{Attribute, Ident, Data, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Type};
+use syn::{Attribute, Data, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Ident, Type};
 
 #[proc_macro_derive(Rex)]
 pub fn derive_rex(input: TokenStream) -> TokenStream {
@@ -69,11 +69,9 @@ fn impl_to_type(ast: &DeriveInput) -> TokenStream {
                 quote! {
                     ::rex::type_system::types::Type::Uint
                 }
-            }
-            else if int_count > 0 && int_count != data.variants.len() {
+            } else if int_count > 0 && int_count != data.variants.len() {
                 panic!("Mixed Enum with only some int values")
-            }
-            else {
+            } else {
                 let variants = data.variants.iter().map(|variant| {
                     let variant_docs = docs_from_attrs(&variant.attrs);
                     let mut variant_name = format!("{}", variant.ident.clone());
@@ -333,50 +331,42 @@ fn to_type(ty: &Type) -> proc_macro2::TokenStream {
 fn impl_encode(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let r#impl: proc_macro2::TokenStream = match &ast.data {
-        Data::Struct(data) => {
-            match &data.fields {
-                Fields::Named(named) => {
-                    let items = named.named.iter().map(|field| {
-                        let identifier = &field.ident.as_ref().unwrap();
-                        quote!(
-                            (
-                                String::from(stringify!(#identifier)),
-                                ::rex::engine::codec::Encode::try_encode(self.#identifier, span)?,
-                            )
+        Data::Struct(data) => match &data.fields {
+            Fields::Named(named) => {
+                let items = named.named.iter().map(|field| {
+                    let identifier = &field.ident.as_ref().unwrap();
+                    quote!(
+                        (
+                            String::from(stringify!(#identifier)),
+                            ::rex::engine::codec::Encode::try_encode(self.#identifier, span)?,
                         )
-                    });
-                    quote!(
-                        Ok(::rex::ast::expr::Expr::Dict(
-                            ::rex::ast::id::Id::new(),
-                            ::rex::lexer::span::Span::default(),
-                            ::std::collections::BTreeMap::from_iter(vec![#(#items,)*].into_iter())
-                        ))
                     )
-                }
-                Fields::Unnamed(unnamed) => {
-                    let items = unnamed.unnamed.iter().enumerate().map(|(i, _)| {
-                        let identifier = syn::Index::from(i);
-                        quote!(::rex::engine::codec::Encode::try_encode(self.#identifier, span)?)
-                    });
-                    quote!(
-                        Ok(::rex::ast::expr::Expr::Tuple(
-                            ::rex::ast::id::Id::new(),
-                            ::rex::lexer::span::Span::default(),
-                            vec![#(#items,)*]
-                        ))
-                    )
-                }
-                Fields::Unit => {
-                    quote!(
-                        Ok(::rex::ast::expr::Expr::Tuple(
-                            ::rex::ast::id::Id::new(),
-                            ::rex::lexer::span::Span::default(),
-                            vec![]
-                        ))
-                    )
-                }
+                });
+                quote!(Ok(::rex::ast::expr::Expr::Dict(
+                    ::rex::ast::id::Id::new(),
+                    ::rex::lexer::span::Span::default(),
+                    ::std::collections::BTreeMap::from_iter(vec![#(#items,)*].into_iter())
+                )))
             }
-        }
+            Fields::Unnamed(unnamed) => {
+                let items = unnamed.unnamed.iter().enumerate().map(|(i, _)| {
+                    let identifier = syn::Index::from(i);
+                    quote!(::rex::engine::codec::Encode::try_encode(self.#identifier, span)?)
+                });
+                quote!(Ok(::rex::ast::expr::Expr::Tuple(
+                    ::rex::ast::id::Id::new(),
+                    ::rex::lexer::span::Span::default(),
+                    vec![#(#items,)*]
+                )))
+            }
+            Fields::Unit => {
+                quote!(Ok(::rex::ast::expr::Expr::Tuple(
+                    ::rex::ast::id::Id::new(),
+                    ::rex::lexer::span::Span::default(),
+                    vec![]
+                )))
+            }
+        },
         Data::Enum(data) => {
             // TODO: serde_json serializes enums witih int variants as strings; consider if this
             // is what we want to do here, or use the integer values instead. Note that the
@@ -445,7 +435,7 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                                     None
                                 ))
                         )
-                    },
+                    }
                 }
             });
             quote! {
@@ -479,12 +469,11 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
 fn impl_decode(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let r#impl: proc_macro2::TokenStream = match &ast.data {
-        Data::Struct(data) => {
-            match &data.fields {
-                Fields::Named(named) => {
-                    let fields = named.named.iter().map(|field| {
-                        let field_ident = &field.ident.as_ref().unwrap();
-                        quote!( #field_ident: ::rex::engine::codec::Decode::try_decode(
+        Data::Struct(data) => match &data.fields {
+            Fields::Named(named) => {
+                let fields = named.named.iter().map(|field| {
+                    let field_ident = &field.ident.as_ref().unwrap();
+                    quote!( #field_ident: ::rex::engine::codec::Decode::try_decode(
                             entries.get(stringify!(#field_ident))
                                 .ok_or_else(||
                                     ::rex::engine::error::Error::ExpectedTypeGotValue {
@@ -492,61 +481,59 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                         got: v.clone(),
                                     })?
                             )? )
-                    });
-                    quote!(
-                        match v {
-                            ::rex::ast::expr::Expr::Dict(_, _, entries) => {
-                                Ok(#name {
-                                    #(#fields,)*
-                                })
-                            }
-                            _ => {
-                                Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                    expected: Self::to_type(),
-                                    got: v.clone(),
-                                })
-                            }
+                });
+                quote!(
+                    match v {
+                        ::rex::ast::expr::Expr::Dict(_, _, entries) => {
+                            Ok(#name {
+                                #(#fields,)*
+                            })
                         }
-                    )
-                }
-                Fields::Unnamed(unnamed) => {
-                    let items_len = unnamed.unnamed.len();
-                    let fields = (0..items_len).map(|i| {
-                        quote!( ::rex::engine::codec::Decode::try_decode(&items[#i])?)
-                    });
-                    quote!(
-                        match v {
-                            ::rex::ast::expr::Expr::Tuple(_, _, items) if items.len() == #items_len => {
-                                Ok(#name (
-                                    #(#fields,)*
-                                ))
-                            }
-                            _ => {
-                                Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                    expected: Self::to_type(),
-                                    got: v.clone(),
-                                })
-                            }
+                        _ => {
+                            Err(::rex::engine::error::Error::ExpectedTypeGotValue {
+                                expected: Self::to_type(),
+                                got: v.clone(),
+                            })
                         }
-                    )
-                }
-                Fields::Unit => {
-                    quote!(
-                        match v {
-                            ::rex::ast::expr::Expr::Tuple(_, _, items) if items.len() == 0 => {
-                                Ok(#name)
-                            }
-                            _ => {
-                                Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                    expected: Self::to_type(),
-                                    got: v.clone(),
-                                })
-                            }
-                        }
-                    )
-                }
+                    }
+                )
             }
-        }
+            Fields::Unnamed(unnamed) => {
+                let items_len = unnamed.unnamed.len();
+                let fields = (0..items_len)
+                    .map(|i| quote!( ::rex::engine::codec::Decode::try_decode(&items[#i])?));
+                quote!(
+                    match v {
+                        ::rex::ast::expr::Expr::Tuple(_, _, items) if items.len() == #items_len => {
+                            Ok(#name (
+                                #(#fields,)*
+                            ))
+                        }
+                        _ => {
+                            Err(::rex::engine::error::Error::ExpectedTypeGotValue {
+                                expected: Self::to_type(),
+                                got: v.clone(),
+                            })
+                        }
+                    }
+                )
+            }
+            Fields::Unit => {
+                quote!(
+                    match v {
+                        ::rex::ast::expr::Expr::Tuple(_, _, items) if items.len() == 0 => {
+                            Ok(#name)
+                        }
+                        _ => {
+                            Err(::rex::engine::error::Error::ExpectedTypeGotValue {
+                                expected: Self::to_type(),
+                                got: v.clone(),
+                            })
+                        }
+                    }
+                )
+            }
+        },
         Data::Enum(data) => {
             // TODO: serde_json serializes enums witih int variants as strings; consider if this
             // is what we want to do here, or use the integer values instead. Note that the
@@ -586,9 +573,9 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                     }
                     Fields::Unnamed(unnamed) => {
                         let items_len = unnamed.unnamed.len();
-                        let fields = (0..items_len).map(|i| {
-                            quote!( ::rex::engine::codec::Decode::try_decode(&items[#i])?)
-                        });
+                        let fields = (0..items_len).map(
+                            |i| quote!( ::rex::engine::codec::Decode::try_decode(&items[#i])?),
+                        );
 
                         quote!(
                             ::rex::ast::expr::Expr::Named(_, _, n, Some(inner))
@@ -617,7 +604,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                 Ok(Self::#variant_ident)
                             }
                         )
-                    },
+                    }
                 }
             });
             quote! {
