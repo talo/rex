@@ -1,17 +1,8 @@
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use crate::engine::Builder;
 use crate::error::Error;
-use crate::eval::Context;
-use crate::eval::eval;
-use rex_ast::expr::{Expr, Scope};
-use rex_lexer::Token;
-use rex_parser::Parser;
-use rex_type_system::{
-    constraint::generate_constraints,
-    types::{ExprTypeEnv, Type},
-    unify,
-};
+use crate::program::Program;
+use rex_ast::expr::Expr;
+use rex_type_system::types::Type;
 
 /// Helper function for parsing, inferring, and evaluating a given code
 /// snippet. Pretty much all of the test suites can use this flow for
@@ -29,29 +20,9 @@ pub async fn parse_infer_and_eval_with_builder(
     builder: Builder<()>,
     code: &str,
 ) -> Result<(Expr, Type), Error> {
-    let mut parser = Parser::new(Token::tokenize(code).unwrap());
-    let expr = parser.parse_expr().unwrap();
-
-    let (mut constraint_system, ftable, type_env) = builder.build();
-
-    let mut expr_type_env = ExprTypeEnv::new();
-    let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
-        .unwrap();
-
-    let subst = unify::unify_constraints(&constraint_system).unwrap();
-    let res_type = unify::apply_subst(&ty, &subst);
-
-    let res = eval(
-        &Context {
-            scope: Scope::new_sync(),
-            ftable,
-            subst,
-            env: Arc::new(RwLock::new(expr_type_env)),
-            state: (),
-        },
-        &expr,
-    )
-    .await;
+    let program = Program::compile(builder, code)?;
+    let res_type = program.res_type.clone();
+    let res = program.run(()).await;
 
     res.map(|res| (res, res_type))
 }
