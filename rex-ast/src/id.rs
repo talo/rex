@@ -27,3 +27,23 @@ impl Display for Id {
         id.fmt(f)
     }
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdDispenser {}
+
+impl IdDispenser {
+    pub fn new() -> IdDispenser {
+        IdDispenser {}
+    }
+
+    #[allow(clippy::should_implement_trait)]
+    pub fn next(&mut self) -> Id {
+        Id::new()
+    }
+}
+
+impl Default for IdDispenser {
+    fn default() -> Self {
+        Self::new()
+    }
+}

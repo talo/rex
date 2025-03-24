@@ -233,6 +233,33 @@ where
             Ok(xs[n as usize].clone())
         });
 
+        this.register_fn1("get_1_0", |_ctx: &Context<_>, xs: (A,)| Ok(xs.0.clone()));
+        this.register_fn1("get_2_0", |_ctx: &Context<_>, xs: (A, B)| Ok(xs.0.clone()));
+        this.register_fn1("get_2_1", |_ctx: &Context<_>, xs: (A, B)| Ok(xs.1.clone()));
+
+        this.register_fn1("get_3_0", |_ctx: &Context<_>, xs: (A, B, C)| {
+            Ok(xs.0.clone())
+        });
+        this.register_fn1("get_3_1", |_ctx: &Context<_>, xs: (A, B, C)| {
+            Ok(xs.1.clone())
+        });
+        this.register_fn1("get_3_2", |_ctx: &Context<_>, xs: (A, B, C)| {
+            Ok(xs.2.clone())
+        });
+
+        this.register_fn1("get_4_0", |_ctx: &Context<_>, xs: (A, B, C, D)| {
+            Ok(xs.0.clone())
+        });
+        this.register_fn1("get_4_1", |_ctx: &Context<_>, xs: (A, B, C, D)| {
+            Ok(xs.1.clone())
+        });
+        this.register_fn1("get_4_2", |_ctx: &Context<_>, xs: (A, B, C, D)| {
+            Ok(xs.2.clone())
+        });
+        this.register_fn1("get_4_3", |_ctx: &Context<_>, xs: (A, B, C, D)| {
+            Ok(xs.3.clone())
+        });
+
         this.register_fn1("elem0", |_ctx: &Context<_>, xs: (A,)| Ok(xs.0.clone()));
         this.register_fn1("elem1", |_ctx: &Context<_>, xs: (A, B)| Ok(xs.1.clone()));
         this.register_fn1("elem2", |_ctx: &Context<_>, xs: (A, B, C)| Ok(xs.2.clone()));
