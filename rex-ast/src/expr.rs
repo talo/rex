@@ -338,9 +338,18 @@ impl Display for Expr {
             Self::Uint(_id, _span, x) => x.fmt(f),
             Self::Int(_id, _span, x) => x.fmt(f),
             Self::Float(_id, _span, x) => x.fmt(f),
-            Self::String(_id, _span, x) => x.fmt(f),
-            Self::Uuid(_id, _span, x) => x.fmt(f),
-            Self::DateTime(_id, _span, x) => x.fmt(f),
+            Self::String(_id, _span, x) => {
+                write!(f, "[string]{:?}", x)
+                // x.fmt(f),
+            }
+            Self::Uuid(_id, _span, x) => {
+                write!(f, "[uuid]{:?}", x)
+                // x.fmt(f),
+            }
+            Self::DateTime(_id, _span, x) => {
+                write!(f, "[datetime]{:?}", x)
+                // x.fmt(f),
+            }
             Self::List(_id, _span, xs) => {
                 '['.fmt(f)?;
                 for (i, x) in xs.iter().enumerate() {

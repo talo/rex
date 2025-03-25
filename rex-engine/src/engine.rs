@@ -1,9 +1,17 @@
+#![allow(unused_variables)]
+#![allow(dead_code)]
+#![allow(unused_mut)]
+#![allow(unused_assignments)]
+#![allow(unused_imports)]
+#![allow(unused_macros)]
+#![allow(non_upper_case_globals)]
+
 use rex_type_system::{
     constraint::{Constraint, ConstraintSystem},
-    types::{ToType, Type, TypeEnv},
+    types::{ADTVariant, ToType, Type, TypeEnv},
 };
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     future::Future,
     pin::Pin,
 };
@@ -518,83 +526,162 @@ where
     }
 
     pub fn register_adt(&mut self, adt_type: &Type) {
+        self.register_adt_with_defaults(adt_type, None);
+    }
+
+    pub fn register_adt_with_defaults(
+        &mut self,
+        adt_type: &Type,
+        defaults: Option<&BTreeMap<String, FtableFn<State>>>,
+    ) {
         let Type::ADT(adt) = adt_type else {
             panic!("register_adt) called with non-ADT type: {}", adt_type);
         };
 
+        if adt.variants.len() != 1 && defaults.is_some() {
+            panic!(
+                "register_adt) called with defaults and multiple variants {}",
+                adt_type
+            );
+        }
+
         // TODO: Avoid cloning args in the functions. This applies more generally across
         // the evaluation code. We should either pass owned Expr values to the functions
         // or use Rc<Expr> to make cloning cheap.
-
         for variant in &adt.variants {
-            // We do not support multiple ADTs with overlapping constructor names. The reason
-            // is because in the general case, each constructor may have a different number of
-            // arguments, so we cannot consider them to be overloaded functions. Haskell has the
-            // same restriction.
-            if self.ftable.contains(&variant.name) {
-                panic!("Duplicate constructor name: {}", variant.name);
-            }
+            self.register_adt_variant(adt_type, variant, defaults);
+        }
+    }
 
-            // The functions we register here work directly with Expr values; there is no need
-            // to convert to and from the corresponding native Rust type.
-            let variant_name = variant.name.to_string();
-            match variant.t.as_ref().map(|t| &**t) {
-                None => {
-                    self.register_fn_core_with_name(
-                        &variant.name,
-                        adt_type,
-                        Box::new(move |_, _| {
-                            let variant_name = variant_name.clone();
-                            Box::pin(async move {
-                                Ok(Expr::Named(Id::new(), Span::default(), variant_name, None))
-                            })
-                        }),
-                    );
+    pub fn register_adt_variant(
+        &mut self,
+        adt_type: &Type,
+        variant: &ADTVariant,
+        defaults: Option<&BTreeMap<String, FtableFn<State>>>,
+    ) {
+        // We do not support multiple ADTs with overlapping constructor names. The reason
+        // is because in the general case, each constructor may have a different number of
+        // arguments, so we cannot consider them to be overloaded functions. Haskell has the
+        // same restriction.
+        if self.ftable.contains(&variant.name) {
+            panic!("Duplicate constructor name: {}", variant.name);
+        }
+
+        // The functions we register here work directly with Expr values; there is no need
+        // to convert to and from the corresponding native Rust type.
+        let variant_name = variant.name.to_string();
+        match (variant.t.as_ref().map(|t| &**t), defaults) {
+            (None, _) => {
+                self.register_fn_core_with_name(
+                    &variant.name,
+                    adt_type,
+                    Box::new(move |_, _| {
+                        let variant_name = variant_name.clone();
+                        Box::pin(async move {
+                            Ok(Expr::Named(Id::new(), Span::default(), variant_name, None))
+                        })
+                    }),
+                );
+            }
+            (Some(Type::Tuple(fields)), _) => {
+                let mut fun_type = adt_type.clone();
+                for field in fields.iter().rev() {
+                    fun_type = Type::Arrow(Box::new(field.clone()), Box::new(fun_type));
                 }
-                Some(Type::Tuple(fields)) => {
-                    let mut fun_type = adt_type.clone();
-                    for field in fields.iter().rev() {
-                        fun_type = Type::Arrow(Box::new(field.clone()), Box::new(fun_type));
+                self.register_fn_core_with_name(
+                    &variant.name,
+                    &fun_type,
+                    Box::new(move |_, args| {
+                        let variant_name = variant_name.clone();
+                        Box::pin(async move {
+                            Ok(Expr::Named(
+                                Id::new(),
+                                Span::default(),
+                                variant_name,
+                                Some(Box::new(Expr::Tuple(
+                                    Id::new(),
+                                    Span::default(),
+                                    args.clone(),
+                                ))),
+                            ))
+                        })
+                    }),
+                );
+            }
+            (Some(Type::Dict(entries)), Some(defaults)) => {
+                let mut entries_without_defaults: BTreeMap<String, Type> = BTreeMap::new();
+                for (k, v) in entries.iter() {
+                    if !defaults.contains_key(k) {
+                        entries_without_defaults.insert(k.clone(), v.clone());
                     }
-                    self.register_fn_core_with_name(
-                        &variant.name,
-                        &fun_type,
-                        Box::new(move |_, args| {
-                            let variant_name = variant_name.clone();
-                            Box::pin(async move {
-                                Ok(Expr::Named(
-                                    Id::new(),
-                                    Span::default(),
-                                    variant_name,
-                                    Some(Box::new(Expr::Tuple(
-                                        Id::new(),
-                                        Span::default(),
-                                        args.clone(),
-                                    ))),
-                                ))
-                            })
-                        }),
-                    );
                 }
-                Some(t) => {
-                    let fun_type = Type::Arrow(Box::new(t.clone()), Box::new(adt_type.clone()));
-                    self.register_fn_core_with_name(
-                        &variant.name,
-                        &fun_type,
-                        Box::new(move |_, args| {
-                            let variant_name = variant_name.clone();
-                            Box::pin(async move {
-                                let val = args[0].clone();
-                                Ok(Expr::Named(
-                                    Id::new(),
-                                    Span::default(),
-                                    variant_name,
-                                    Some(Box::new(val)),
-                                ))
-                            })
-                        }),
-                    );
-                }
+                let t = Type::Dict(entries_without_defaults);
+
+                let fun_type = Type::Arrow(Box::new(t.clone()), Box::new(adt_type.clone()));
+                let defaults: BTreeMap<String, FtableFn<State>> = (*defaults).clone();
+                // todo!();
+                self.register_fn_core_with_name(
+                    &variant.name,
+                    &fun_type,
+                    Box::new(move |ctx, args| {
+                        let variant_name = variant_name.clone();
+                        let defaults = defaults.clone();
+                        Box::pin(async move {
+                            let mut val = args[0].clone();
+                            println!("Constructor: {}", variant_name);
+                            println!("initial val = {}", val);
+
+                            match &val {
+                                Expr::Dict(_, span, entries) => {
+                                    let mut new_entries: BTreeMap<String, Expr> = entries.clone();
+                                    for (k, vf) in defaults.iter() {
+                                        let v = vf(ctx, &vec![]).await?;
+                                        //  {
+                                        //     Ok(v) => v,
+                                        //     Err(_) => {
+                                        //         Expr::String(Id::new(), *span, "".to_string())
+                                        //     }
+                                        // };
+                                        println!("adding arg {} = {}", k, v);
+                                        new_entries.insert(k.clone(), v);
+                                    }
+                                    val = Expr::Dict(Id::new(), *span, new_entries);
+                                }
+                                _ => {}
+                            }
+                            println!("updated val = {}", val);
+
+                            // Ok(Expr::Named(
+                            //     Id::new(),
+                            //     Span::default(),
+                            //     variant_name,
+                            //     Some(Box::new(val)),
+                            // ))
+                            Ok(val)
+                        })
+                    }),
+                );
+
+                // todo!()
+            }
+            (Some(t), _) => {
+                let fun_type = Type::Arrow(Box::new(t.clone()), Box::new(adt_type.clone()));
+                self.register_fn_core_with_name(
+                    &variant.name,
+                    &fun_type,
+                    Box::new(move |_, args| {
+                        let variant_name = variant_name.clone();
+                        Box::pin(async move {
+                            let val = args[0].clone();
+                            Ok(Expr::Named(
+                                Id::new(),
+                                Span::default(),
+                                variant_name,
+                                Some(Box::new(val)),
+                            ))
+                        })
+                    }),
+                );
             }
         }
     }
