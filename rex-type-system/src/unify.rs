@@ -73,6 +73,24 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
 
         // Dictionaries
         (Type::Dict(d1), Type::Dict(d2)) => {
+            let mut missing_keys: Vec<String> = Vec::new();
+            for k in d1.keys() {
+                if !d2.contains_key(k) {
+                    missing_keys.push(k.clone());
+                }
+            }
+
+            for k in d2.keys() {
+                if !d1.contains_key(k) {
+                    missing_keys.push(k.clone());
+                }
+            }
+
+            if missing_keys.len() > 0 {
+                missing_keys.sort();
+                return Err(format!("Missing keys: {:?}", missing_keys));
+            }
+
             if d1.len() != d2.len() {
                 return Err(format!(
                     "Cannot unify {} with {}: different no. of keys",
