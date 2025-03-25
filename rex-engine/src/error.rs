@@ -34,4 +34,12 @@ pub enum Error {
     },
     #[error("{0}")]
     RegexCompilationError(#[from] regex::Error),
+    #[error("{0}")]
+    Custom(String),
+    #[error("expected {expected}, got `{got}`")]
+    UnexpectedType {
+        expected: Type,
+        got: Expr,
+        trace: (),
+    },
 }
