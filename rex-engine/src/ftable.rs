@@ -674,7 +674,56 @@ impl<S: Send + Sync + 'static> Ftable<S> {
                 })
             }),
         );
+        // 'flatmap'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "flatmap".to_string(),
+                params: vec![list!(list!(a!()))],
+                ret: list!(a!()),
+            },
+            Box::new(|_ctx, _runner, _state, args| {
+                Box::pin(async move {
+                    match args.first() {
+                        // Implementation
+                        Some(Value::List(xs)) => {
+                            let mut acc = vec![];
+                            for x in xs {
+                                match x {
+                                    Value::List(xs) => {
+                                        for x in xs {
+                                            acc.push(x.clone());
+                                        }
+                                    }
+                                    x => {
+                                        return Err(Error::UnexpectedType {
+                                            expected: list!(a!()),
+                                            got: x.clone(),
+                                            trace: Default::default(),
+                                        })
+                                    }
+                                }
+                            }
+                            Ok(Value::List(acc))
+                        }
+                        // Everything else
+                        Some(x) => Err(Error::UnexpectedType {
+                            expected: list!(a!()),
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                        _ => Err(Error::ExpectedArguments {
+                            expected: 1,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
         // 'fold'
+        // FIXME: doesn't work as the lambda doesnt seem to get applied
         this.register_function(
             Function {
                 id: id_dispenser.next(),

@@ -13,8 +13,7 @@ use serde_json::json;
 
 use crate::Context;
 
-#[derive(Clone, Debug, PartialEq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Value {
     // Basics

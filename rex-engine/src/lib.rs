@@ -466,11 +466,27 @@ mod test {
     // FIXME: returns a closure, not a value
     // #[tokio::test]
     // async fn test_fold() {
-    //     let val = parse_and_eval("(fold (\\x y -> x + y) 0 [1, 2, 3, 4])", &())
+    //     let val = parse_and_eval("(fold (\\x -> (\\y -> x + y)) 0 [1, 2, 3, 4])", &())
     //         .await
     //         .unwrap();
     //     assert_eq!(val, Value::Uint(10))
     // }
+
+    #[tokio::test]
+    async fn test_flatmap() {
+        let val = parse_and_eval("flatmap ([[1, 2], [3, 4]])", &())
+            .await
+            .unwrap();
+        assert_eq!(
+            val,
+            Value::List(vec![
+                Value::Uint(1),
+                Value::Uint(2),
+                Value::Uint(3),
+                Value::Uint(4)
+            ])
+        )
+    }
 
     #[tokio::test]
     async fn test_zip() {
