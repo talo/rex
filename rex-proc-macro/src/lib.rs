@@ -313,10 +313,8 @@ fn rename_field(field_name: &mut String, field: &syn::Field) {
 
 fn to_type(ty: &Type) -> proc_macro2::TokenStream {
     match ty {
-        Type::Path(type_path) if type_path.qself.is_none() => {
-            let ident = &type_path.path.segments.last().unwrap().ident;
-            let inner_types = &type_path.path.segments.last().unwrap().arguments;
-            quote!(<#ident #inner_types as ::rex::type_system::types::ToType>::to_type())
+        Type::Path(type_path) => {
+            quote!(<#type_path as ::rex::type_system::types::ToType>::to_type())
         }
         Type::Tuple(tuple) => {
             let inner_types = tuple.elems.iter().map(to_type);
