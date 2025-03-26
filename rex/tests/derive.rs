@@ -1,6 +1,16 @@
+#![allow(unused_variables)]
+#![allow(dead_code)]
+#![allow(unused_mut)]
+#![allow(unused_assignments)]
+#![allow(unused_imports)]
+#![allow(unused_macros)]
+#![allow(non_upper_case_globals)]
+
 use rex_ast::{assert_expr_eq, d, f, n, s, tup, u};
+use rex_engine::codec::{Decode, Encode};
 use rex_engine::engine::Builder;
 use rex_engine::util::parse_infer_and_eval_with_builder;
+use rex_lexer::span::Span;
 use rex_proc_macro::Rex;
 use rex_type_system::{
     adt, tuple,
@@ -303,7 +313,7 @@ MyEnum::Z{}
 #[tokio::test]
 async fn adt_enum() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub enum Color {
         Red,
         Green,
@@ -323,6 +333,12 @@ async fn adt_enum() {
         res,
         tup!(n!("Red", None), n!("Green", None), n!("Blue", None));
         ignore span);
+
+    let colors = (Color::Red, Color::Green, Color::Blue);
+    let encoded = colors.clone().try_encode(Span::default()).unwrap();
+    let decoded = <(Color, Color, Color)>::try_decode(&encoded).unwrap();
+    assert_eq!(colors, decoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
@@ -341,7 +357,7 @@ async fn adt_enum_int() {
 #[tokio::test]
 async fn adt_variant_tuple() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub enum Shape {
         Rectangle(f64, f64),
         Circle(f64),
@@ -359,6 +375,14 @@ async fn adt_variant_tuple() {
         n!("Rectangle", Some(tup!(f!(6.0), f!(20.0))));
         ignore span);
 
+    let shape1 = Shape::Rectangle(6.0, 20.0);
+    let encoded = shape1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Shape::try_decode(&encoded).unwrap();
+    assert_eq!(shape1, decoded);
+    // println!("res     = {}", res);
+    // println!("encoded = {}", encoded);
+    assert_expr_eq!(res, encoded; ignore span);
+
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type());
     let (res, res_type) = parse_infer_and_eval_with_builder(builder, r#"Circle (3.0 * 4.0)"#)
@@ -369,12 +393,20 @@ async fn adt_variant_tuple() {
         res,
         n!("Circle", Some(f!(12.0)));
         ignore span);
+
+    let shape1 = Shape::Circle(12.0);
+    let encoded = shape1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Shape::try_decode(&encoded).unwrap();
+    assert_eq!(shape1, decoded);
+    // println!("res     = {}", res);
+    // println!("encoded = {}", encoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
 async fn adt_variant_struct() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub enum Shape {
         Rectangle { width: f64, height: f64 },
         Circle { radius: f64 },
@@ -393,12 +425,23 @@ async fn adt_variant_struct() {
         res,
         n!("Rectangle", Some(d!(width = f!(6.0), height = f!(20.0))));
         ignore span);
+
+    let shape1 = Shape::Rectangle {
+        width: 6.0,
+        height: 20.0,
+    };
+    let encoded = shape1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Shape::try_decode(&encoded).unwrap();
+    assert_eq!(shape1, decoded);
+    // println!("res     = {}", res);
+    // println!("encoded = {}", encoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
 async fn adt_struct() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub struct Movie {
         pub title: String,
         pub year: u16,
@@ -415,12 +458,21 @@ async fn adt_struct() {
         res,
         n!("Movie", Some(d!(title = s!("Godzilla"), year = u!(1954))));
         ignore span);
+
+    let movie1 = Movie {
+        title: "Godzilla".to_string(),
+        year: 1954,
+    };
+    let encoded = movie1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Movie::try_decode(&encoded).unwrap();
+    assert_eq!(movie1, decoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
 async fn adt_tuple() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub struct Movie(pub String, pub u16);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
@@ -433,6 +485,36 @@ async fn adt_tuple() {
         res,
         n!("Movie", Some(tup!(s!("Godzilla"), u!(1954))));
         ignore span);
+
+    let movie1 = Movie("Godzilla".to_string(), 1954);
+    let encoded = movie1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Movie::try_decode(&encoded).unwrap();
+    assert_eq!(movie1, decoded);
+    assert_expr_eq!(res, encoded; ignore span);
+}
+
+#[tokio::test]
+async fn adt_unary_tuple() {
+    #![allow(dead_code)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
+    pub struct Movie(pub String);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Movie::to_type());
+    let (res, res_type) = parse_infer_and_eval_with_builder(builder, r#"Movie "Godzilla" }"#)
+        .await
+        .unwrap();
+    assert_eq!(res_type, Movie::to_type());
+    assert_expr_eq!(
+        res,
+        n!("Movie", Some(s!("Godzilla")));
+        ignore span);
+
+    let movie1 = Movie("Godzilla".to_string());
+    let encoded = movie1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Movie::try_decode(&encoded).unwrap();
+    assert_eq!(movie1, decoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
