@@ -74,16 +74,21 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
         // Dictionaries
         (Type::Dict(d1), Type::Dict(d2)) => {
             if d1.len() != d2.len() {
-                return Err(format!("Cannot unify {} with {}: different no. of keys",
-                    Type::Dict(d1), Type::Dict(d2)));
+                return Err(format!(
+                    "Cannot unify {} with {}: different no. of keys",
+                    Type::Dict(d1),
+                    Type::Dict(d2)
+                ));
             }
             for (key, entry1) in d1.iter() {
                 if let Some(entry2) = d2.get(key) {
                     unify_eq(entry1, entry2, subst)?;
-                }
-                else {
-                    return Err(format!("Cannot unify {} with {}: different keys",
-                        Type::Dict(d1), Type::Dict(d2)));
+                } else {
+                    return Err(format!(
+                        "Cannot unify {} with {}: different keys",
+                        Type::Dict(d1),
+                        Type::Dict(d2)
+                    ));
                 }
             }
             Ok(())
@@ -125,11 +130,19 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
         // ADTs
         (Type::ADT(adt1), Type::ADT(adt2)) => {
             if adt1.name != adt2.name {
-                return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+                return Err(format!(
+                    "Cannot unify {} with {}",
+                    Type::ADT(adt1),
+                    Type::ADT(adt2)
+                ));
             }
 
             if adt1.variants.len() != adt2.variants.len() {
-                return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+                return Err(format!(
+                    "Cannot unify {} with {}",
+                    Type::ADT(adt1),
+                    Type::ADT(adt2)
+                ));
             }
 
             for i in 0..adt1.variants.len() {
@@ -137,7 +150,11 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
                 let v2 = &adt2.variants[i];
 
                 if v1.name != v2.name {
-                    return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+                    return Err(format!(
+                        "Cannot unify {} with {}",
+                        Type::ADT(adt1),
+                        Type::ADT(adt2)
+                    ));
                 }
 
                 match (&v1.t, &v2.t) {
@@ -146,7 +163,11 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
                         unify_eq(vt1, vt2, subst)?;
                     }
                     _ => {
-                        return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+                        return Err(format!(
+                            "Cannot unify {} with {}",
+                            Type::ADT(adt1),
+                            Type::ADT(adt2)
+                        ));
                     }
                 }
             }

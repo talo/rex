@@ -1,11 +1,10 @@
 use rex_ast::{assert_expr_eq, d, f, n, s, tup, u};
-use rex_proc_macro::Rex;
 use rex_engine::engine::Builder;
 use rex_engine::util::parse_infer_and_eval_with_builder;
+use rex_proc_macro::Rex;
 use rex_type_system::{
-    adt,
-    types::{ADTVariant, ADT, ToType, Type},
-    tuple,
+    adt, tuple,
+    types::{ADTVariant, ToType, Type, ADT},
 };
 
 #[allow(dead_code)]
@@ -313,14 +312,13 @@ async fn adt_enum() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Color::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
-        builder,
-        r#"(Red, Green, Blue)"#)
+    let (res, res_type) = parse_infer_and_eval_with_builder(builder, r#"(Red, Green, Blue)"#)
         .await
         .unwrap();
     assert_eq!(
         res_type,
-        tuple!(Color::to_type(), Color::to_type(), Color::to_type()));
+        tuple!(Color::to_type(), Color::to_type(), Color::to_type())
+    );
     assert_expr_eq!(
         res,
         tup!(n!("Red", None), n!("Green", None), n!("Blue", None));
@@ -351,11 +349,10 @@ async fn adt_variant_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
-        builder,
-        r#"Rectangle (2.0 * 3.0) (4.0 * 5.0)"#)
-        .await
-        .unwrap();
+    let (res, res_type) =
+        parse_infer_and_eval_with_builder(builder, r#"Rectangle (2.0 * 3.0) (4.0 * 5.0)"#)
+            .await
+            .unwrap();
     assert_eq!(res_type, Shape::to_type());
     assert_expr_eq!(
         res,
@@ -364,9 +361,7 @@ async fn adt_variant_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
-        builder,
-        r#"Circle (3.0 * 4.0)"#)
+    let (res, res_type) = parse_infer_and_eval_with_builder(builder, r#"Circle (3.0 * 4.0)"#)
         .await
         .unwrap();
     assert_eq!(res_type, Shape::to_type());
@@ -389,9 +384,10 @@ async fn adt_variant_struct() {
     builder.register_adt(&Shape::to_type()).unwrap();
     let (res, res_type) = parse_infer_and_eval_with_builder(
         builder,
-        r#"Rectangle { width = 2.0 * 3.0, height = 4.0 * 5.0 }"#)
-        .await
-        .unwrap();
+        r#"Rectangle { width = 2.0 * 3.0, height = 4.0 * 5.0 }"#,
+    )
+    .await
+    .unwrap();
     assert_eq!(res_type, Shape::to_type());
     assert_expr_eq!(
         res,
@@ -410,11 +406,10 @@ async fn adt_struct() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Movie::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
-        builder,
-        r#"Movie { title = "Godzilla", year = 1954 }"#)
-        .await
-        .unwrap();
+    let (res, res_type) =
+        parse_infer_and_eval_with_builder(builder, r#"Movie { title = "Godzilla", year = 1954 }"#)
+            .await
+            .unwrap();
     assert_eq!(res_type, Movie::to_type());
     assert_expr_eq!(
         res,
@@ -430,9 +425,7 @@ async fn adt_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Movie::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
-        builder,
-        r#"Movie "Godzilla" 1954 }"#)
+    let (res, res_type) = parse_infer_and_eval_with_builder(builder, r#"Movie "Godzilla" 1954 }"#)
         .await
         .unwrap();
     assert_eq!(res_type, Movie::to_type());
@@ -455,9 +448,10 @@ async fn adt_curry() {
     builder.register_adt(&Shape::to_type()).unwrap();
     let (res, res_type) = parse_infer_and_eval_with_builder(
         builder,
-        r#"let partial = Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#)
-        .await
-        .unwrap();
+        r#"let partial = Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#,
+    )
+    .await
+    .unwrap();
     assert_eq!(res_type, tuple!(Shape::to_type(), Shape::to_type()));
     assert_expr_eq!(
         res,

@@ -180,7 +180,7 @@ where
 
 impl<State> fmt::Display for Ftable<State>
 where
-    State: Clone + Sync + 'static
+    State: Clone + Sync + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "Ftable")?;
@@ -190,8 +190,7 @@ where
         for (name, entries) in items.iter() {
             if entries.len() == 1 {
                 write!(f, "\n    {} :: {}", name, entries[0].0)?;
-            }
-            else {
+            } else {
                 write!(f, "\n    {} ::", name)?;
                 for entry in entries.iter() {
                     write!(f, "\n        {}", entry.0)?;

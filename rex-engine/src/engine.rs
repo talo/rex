@@ -1,9 +1,9 @@
 use rex_type_system::{
     constraint::{Constraint, ConstraintSystem},
     types::{ToType, Type, TypeEnv},
-}; 
+};
 use std::{
-    collections::{HashMap, HashSet, BTreeSet},
+    collections::{BTreeSet, HashMap, HashSet},
     future::Future,
     pin::Pin,
 };
@@ -40,10 +40,7 @@ where
             let mut assignments = HashMap::new();
             for var in &unresolved_vars {
                 if let None = assignments.get(var) {
-                    assignments.insert(
-                        var.clone(),
-                        Type::Var(Id::new()),
-                    );
+                    assignments.insert(var.clone(), Type::Var(Id::new()));
                 }
             }
 
@@ -59,24 +56,18 @@ where
             let mut for_all = t;
             for var in assignments.into_values() {
                 if let Type::Var(var) = var {
-                    for_all = Type::ForAll(
-                        var,
-                        Box::new(for_all),
-                        BTreeSet::new()
-                    );
+                    for_all = Type::ForAll(var, Box::new(for_all), BTreeSet::new());
                 } else {
                     panic!("Expected a type variable");
                 }
             }
 
-            builder.ftenv.insert(
-                n.to_string(),
-                for_all,
-            );
+            builder.ftenv.insert(n.to_string(), for_all);
         }
         None => {
             let new_id = Id::new();
-            builder.fconstraints
+            builder
+                .fconstraints
                 .insert(n.to_string(), Constraint::Eq(Type::Var(new_id), t));
             builder.ftenv.insert(n.to_string(), Type::Var(new_id));
         }
@@ -92,14 +83,16 @@ where
             new_ts.insert(prev_t.clone());
             new_ts.insert(t);
 
-            builder.fconstraints
+            builder
+                .fconstraints
                 .insert(n.to_string(), Constraint::OneOf(tid.clone(), new_ts));
         }
         Some(Constraint::OneOf(tid, prev_ts)) => {
             let mut new_ts = prev_ts.clone();
             new_ts.insert(t);
 
-            builder.fconstraints
+            builder
+                .fconstraints
                 .insert(n.to_string(), Constraint::OneOf(tid.clone(), new_ts));
         }
     }
@@ -501,14 +494,22 @@ where
         Ok(this)
     }
 
-    pub fn register_fn_core_with_name(&mut self, name: &str, t: &Type, f: FtableFn<State>) -> Result<(), Error> {
+    pub fn register_fn_core_with_name(
+        &mut self,
+        name: &str,
+        t: &Type,
+        f: FtableFn<State>,
+    ) -> Result<(), Error> {
         register_fn_core(self, name, t.clone())?;
-        self.ftable.0.entry(name.to_string()).or_default().push((t.clone(), f));
+        self.ftable
+            .0
+            .entry(name.to_string())
+            .or_default()
+            .push((t.clone(), f));
         Ok(())
     }
 
-    pub fn register_adt(&mut self, adt_type: &Type) -> Result<(), Error>
-    {
+    pub fn register_adt(&mut self, adt_type: &Type) -> Result<(), Error> {
         let Type::ADT(adt) = adt_type else {
             panic!("register_adt) called with non-ADT type: {}", adt_type);
         };
@@ -534,15 +535,13 @@ where
             let variant_name = variant.name.to_string();
             match variant.t.as_ref().map(|t| &**t) {
                 None => {
-                    self.register_fn_core_with_name(&variant.name, adt_type,
+                    self.register_fn_core_with_name(
+                        &variant.name,
+                        adt_type,
                         Box::new(move |_, _| {
                             let variant_name = variant_name.clone();
                             Box::pin(async move {
-                                Ok(Expr::Named(
-                                    Id::new(),
-                                    Span::default(),
-                                    variant_name,
-                                    None))
+                                Ok(Expr::Named(Id::new(), Span::default(), variant_name, None))
                             })
                         }),
                     )?;
@@ -550,11 +549,11 @@ where
                 Some(Type::Tuple(fields)) => {
                     let mut fun_type = adt_type.clone();
                     for field in fields.iter().rev() {
-                        fun_type = Type::Arrow(
-                            Box::new(field.clone()),
-                            Box::new(fun_type));
+                        fun_type = Type::Arrow(Box::new(field.clone()), Box::new(fun_type));
                     }
-                    self.register_fn_core_with_name(&variant.name, &fun_type,
+                    self.register_fn_core_with_name(
+                        &variant.name,
+                        &fun_type,
                         Box::new(move |_, args| {
                             let variant_name = variant_name.clone();
                             Box::pin(async move {
@@ -565,14 +564,18 @@ where
                                     Some(Box::new(Expr::Tuple(
                                         Id::new(),
                                         Span::default(),
-                                        args.clone())))))
+                                        args.clone(),
+                                    ))),
+                                ))
                             })
                         }),
                     )?;
                 }
                 Some(t) => {
                     let fun_type = Type::Arrow(Box::new(t.clone()), Box::new(adt_type.clone()));
-                    self.register_fn_core_with_name(&variant.name, &fun_type,
+                    self.register_fn_core_with_name(
+                        &variant.name,
+                        &fun_type,
                         Box::new(move |_, args| {
                             let variant_name = variant_name.clone();
                             Box::pin(async move {
@@ -581,7 +584,8 @@ where
                                     Id::new(),
                                     Span::default(),
                                     variant_name,
-                                    Some(Box::new(val))))
+                                    Some(Box::new(val)),
+                                ))
                             })
                         }),
                     )?;

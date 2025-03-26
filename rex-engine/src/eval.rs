@@ -449,11 +449,7 @@ where
 pub mod test {
     use rex_ast::{assert_expr_eq, b, d, f, i, l, n, s, tup, u};
     use rex_type_system::{
-        bool,
-        dict, float, int, list, option, result, string,
-        tuple,
-        types::Type,
-        uint,
+        bool, dict, float, int, list, option, result, string, tuple, types::Type, uint,
     };
 
     use crate::util::parse_infer_and_eval;
