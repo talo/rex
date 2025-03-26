@@ -142,9 +142,9 @@ fn derive_codec_enum_mixed() {
 #[test]
 fn derive_codec_struct_named_fields() {
     #[derive(Rex, Debug, PartialEq, Eq)]
-    pub struct Foo {
-        pub a: u64,
-        pub b: String,
+    struct Foo {
+        a: u64,
+        b: String,
     }
 
     assert_eq!(
@@ -172,7 +172,7 @@ fn derive_codec_struct_named_fields() {
 #[test]
 fn derive_codec_struct_unnamed_fields() {
     #[derive(Rex, Debug, PartialEq)]
-    pub struct Foo(u64, String);
+    struct Foo(u64, String);
 
     assert_eq!(
         Foo::to_type(),
@@ -189,7 +189,7 @@ fn derive_codec_struct_unnamed_fields() {
 #[test]
 fn derive_codec_struct_unit() {
     #[derive(Rex, Debug, PartialEq)]
-    pub struct Foo;
+    struct Foo;
 
     assert_eq!(
         Foo::to_type(),
