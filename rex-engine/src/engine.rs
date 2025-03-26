@@ -21,7 +21,7 @@ use rex_ast::id::Id;
 use rex_lexer::span::Span;
 use uuid::Uuid;
 
-fn register_fn_core<State>(builder: &mut Builder<State>, n: &str, t: Type) -> Result<(), Error>
+fn register_fn_core<State>(builder: &mut Builder<State>, n: &str, t: Type)
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -30,11 +30,7 @@ where
     match builder.fconstraints.get(n) {
         None if !unresolved_vars.is_empty() => {
             if builder.ftenv.contains_key(n) {
-                return Err(Error::ParametricOverload {
-                    name: n.to_string(),
-                    prev_insts: vec![],
-                    curr_inst: t,
-                });
+                panic!("Attempt to overload function {} with generic type {}", n, t);
             }
 
             let mut assignments = HashMap::new();
@@ -72,11 +68,7 @@ where
             builder.ftenv.insert(n.to_string(), Type::Var(new_id));
         }
         Some(_) if !unresolved_vars.is_empty() => {
-            return Err(Error::ParametricOverload {
-                name: n.to_string(),
-                prev_insts: vec![],
-                curr_inst: t,
-            });
+            panic!("Attempt to overload function {} with generic type {}", n, t);
         }
         Some(Constraint::Eq(tid, prev_t)) => {
             let mut new_ts = HashSet::new();
@@ -96,17 +88,14 @@ where
                 .insert(n.to_string(), Constraint::OneOf(tid.clone(), new_ts));
         }
     }
-
-    Ok(())
 }
 
 macro_rules! impl_register_fn_core {
     ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
         let n = $n.to_string();
         let t = <fn($($($param,)*)?) -> B as ToType>::to_type();
-        register_fn_core($self, &n, t)?;
+        register_fn_core($self, &n, t);
         $self.ftable.$name(n, $f);
-        Ok(())
     }}
 }
 
@@ -116,8 +105,7 @@ macro_rules! impl_register_fn {
             &mut self,
             n: impl ToString,
             f: F,
-        ) ->
-            Result<(), Error>
+        )
         where
             $($($param : Decode + Send + ToType,)*)?
             B: Encode + ToType,
@@ -142,8 +130,7 @@ macro_rules! impl_register_fn_async {
             &mut self,
             n: impl ToString,
             f: F,
-        ) ->
-            Result<(), Error>
+        )
         where
             $($param : Decode + Send + ToType,)*
             B: Encode + ToType,
@@ -181,88 +168,88 @@ where
             ftenv: Default::default(),
         };
 
-        this.register_fn1("swap", |_ctx: &Context<_>, (x, y): (A, B)| Ok((y, x)))?;
+        this.register_fn1("swap", |_ctx: &Context<_>, (x, y): (A, B)| Ok((y, x)));
 
-        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0u64))?;
-        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0i64))?;
-        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0f64))?;
+        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0u64));
+        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0i64));
+        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0f64));
 
-        this.register_fn1("uint", |_ctx: &Context<_>, x: i64| Ok(x as u64))?;
-        this.register_fn1("uint", |_ctx: &Context<_>, x: f64| Ok(x as u64))?;
+        this.register_fn1("uint", |_ctx: &Context<_>, x: i64| Ok(x as u64));
+        this.register_fn1("uint", |_ctx: &Context<_>, x: f64| Ok(x as u64));
         this.register_fn1("uint", |_ctx: &Context<_>, x: String| {
             x.parse::<u64>().map_err(|e| e.into())
-        })?;
+        });
 
-        this.register_fn1("int", |_ctx: &Context<_>, x: u64| Ok(x as i64))?;
-        this.register_fn1("int", |_ctx: &Context<_>, x: f64| Ok(x as i64))?;
+        this.register_fn1("int", |_ctx: &Context<_>, x: u64| Ok(x as i64));
+        this.register_fn1("int", |_ctx: &Context<_>, x: f64| Ok(x as i64));
         this.register_fn1("int", |_ctx: &Context<_>, x: String| {
             x.parse::<i64>().map_err(|e| e.into())
-        })?;
+        });
 
-        this.register_fn1("float", |_ctx: &Context<_>, x: u64| Ok(x as f64))?;
-        this.register_fn1("float", |_ctx: &Context<_>, x: i64| Ok(x as f64))?;
+        this.register_fn1("float", |_ctx: &Context<_>, x: u64| Ok(x as f64));
+        this.register_fn1("float", |_ctx: &Context<_>, x: i64| Ok(x as f64));
         this.register_fn1("float", |_ctx: &Context<_>, x: String| {
             x.parse::<f64>().map_err(|e| e.into())
-        })?;
+        });
 
-        this.register_fn1("negate", |_ctx: &Context<_>, x: u64| Ok(-(x as i64)))?;
-        this.register_fn1("negate", |_ctx: &Context<_>, x: i64| Ok(-x))?;
-        this.register_fn1("negate", |_ctx: &Context<_>, x: f64| Ok(-x))?;
+        this.register_fn1("negate", |_ctx: &Context<_>, x: u64| Ok(-(x as i64)));
+        this.register_fn1("negate", |_ctx: &Context<_>, x: i64| Ok(-x));
+        this.register_fn1("negate", |_ctx: &Context<_>, x: f64| Ok(-x));
 
-        this.register_fn2("&&", |_ctx: &Context<_>, x: bool, y: bool| Ok(x && y))?;
-        this.register_fn2("||", |_ctx: &Context<_>, x: bool, y: bool| Ok(x || y))?;
+        this.register_fn2("&&", |_ctx: &Context<_>, x: bool, y: bool| Ok(x && y));
+        this.register_fn2("||", |_ctx: &Context<_>, x: bool, y: bool| Ok(x || y));
 
-        this.register_fn2("==", |_ctx: &Context<_>, x: u64, y: u64| Ok(x == y))?;
-        this.register_fn2("==", |_ctx: &Context<_>, x: i64, y: i64| Ok(x == y))?;
-        this.register_fn2("==", |_ctx: &Context<_>, x: f64, y: f64| Ok(x == y))?;
+        this.register_fn2("==", |_ctx: &Context<_>, x: u64, y: u64| Ok(x == y));
+        this.register_fn2("==", |_ctx: &Context<_>, x: i64, y: i64| Ok(x == y));
+        this.register_fn2("==", |_ctx: &Context<_>, x: f64, y: f64| Ok(x == y));
 
-        this.register_fn2("+", |_ctx: &Context<_>, x: u64, y: u64| Ok(x + y))?;
-        this.register_fn2("+", |_ctx: &Context<_>, x: i64, y: i64| Ok(x + y))?;
-        this.register_fn2("+", |_ctx: &Context<_>, x: f64, y: f64| Ok(x + y))?;
+        this.register_fn2("+", |_ctx: &Context<_>, x: u64, y: u64| Ok(x + y));
+        this.register_fn2("+", |_ctx: &Context<_>, x: i64, y: i64| Ok(x + y));
+        this.register_fn2("+", |_ctx: &Context<_>, x: f64, y: f64| Ok(x + y));
 
-        this.register_fn2("-", |_ctx: &Context<_>, x: u64, y: u64| Ok(x - y))?;
-        this.register_fn2("-", |_ctx: &Context<_>, x: i64, y: i64| Ok(x - y))?;
-        this.register_fn2("-", |_ctx: &Context<_>, x: f64, y: f64| Ok(x - y))?;
+        this.register_fn2("-", |_ctx: &Context<_>, x: u64, y: u64| Ok(x - y));
+        this.register_fn2("-", |_ctx: &Context<_>, x: i64, y: i64| Ok(x - y));
+        this.register_fn2("-", |_ctx: &Context<_>, x: f64, y: f64| Ok(x - y));
 
-        this.register_fn2("*", |_ctx: &Context<_>, x: u64, y: u64| Ok(x * y))?;
-        this.register_fn2("*", |_ctx: &Context<_>, x: i64, y: i64| Ok(x * y))?;
-        this.register_fn2("*", |_ctx: &Context<_>, x: f64, y: f64| Ok(x * y))?;
+        this.register_fn2("*", |_ctx: &Context<_>, x: u64, y: u64| Ok(x * y));
+        this.register_fn2("*", |_ctx: &Context<_>, x: i64, y: i64| Ok(x * y));
+        this.register_fn2("*", |_ctx: &Context<_>, x: f64, y: f64| Ok(x * y));
 
-        this.register_fn2("/", |_ctx: &Context<_>, x: u64, y: u64| Ok(x / y))?;
-        this.register_fn2("/", |_ctx: &Context<_>, x: i64, y: i64| Ok(x / y))?;
-        this.register_fn2("/", |_ctx: &Context<_>, x: f64, y: f64| Ok(x / y))?;
+        this.register_fn2("/", |_ctx: &Context<_>, x: u64, y: u64| Ok(x / y));
+        this.register_fn2("/", |_ctx: &Context<_>, x: i64, y: i64| Ok(x / y));
+        this.register_fn2("/", |_ctx: &Context<_>, x: f64, y: f64| Ok(x / y));
 
-        this.register_fn1("abs", |_ctx: &Context<_>, x: i64| Ok(x.abs()))?;
-        this.register_fn1("abs", |_ctx: &Context<_>, x: f64| Ok(x.abs()))?;
+        this.register_fn1("abs", |_ctx: &Context<_>, x: i64| Ok(x.abs()));
+        this.register_fn1("abs", |_ctx: &Context<_>, x: f64| Ok(x.abs()));
 
-        this.register_fn1("sqrt", |_ctx: &Context<_>, x: f64| Ok(x.sqrt()))?;
+        this.register_fn1("sqrt", |_ctx: &Context<_>, x: f64| Ok(x.sqrt()));
 
-        this.register_fn2("pow", |_ctx: &Context<_>, x: f64, y: i32| Ok(x.powi(y)))?;
-        this.register_fn2("pow", |_ctx: &Context<_>, x: f64, y: f64| Ok(x.powf(y)))?;
+        this.register_fn2("pow", |_ctx: &Context<_>, x: f64, y: i32| Ok(x.powi(y)));
+        this.register_fn2("pow", |_ctx: &Context<_>, x: f64, y: f64| Ok(x.powf(y)));
 
-        this.register_fn1("id", |_ctx: &Context<_>, x: A| Ok(x))?;
+        this.register_fn1("id", |_ctx: &Context<_>, x: A| Ok(x));
 
         this.register_fn2("get", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
             Ok(xs[n as usize].clone())
-        })?;
+        });
 
-        this.register_fn1("elem0", |_ctx: &Context<_>, xs: (A,)| Ok(xs.0.clone()))?;
-        this.register_fn1("elem1", |_ctx: &Context<_>, xs: (A, B)| Ok(xs.1.clone()))?;
-        this.register_fn1("elem2", |_ctx: &Context<_>, xs: (A, B, C)| Ok(xs.2.clone()))?;
+        this.register_fn1("elem0", |_ctx: &Context<_>, xs: (A,)| Ok(xs.0.clone()));
+        this.register_fn1("elem1", |_ctx: &Context<_>, xs: (A, B)| Ok(xs.1.clone()));
+        this.register_fn1("elem2", |_ctx: &Context<_>, xs: (A, B, C)| Ok(xs.2.clone()));
         this.register_fn1("elem3", |_ctx: &Context<_>, xs: (A, B, C, D)| {
             Ok(xs.3.clone())
-        })?;
+        });
 
         this.register_fn2("++", |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<A>| {
             let mut zs = Vec::with_capacity(xs.len() + ys.len());
             zs.extend(xs);
             zs.extend(ys);
             Ok(zs)
-        })?;
+        });
 
         this.register_fn2("take", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
             Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
-        })?;
+        });
 
         // Registers function with two parameters to match a regex pattern,
         // Returns True if there is a match, orelse False
@@ -278,7 +265,7 @@ where
                 Ok(re) => Ok(re.is_match(&hay)),
                 Err(err) => Err(err), // Return Err(Error)
             },
-        )?;
+        );
 
         // Registers function with two parameters to return successive non-overlapping matches in given haystack
         // pattern : Pattern to convert into regex (re),
@@ -297,15 +284,15 @@ where
                 }
                 Err(err) => Err(err),
             },
-        )?;
+        );
 
         this.register_fn2("skip", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
             Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
-        })?;
+        });
 
         this.register_fn2("zip", |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<B>| {
             Ok(xs.into_iter().zip(ys.into_iter()).collect::<Vec<_>>())
-        })?;
+        });
 
         this.register_fn1("unzip", |_ctx: &Context<_>, zs: Vec<(A, B)>| {
             let mut xs = Vec::with_capacity(zs.len());
@@ -315,7 +302,7 @@ where
                 ys.push(y);
             }
             Ok((xs, ys))
-        })?;
+        });
 
         this.register_fn_async3(
             "flip",
@@ -326,7 +313,7 @@ where
                     Ok(C(z))
                 })
             },
-        )?;
+        );
 
         this.register_fn_async2("map", |ctx, f: Func<A, B>, xs: Vec<A>| {
             Box::pin(async move {
@@ -337,7 +324,7 @@ where
                 }
                 Ok(ys)
             })
-        })?;
+        });
 
         this.register_fn_async3(
             "foldl",
@@ -352,7 +339,7 @@ where
                     Ok(res)
                 })
             },
-        )?;
+        );
 
         this.register_fn_async3(
             "foldr",
@@ -367,7 +354,7 @@ where
                     Ok(res)
                 })
             },
-        )?;
+        );
 
         this.register_fn_async3(".", |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
             Box::pin(async move {
@@ -375,11 +362,11 @@ where
                 let x = apply(ctx, &f, &x).await?;
                 Ok(C(x))
             })
-        })?;
+        });
 
         // Result
-        this.register_fn1("Ok", |_ctx: &Context<_>, x: A| Ok(Ok::<A, B>(x)))?;
-        this.register_fn1("Err", |_ctx: &Context<_>, x: B| Ok(Err::<A, B>(x)))?;
+        this.register_fn1("Ok", |_ctx: &Context<_>, x: A| Ok(Ok::<A, B>(x)));
+        this.register_fn1("Err", |_ctx: &Context<_>, x: B| Ok(Err::<A, B>(x)));
         this.register_fn_async2("map_result", |ctx, f: Func<A, B>, x: Result<A, E>| {
             Box::pin(async move {
                 match x {
@@ -387,7 +374,7 @@ where
                     Err(e) => Ok(Err(e)),
                 }
             })
-        })?;
+        });
         this.register_fn_async2(
             "and_then_result",
             |ctx, f: Func<A, Result<B, E>>, x: Result<A, E>| {
@@ -398,7 +385,7 @@ where
                     }
                 })
             },
-        )?;
+        );
         this.register_fn_async2(
             "or_else_result",
             |ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
@@ -409,7 +396,7 @@ where
                     }
                 })
             },
-        )?;
+        );
         this.register_fn_async2(
             "unwrap_or_else_result",
             |ctx, f: Func<E, A>, x: Result<A, E>| {
@@ -420,11 +407,11 @@ where
                     }
                 })
             },
-        )?;
+        );
 
         // Option
-        this.register_fn0("None", |_ctx: &Context<_>| Ok(None::<A>))?;
-        this.register_fn1("Some", |_ctx: &Context<_>, x: A| Ok(Some(x)))?;
+        this.register_fn0("None", |_ctx: &Context<_>| Ok(None::<A>));
+        this.register_fn1("Some", |_ctx: &Context<_>, x: A| Ok(Some(x)));
         this.register_fn_async2("map_option", |ctx, f: Func<A, B>, x: Option<A>| {
             Box::pin(async move {
                 match x {
@@ -432,7 +419,7 @@ where
                     None => Ok(None),
                 }
             })
-        })?;
+        });
         this.register_fn_async2(
             "and_then_option",
             |ctx, f: Func<A, Option<B>>, x: Option<A>| {
@@ -443,7 +430,7 @@ where
                     }
                 })
             },
-        )?;
+        );
         this.register_fn_async2(
             "or_else_option",
             |ctx, f: Func<(), Option<A>>, x: Option<A>| {
@@ -461,7 +448,7 @@ where
                     }
                 })
             },
-        )?;
+        );
         this.register_fn_async2(
             "unwrap_or_else_option",
             |ctx, f: Func<(), A>, x: Option<A>| {
@@ -479,37 +466,31 @@ where
                     }
                 })
             },
-        )?;
+        );
 
         // Uuid
-        this.register_fn1("string", |_ctx: &Context<_>, x: Uuid| Ok(format!("{}", x)))?;
-        this.register_fn0("random_uuid", |_ctx: &Context<_>| Ok(Uuid::new_v4()))?;
+        this.register_fn1("string", |_ctx: &Context<_>, x: Uuid| Ok(format!("{}", x)));
+        this.register_fn0("random_uuid", |_ctx: &Context<_>| Ok(Uuid::new_v4()));
 
         // DateTime
         this.register_fn1("string", |_ctx: &Context<_>, x: DateTime<Utc>| {
             Ok(format!("{}", x))
-        })?;
-        this.register_fn0("now", |_ctx: &Context<_>| Ok(Utc::now()))?;
+        });
+        this.register_fn0("now", |_ctx: &Context<_>| Ok(Utc::now()));
 
         Ok(this)
     }
 
-    pub fn register_fn_core_with_name(
-        &mut self,
-        name: &str,
-        t: &Type,
-        f: FtableFn<State>,
-    ) -> Result<(), Error> {
-        register_fn_core(self, name, t.clone())?;
+    pub fn register_fn_core_with_name(&mut self, name: &str, t: &Type, f: FtableFn<State>) {
+        register_fn_core(self, name, t.clone());
         self.ftable
             .0
             .entry(name.to_string())
             .or_default()
             .push((t.clone(), f));
-        Ok(())
     }
 
-    pub fn register_adt(&mut self, adt_type: &Type) -> Result<(), Error> {
+    pub fn register_adt(&mut self, adt_type: &Type) {
         let Type::ADT(adt) = adt_type else {
             panic!("register_adt) called with non-ADT type: {}", adt_type);
         };
@@ -517,9 +498,6 @@ where
         // TODO: Avoid cloning args in the functions. This applies more generally across
         // the evaluation code. We should either pass owned Expr values to the functions
         // or use Rc<Expr> to make cloning cheap.
-
-        // TODO: panic instead of returning Error; this requires register_fn_core to be
-        // modified to do the same.
 
         for variant in &adt.variants {
             // We do not support multiple ADTs with overlapping constructor names. The reason
@@ -544,7 +522,7 @@ where
                                 Ok(Expr::Named(Id::new(), Span::default(), variant_name, None))
                             })
                         }),
-                    )?;
+                    );
                 }
                 Some(Type::Tuple(fields)) => {
                     let mut fun_type = adt_type.clone();
@@ -569,7 +547,7 @@ where
                                 ))
                             })
                         }),
-                    )?;
+                    );
                 }
                 Some(t) => {
                     let fun_type = Type::Arrow(Box::new(t.clone()), Box::new(adt_type.clone()));
@@ -588,11 +566,10 @@ where
                                 ))
                             })
                         }),
-                    )?;
+                    );
                 }
             }
         }
-        Ok(())
     }
 
     impl_register_fn!(register_fn0);
