@@ -107,6 +107,26 @@ macro_rules! adt_variant {
             t_docs: None,
         }
     }};
+
+    ($name:ident ( $($value:expr),* $(,)? )) => {{
+        let mut fields = Vec::new();
+        $(fields.push($value);)*
+        $crate::types::ADTVariant {
+            name: stringify!($name).to_string(),
+            t: Some(Box::new($crate::types::Type::Tuple(fields))),
+            docs: None,
+            t_docs: None,
+        }
+    }};
+
+    ($name:ident .) => {{
+        $crate::types::ADTVariant {
+            name: stringify!($name).to_string(),
+            t: None,
+            docs: None,
+            t_docs: None,
+        }
+    }};
 }
 
 #[macro_export]
