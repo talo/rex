@@ -3,6 +3,7 @@ use rex_lexer::span::Span;
 use rex_parser::error::ParserErr;
 use rex_type_system::types::Type;
 use serde_json::Value;
+use std::collections::VecDeque;
 
 // TODO(loong): re-implement traces so that developers can get meaningful
 // errors when something goes wrong.
@@ -34,4 +35,9 @@ pub enum Error {
     },
     #[error("{0}")]
     RegexCompilationError(#[from] regex::Error),
+    #[error("{error}")]
+    Custom {
+        error: String,
+        trace: VecDeque<Expr>,
+    },
 }
