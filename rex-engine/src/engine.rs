@@ -6,6 +6,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     future::Future,
     pin::Pin,
+    str::FromStr,
 };
 
 use crate::{
@@ -471,6 +472,15 @@ where
         // Uuid
         this.register_fn1("string", |_ctx: &Context<_>, x: Uuid| Ok(format!("{}", x)));
         this.register_fn0("random_uuid", |_ctx: &Context<_>| Ok(Uuid::new_v4()));
+        this.register_fn1(
+            "uuid",
+            |_ctx: &Context<_>, x: String| -> Result<Uuid, Error> {
+                Ok(Uuid::from_str(&x).map_err(|_| Error::Custom {
+                    error: format!("Invalid UUID {:?}", x),
+                    trace: Default::default(),
+                })?)
+            },
+        );
 
         // DateTime
         this.register_fn1("string", |_ctx: &Context<_>, x: DateTime<Utc>| {
