@@ -1,4 +1,4 @@
-use std::{env, io, path::PathBuf};
+use std::{env, io, path::PathBuf, sync::Arc};
 
 use anyhow::Context as _;
 use chrono::{TimeDelta, Utc};
@@ -189,9 +189,9 @@ struct Params {
     fields: usize,
 }
 
-fn generate_adts(mut params: Params) -> Vec<Type> {
+fn generate_adts(mut params: Params) -> Vec<Arc<Type>> {
     params.variants = std::cmp::max(1, params.variants);
-    let mut result: Vec<Type> = Vec::new();
+    let mut result: Vec<Arc<Type>> = Vec::new();
     for adt_no in 0..params.adts {
         let mut adt = ADT {
             name: format!("ADT{}", adt_no),
@@ -213,20 +213,20 @@ fn generate_adts(mut params: Params) -> Vec<Type> {
                     t_docs: None,
                 });
             } else {
-                let mut entries: BTreeMap<String, Type> = BTreeMap::new();
+                let mut entries: BTreeMap<String, Arc<Type>> = BTreeMap::new();
 
                 for field_no in 0..params.fields {
-                    entries.insert(format!("field{}", field_no), Type::Uint);
+                    entries.insert(format!("field{}", field_no), Arc::new(Type::Uint));
                 }
                 adt.variants.push(ADTVariant {
                     name: variant_name,
-                    t: Some(Box::new(Type::Dict(entries))),
+                    t: Some(Arc::new(Type::Dict(entries))),
                     docs: None,
                     t_docs: None,
                 });
             }
         }
-        result.push(Type::ADT(adt));
+        result.push(Arc::new(Type::ADT(adt)));
     }
     result
 }

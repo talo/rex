@@ -5,7 +5,7 @@ use crate::{
     type_system::types::Type,
 };
 use serde_json::{Map, Number, Value};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 /// Convert a JSON [`Value`] to an [`Expr`]
 ///
@@ -18,8 +18,8 @@ use std::collections::BTreeMap;
 /// at runtime.
 ///
 /// [`Encode::try_encode`]: crate::engine::codec::Encode::try_encode
-pub fn json_to_expr(json: &Value, want: &Type) -> Result<Expr, EngineError> {
-    match (want, json) {
+pub fn json_to_expr(json: &Value, want: &Arc<Type>) -> Result<Expr, EngineError> {
+    match (&**want, json) {
         // (Type::UnresolvedVar(_), _) => unimplemented!(),
         // (Type::Var(_), _) => unimplemented!(),
         // (Type::ForAll(_, _, _), _) => unimplemented!(),
@@ -182,8 +182,8 @@ pub fn json_to_expr(json: &Value, want: &Type) -> Result<Expr, EngineError> {
 /// tengu, since the argument types are only known at runtime.
 ///
 /// [`Decode::try_decode`]: crate::engine::codec::Decode::try_decode
-pub fn expr_to_json(expr: &Expr, want: &Type) -> Result<Value, EngineError> {
-    match (want, expr) {
+pub fn expr_to_json(expr: &Expr, want: &Arc<Type>) -> Result<Value, EngineError> {
+    match (&**want, expr) {
         // (Type::UnresolvedVar(_), _) => unimplemented!(),
         // (Type::Var(_), _) => unimplemented!(),
         // (Type::ForAll(_, _, _), _) => unimplemented!(),
@@ -292,14 +292,14 @@ pub fn expr_to_json(expr: &Expr, want: &Type) -> Result<Value, EngineError> {
     }
 }
 
-fn type_error(json: &Value, want: &Type) -> EngineError {
+fn type_error(json: &Value, want: &Arc<Type>) -> EngineError {
     EngineError::ExpectedTypeGotJSON {
         expected: want.clone(),
         got: json.clone(),
     }
 }
 
-fn expr_error(expr: &Expr, want: &Type) -> EngineError {
+fn expr_error(expr: &Expr, want: &Arc<Type>) -> EngineError {
     EngineError::ExpectedTypeGotValue {
         expected: want.clone(),
         got: expr.clone(),

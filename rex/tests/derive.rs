@@ -1,11 +1,3 @@
-#![allow(unused_variables)]
-#![allow(dead_code)]
-#![allow(unused_mut)]
-#![allow(unused_assignments)]
-#![allow(unused_imports)]
-#![allow(unused_macros)]
-#![allow(non_upper_case_globals)]
-
 use rex_ast::{assert_expr_eq, d, f, n, s, tup, u};
 use rex_engine::{
     codec::{Decode, Encode},
@@ -18,6 +10,7 @@ use rex_type_system::{
     adt, tuple,
     types::{ADTVariant, ToType, Type, ADT},
 };
+use std::sync::Arc;
 
 #[allow(dead_code)]
 #[test]
@@ -39,7 +32,7 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyInnerStruct::to_type(),
-        Type::ADT(adt!(
+        Arc::new(Type::ADT(adt!(
             MyInnerStruct = MyInnerStruct {
                 x: bool!(),
                 y: int!(),
@@ -47,7 +40,7 @@ pub fn derive_struct() {
                 w: list![string!()],
                 renamed: tuple!(bool!(), int!(), float!(), list![string!()])
             }
-        ))
+        )))
     );
 
     #[derive(Rex)]
@@ -63,7 +56,7 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyStruct::to_type(),
-        Type::ADT(adt!(
+        Arc::new(Type::ADT(adt!(
             MyStruct = MyStruct {
                 x: bool!(),
                 y: int!(),
@@ -73,7 +66,7 @@ pub fn derive_struct() {
                 u: MyInnerStruct::to_type(),
                 v: list![MyInnerStruct::to_type()]
             }
-        ))
+        )))
     );
 
     #[derive(Rex)]
@@ -89,11 +82,11 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyTupleStruct::to_type(),
-        Type::ADT(ADT {
+        Arc::new(Type::ADT(ADT {
             name: String::from("MyTupleStruct"),
             variants: vec![ADTVariant {
                 name: String::from("MyTupleStruct"),
-                t: Some(Box::new(tuple!(
+                t: Some(tuple!(
                     bool!(),
                     int!(),
                     float!(),
@@ -101,12 +94,12 @@ pub fn derive_struct() {
                     tuple!(bool!(), int!(), float!(), list![string!()]),
                     MyInnerStruct::to_type(),
                     list![MyInnerStruct::to_type()]
-                ))),
+                )),
                 docs: None,
                 t_docs: None,
             }],
             docs: None,
-        })
+        }))
     );
 
     #[derive(Rex)]
@@ -114,7 +107,7 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyEmptyStruct::to_type(),
-        Type::ADT(ADT {
+        Arc::new(Type::ADT(ADT {
             name: String::from("MyEmptyStruct"),
             variants: vec![ADTVariant {
                 name: String::from("MyEmptyStruct"),
@@ -123,7 +116,7 @@ pub fn derive_struct() {
                 t_docs: None,
             }],
             docs: None,
-        })
+        }))
     );
 
     #[derive(Rex)]
@@ -131,7 +124,7 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyEmptyTupleStruct::to_type(),
-        Type::ADT(ADT {
+        Arc::new(Type::ADT(ADT {
             name: String::from("MyEmptyTupleStruct"),
             variants: vec![ADTVariant {
                 name: String::from("MyEmptyTupleStruct"),
@@ -140,7 +133,7 @@ pub fn derive_struct() {
                 t_docs: None,
             }],
             docs: None,
-        })
+        }))
     );
 
     #[derive(Rex)]
@@ -148,11 +141,11 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyUnitStruct::to_type(),
-        Type::ADT(ADT {
+        Arc::new(Type::ADT(ADT {
             name: String::from("MyUnitStruct"),
             variants: vec![],
             docs: None,
-        })
+        }))
     );
 }
 
@@ -175,7 +168,7 @@ pub fn derive_enum() {
 
     assert_eq!(
         MyInnerStruct::to_type(),
-        Type::ADT(adt!(
+        Arc::new(Type::ADT(adt!(
             MyInnerStruct = MyInnerStruct {
                 x: bool!(),
                 y: int!(),
@@ -183,7 +176,7 @@ pub fn derive_enum() {
                 w: list![string!()],
                 t: tuple!(bool!(), int!(), float!(), list![string!()])
             }
-        ))
+        )))
     );
 
     /// MyEnum has been documented.
@@ -224,7 +217,7 @@ pub fn derive_enum() {
 
     assert_eq!(
         MyEnum::to_type(),
-        Type::ADT(ADT {
+        Arc::new(Type::ADT(ADT {
             docs: Some(
                 r#"MyEnum has been documented.
 
@@ -266,25 +259,25 @@ MyEnum::Z{}
                 },
                 ADTVariant {
                     name: "W".to_string(),
-                    t: Some(Box::new(bool!())),
+                    t: Some(bool!()),
                     docs: None,
                     t_docs: None,
                 },
                 ADTVariant {
                     name: "T".to_string(),
-                    t: Some(Box::new(tuple!(int!(), float!(), list![string!()]))),
+                    t: Some(tuple!(int!(), float!(), list![string!()])),
                     docs: None,
                     t_docs: None,
                 },
                 ADTVariant {
                     name: "U".to_string(),
-                    t: Some(Box::new(dict! {
+                    t: Some(dict! {
                         x: bool!(),
                         y: int!(),
                         z: float!(),
                         w: list![string!()],
                         renamed: tuple!(bool!(), int!(), float!(), list![string!()]),
-                    })),
+                    }),
                     docs: None,
                     t_docs: Some(
                         [
@@ -303,12 +296,12 @@ MyEnum::Z{}
                 },
                 ADTVariant {
                     name: "Renamed".to_string(),
-                    t: Some(Box::new(MyInnerStruct::to_type())),
+                    t: Some(MyInnerStruct::to_type()),
                     docs: None,
                     t_docs: None,
                 }
             ]
-        })
+        }))
     );
 }
 
@@ -352,7 +345,7 @@ async fn adt_enum_int() {
         Blue = 3,
     }
 
-    assert_eq!(Color::to_type(), Type::Uint);
+    assert_eq!(Color::to_type(), Arc::new(Type::Uint));
 }
 
 #[tokio::test]
