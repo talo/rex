@@ -41,13 +41,7 @@ where
                 }
             }
 
-            // Temporarily make t mutable so we can resolve its type
-            // unresolved variables
-            let t = {
-                let mut t = t;
-                t.resolve_vars(&assignments);
-                t
-            };
+            let t = t.resolve_vars(&assignments);
 
             // Build the type from inside out
             let mut for_all = t;

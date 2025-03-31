@@ -57,49 +57,62 @@ impl Type {
         }
     }
 
-    pub fn resolve_vars(&mut self, assignments: &HashMap<String, Type>) {
+    pub fn resolve_vars(&self, assignments: &HashMap<String, Type>) -> Type {
         match self {
             Type::UnresolvedVar(x) => {
                 if let Some(t) = assignments.get(x) {
-                    *self = t.clone();
+                    t.clone()
+                } else {
+                    Type::UnresolvedVar(x.clone())
                 }
             }
-            Type::Var(_) => {}
-            Type::ForAll(_, t, _) => t.resolve_vars(assignments),
-            Type::ADT(adt) => {
-                for variant in &mut adt.variants {
-                    if let Some(t) = &mut variant.t {
-                        t.resolve_vars(assignments);
-                    }
-                }
-            }
-            Type::Arrow(a, b) => {
-                a.resolve_vars(assignments);
-                b.resolve_vars(assignments);
-            }
-            Type::Result(a, b) => {
-                a.resolve_vars(assignments);
-                b.resolve_vars(assignments);
-            }
-            Type::Option(t) => t.resolve_vars(assignments),
-            Type::List(t) => t.resolve_vars(assignments),
-            Type::Dict(xs) => {
-                for (_, v) in xs {
-                    v.resolve_vars(assignments);
-                }
-            }
+            Type::Var(v) => Type::Var(v.clone()),
+            Type::ForAll(id, t, ids) => Type::ForAll(
+                id.clone(),
+                Box::new(t.resolve_vars(assignments)),
+                ids.clone(),
+            ),
+            Type::ADT(adt) => Type::ADT(ADT {
+                name: adt.name.clone(),
+                variants: adt
+                    .variants
+                    .iter()
+                    .map(|variant| ADTVariant {
+                        name: variant.name.clone(),
+                        t: variant
+                            .t
+                            .as_ref()
+                            .map(|t| Box::new(t.resolve_vars(assignments))),
+                        docs: variant.docs.clone(),
+                        t_docs: variant.t_docs.clone(),
+                    })
+                    .collect(),
+                docs: adt.docs.clone(),
+            }),
+            Type::Arrow(a, b) => Type::Arrow(
+                Box::new(a.resolve_vars(assignments)),
+                Box::new(b.resolve_vars(assignments)),
+            ),
+            Type::Result(a, b) => Type::Result(
+                Box::new(a.resolve_vars(assignments)),
+                Box::new(b.resolve_vars(assignments)),
+            ),
+            Type::Option(t) => Type::Option(Box::new(t.resolve_vars(assignments))),
+            Type::List(t) => Type::List(Box::new(t.resolve_vars(assignments))),
+            Type::Dict(xs) => Type::Dict(BTreeMap::from_iter(
+                xs.iter()
+                    .map(|(k, v)| (k.clone(), v.resolve_vars(assignments))),
+            )),
             Type::Tuple(xs) => {
-                for x in xs {
-                    x.resolve_vars(assignments);
-                }
+                Type::Tuple(xs.iter().map(|x| x.resolve_vars(assignments)).collect())
             }
-            Type::Bool => {}
-            Type::Uint => {}
-            Type::Int => {}
-            Type::Float => {}
-            Type::String => {}
-            Type::Uuid => {}
-            Type::DateTime => {}
+            Type::Bool => Type::Bool,
+            Type::Uint => Type::Uint,
+            Type::Int => Type::Int,
+            Type::Float => Type::Float,
+            Type::String => Type::String,
+            Type::Uuid => Type::Uuid,
+            Type::DateTime => Type::DateTime,
         }
     }
 
