@@ -46,7 +46,8 @@ pub async fn main() -> anyhow::Result<()> {
                 .context("reading input file")?;
 
             let builder = Builder::with_prelude().unwrap();
-            let program = Program::compile(builder, &input_content).unwrap();
+            let mut program = Program::compile(builder, &input_content).unwrap();
+            program.trace_eval = true;
             let res = program.run(()).await;
 
             match res {

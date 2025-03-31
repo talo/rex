@@ -13,6 +13,7 @@ use rex_type_system::{
 use tokio::sync::RwLock;
 
 use crate::{error::Error, ftable::Ftable};
+use crate::{trace, traceln};
 
 #[derive(Clone)]
 pub struct Context<State>
@@ -24,6 +25,7 @@ where
     pub subst: Subst,
     pub env: Arc<RwLock<ExprTypeEnv>>,
     pub state: State,
+    pub trace_eval: bool,
 }
 
 #[async_recursion::async_recursion]
@@ -136,12 +138,12 @@ where
     State: Clone + Send + Sync + 'static,
 {
     let var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
-    print!("evaluating var: ({}):({})...", var, var_type);
+    trace!(ctx, "evaluating var: ({}):({})...", var, var_type);
 
     if let Some(expr) = ctx.scope.get(&var.name) {
         let expr_type =
             unify::apply_subst(ctx.env.read().await.get(expr.id()).unwrap(), &ctx.subst);
-        println!(" found in scope: {}:{}", expr, expr_type);
+        traceln!(ctx, " found in scope: {}:{}", expr, expr_type);
 
         let mut new_expr = expr.clone();
         *new_expr.id_mut() = Id::new();
@@ -159,7 +161,7 @@ where
             // We have arrived at a concrete value
             new_expr.clone()
         } else {
-            println!(" overriding with type: {}", var_type);
+            traceln!(ctx, " overriding with type: {}", var_type);
             // We have not arrived at a concrete value
             eval(ctx, &new_expr).await?
         };
@@ -178,18 +180,21 @@ where
         if f_type.num_params() == 0 {
             let res = f(ctx, &vec![]).await?;
             ctx.env.write().await.insert(*res.id(), var_type.clone());
-            println!(
+            traceln!(
+                ctx,
                 " found in ftable: {} and evaluated to: ({}):({})",
-                f_type, res, var_type
+                f_type,
+                res,
+                var_type
             );
             return Ok(res);
         }
-        println!(" found in ftable: {}", var_type);
+        traceln!(ctx, " found in ftable: {}", var_type);
 
         return Ok(Expr::Var(var.clone()));
     }
 
-    println!(" not found in ftable!");
+    traceln!(ctx, " not found in ftable!");
     Err(Error::VarNotFound { var: var.clone() })
 }
 
@@ -204,7 +209,7 @@ where
     State: Clone + Send + Sync + 'static,
 {
     let fx_type = unify::apply_subst(ctx.env.read().await.get(id).unwrap(), &ctx.subst);
-    println!("applying: ({} {}): {}", f, x, fx_type);
+    traceln!(ctx, "applying: ({} {}): {}", f, x, fx_type);
     apply(ctx, f, x).await
 }
 
@@ -241,17 +246,26 @@ where
                 match f_type.num_params() {
                     0 => panic!("Function application on non-function type"),
                     1 => {
-                        println!(
+                        traceln!(
+                            ctx,
                             "calling function: ({}:{}) ({}:{}) results in type: {}",
-                            &var, &f_type, &x, &x_type, &b_type
+                            &var,
+                            &f_type,
+                            &x,
+                            &x_type,
+                            &b_type
                         );
                         f(ctx, &vec![x]).await?
                     }
                     // TODO(loong): fix the span.
                     _ => {
-                        println!(
+                        traceln!(
+                            ctx,
                             "creating curry: ({}:{}) ({}:{})",
-                            &var, &f_type, &x, &x_type
+                            &var,
+                            &f_type,
+                            &x,
+                            &x_type
                         );
 
                         let mut x = x.clone();
@@ -315,7 +329,8 @@ where
             // The solution is to alter the way a curried function is actually
             // called by the `ftable` and it loops until all arguments are
             // consumed.
-            println!(
+            traceln!(
+                ctx,
                 "pushing to args: {}[{}] arg: {}",
                 var,
                 args.iter()
@@ -341,7 +356,8 @@ where
                     ));
                 }
 
-                println!(
+                traceln!(
+                    ctx,
                     "curried function lookup: ({}:{}) {} -> ({})",
                     &var,
                     &f_type,
@@ -356,14 +372,19 @@ where
                 let f = ctx.ftable.lookup_fns(&var.name, f_type.clone()).next();
 
                 if let Some((f, found_ftype)) = f {
-                    println!("  ↳curried function found: {}", found_ftype);
-                    println!(
+                    traceln!(ctx, "  ↳curried function found: {}", found_ftype);
+                    traceln!(
+                        ctx,
                         "  ↳calling curried function: ({}:{}) ({}:{}) results in type: {}",
-                        &var, &f_type, &x, &x_type, &b_type
+                        &var,
+                        &f_type,
+                        &x,
+                        &x_type,
+                        &b_type
                     );
                     let res = f(ctx, &args).await?;
 
-                    println!("  ↳curry function result: {}", &res);
+                    traceln!(ctx, "  ↳curry function result: {}", &res);
                     res
                 } else {
                     panic!("Function not found: {}:{}", var.name, f_type)

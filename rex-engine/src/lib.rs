@@ -3,4 +3,5 @@ pub mod engine;
 pub mod error;
 pub mod eval;
 pub mod ftable;
+pub mod macros;
 pub mod program;

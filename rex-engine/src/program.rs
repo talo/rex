@@ -25,6 +25,7 @@ where
     pub expr: Expr,
     pub expr_type_env: ExprTypeEnv,
     pub subst: Subst,
+    pub trace_eval: bool,
 }
 
 impl<State> Program<State>
@@ -55,6 +56,7 @@ where
             expr,
             expr_type_env,
             subst,
+            trace_eval: false,
         })
     }
 
@@ -66,6 +68,7 @@ where
                 subst: self.subst,
                 env: Arc::new(RwLock::new(self.expr_type_env)),
                 state: state,
+                trace_eval: self.trace_eval,
             },
             &self.expr,
         )
