@@ -44,10 +44,26 @@ where
         let (mut constraint_system, ftable, type_env) = builder.build();
 
         let mut expr_type_env = ExprTypeEnv::new();
+        println!(
+            "    initial:                    local = {}, global = {}",
+            constraint_system.local_constraints.len(),
+            constraint_system.global_constraints.len()
+        );
         let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
             .map_err(|e| Error::TypeInference(e))?;
+        println!(
+            "    after generate_constraints: local = {}, global = {}",
+            constraint_system.local_constraints.len(),
+            constraint_system.global_constraints.len()
+        );
         let subst =
             unify::unify_constraints(&constraint_system).map_err(|e| Error::TypeInference(e))?;
+        println!(
+            "    after unify_constraints:    local = {}, global = {}, subst = {}",
+            constraint_system.local_constraints.len(),
+            constraint_system.global_constraints.len(),
+            subst.len()
+        );
 
         let res_type = unify::apply_subst(&ty, &subst);
         Ok(Program {
