@@ -7,9 +7,11 @@
 #![allow(non_upper_case_globals)]
 
 use rex_ast::{assert_expr_eq, d, f, n, s, tup, u};
-use rex_engine::codec::{Decode, Encode};
-use rex_engine::engine::Builder;
-use rex_engine::util::parse_infer_and_eval_with_builder;
+use rex_engine::{
+    codec::{Decode, Encode},
+    engine::Builder,
+    program::Program,
+};
 use rex_lexer::span::Span;
 use rex_proc_macro::Rex;
 use rex_type_system::{
@@ -322,13 +324,12 @@ async fn adt_enum() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Color::to_type());
-    let (res, res_type) = parse_infer_and_eval_with_builder(builder, r#"(Red, Green, Blue)"#)
-        .await
-        .unwrap();
+    let program = Program::compile(builder, r#"(Red, Green, Blue)"#).unwrap();
     assert_eq!(
-        res_type,
+        program.res_type,
         tuple!(Color::to_type(), Color::to_type(), Color::to_type())
     );
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         tup!(n!("Red", None), n!("Green", None), n!("Blue", None));
@@ -365,11 +366,9 @@ async fn adt_variant_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type());
-    let (res, res_type) =
-        parse_infer_and_eval_with_builder(builder, r#"Rectangle (2.0 * 3.0) (4.0 * 5.0)"#)
-            .await
-            .unwrap();
-    assert_eq!(res_type, Shape::to_type());
+    let program = Program::compile(builder, r#"Rectangle (2.0 * 3.0) (4.0 * 5.0)"#).unwrap();
+    assert_eq!(program.res_type, Shape::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Rectangle", Some(tup!(f!(6.0), f!(20.0))));
@@ -385,10 +384,9 @@ async fn adt_variant_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type());
-    let (res, res_type) = parse_infer_and_eval_with_builder(builder, r#"Circle (3.0 * 4.0)"#)
-        .await
-        .unwrap();
-    assert_eq!(res_type, Shape::to_type());
+    let program = Program::compile(builder, r#"Circle (3.0 * 4.0)"#).unwrap();
+    assert_eq!(program.res_type, Shape::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Circle", Some(f!(12.0)));
@@ -414,13 +412,13 @@ async fn adt_variant_struct() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type());
-    let (res, res_type) = parse_infer_and_eval_with_builder(
+    let program = Program::compile(
         builder,
         r#"Rectangle { width = 2.0 * 3.0, height = 4.0 * 5.0 }"#,
     )
-    .await
     .unwrap();
-    assert_eq!(res_type, Shape::to_type());
+    assert_eq!(program.res_type, Shape::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Rectangle", Some(d!(width = f!(6.0), height = f!(20.0))));
@@ -449,11 +447,10 @@ async fn adt_struct() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Movie::to_type());
-    let (res, res_type) =
-        parse_infer_and_eval_with_builder(builder, r#"Movie { title = "Godzilla", year = 1954 }"#)
-            .await
-            .unwrap();
-    assert_eq!(res_type, Movie::to_type());
+    let program =
+        Program::compile(builder, r#"Movie { title = "Godzilla", year = 1954 }"#).unwrap();
+    assert_eq!(program.res_type, Movie::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Movie", Some(d!(title = s!("Godzilla"), year = u!(1954))));
@@ -477,10 +474,9 @@ async fn adt_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Movie::to_type());
-    let (res, res_type) = parse_infer_and_eval_with_builder(builder, r#"Movie "Godzilla" 1954 }"#)
-        .await
-        .unwrap();
-    assert_eq!(res_type, Movie::to_type());
+    let program = Program::compile(builder, r#"Movie "Godzilla" 1954 }"#).unwrap();
+    assert_eq!(program.res_type, Movie::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Movie", Some(tup!(s!("Godzilla"), u!(1954))));
@@ -501,10 +497,9 @@ async fn adt_unary_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Movie::to_type());
-    let (res, res_type) = parse_infer_and_eval_with_builder(builder, r#"Movie "Godzilla" }"#)
-        .await
-        .unwrap();
-    assert_eq!(res_type, Movie::to_type());
+    let program = Program::compile(builder, r#"Movie "Godzilla" }"#).unwrap();
+    assert_eq!(program.res_type, Movie::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Movie", Some(s!("Godzilla")));
@@ -528,13 +523,13 @@ async fn adt_curry() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Shape::to_type());
-    let (res, res_type) = parse_infer_and_eval_with_builder(
+    let program = Program::compile(
         builder,
         r#"let partial = Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#,
     )
-    .await
     .unwrap();
-    assert_eq!(res_type, tuple!(Shape::to_type(), Shape::to_type()));
+    assert_eq!(program.res_type, tuple!(Shape::to_type(), Shape::to_type()));
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         tup!(

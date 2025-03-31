@@ -447,14 +447,24 @@ where
 
 #[cfg(test)]
 pub mod test {
+    use crate::{engine::Builder, program::Program};
     use rex_ast::{assert_expr_eq, b, d, f, i, l, n, s, tup, u};
     use rex_type_system::{
         bool, dict, float, int, list, option, result, string, tuple, types::Type, uint,
     };
 
-    use crate::util::parse_infer_and_eval;
-
     use super::*;
+
+    /// Helper function for parsing, inferring, and evaluating a given code
+    /// snippet. Pretty much all of the test suites can use this flow for
+    /// testing that the engine is correctly evaluating types and expressions.
+    async fn parse_infer_and_eval(code: &str) -> Result<(Expr, Type), Error> {
+        let builder: Builder<()> = Builder::with_prelude().unwrap();
+        let program = Program::compile(builder, code)?;
+        let res_type = program.res_type.clone();
+        let res = program.run(()).await;
+        res.map(|res| (res, res_type))
+    }
 
     #[tokio::test]
     async fn test_literals() {
