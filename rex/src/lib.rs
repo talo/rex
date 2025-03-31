@@ -8,6 +8,7 @@ pub mod engine {
 pub mod lexer {
     pub use rex_lexer::*;
 }
+pub mod json;
 pub mod parser {
     pub use rex_parser::*;
 }

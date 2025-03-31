@@ -650,6 +650,7 @@ name = "rex"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "rex-ast",
  "rex-engine",
@@ -658,9 +659,11 @@ dependencies = [
  "rex-proc-macro",
  "rex-type-system",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
