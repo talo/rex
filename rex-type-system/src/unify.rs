@@ -10,14 +10,46 @@ use crate::{
     types::{ADTVariant, Type, ADT},
 };
 
-pub type Subst = HashMap<Id, Arc<Type>>;
+#[derive(Clone)]
+pub struct Subst {
+    entries: HashMap<Id, Arc<Type>>,
+    changed: bool,
+}
+
+impl Subst {
+    pub fn new() -> Self {
+        Subst {
+            entries: HashMap::new(),
+            changed: false,
+        }
+    }
+
+    pub fn get(&self, id: &Id) -> Option<&Arc<Type>> {
+        self.entries.get(id)
+    }
+
+    pub fn insert(&mut self, id: Id, t: Arc<Type>) {
+        self.entries.insert(id, t);
+        self.changed = true;
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn entries_iter(&self) -> std::collections::hash_map::Iter<'_, Id, Arc<Type>> {
+        self.entries.iter()
+    }
+}
 
 // NOTE(loong): We do not support overloaded parametric polymorphism.
 pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, String> {
     let mut subst = Subst::new();
-    // FIXME(loong): loop until no more progress is made in resolving
-    // constraints instead of dumbly looping 100 times.
-    for _ in 1..100 {
+    // Loop until no more progress is made in resolving. We often need multiple iterations
+    // because unifications that happen in later contraints may enable unifications in earlier
+    // ones.
+    loop {
+        subst.changed = false;
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(t1, t2) => {
@@ -38,6 +70,10 @@ pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, 
                     unify_one_of(t1, t2_possibilties, &mut subst)?;
                 }
             }
+        }
+
+        if !subst.changed {
+            break;
         }
     }
     Ok(subst)
@@ -309,7 +345,7 @@ mod tests {
         let alpha = Id::new();
         let beta = Id::new();
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
 
         // Test case 1: α = Int
         let t1 = Arc::new(Type::Var(alpha));
@@ -342,7 +378,7 @@ mod tests {
         let alpha = Id::new();
         let beta = Id::new();
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
 
         // Unify α = β
         let t1 = Arc::new(Type::Var(alpha));
@@ -362,7 +398,7 @@ mod tests {
         let beta = Id::new();
         let gamma = Id::new();
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
 
         // f : α -> β
         let f_type = Arc::new(Type::Arrow(
@@ -402,7 +438,7 @@ mod tests {
         let beta = Id::new();
         let gamma = Id::new();
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
 
         // f : α -> β
         let f_type = Arc::new(Type::Arrow(
@@ -453,7 +489,7 @@ mod tests {
         let gamma = Id::new();
         let delta = Id::new();
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
 
         // f : (α -> β) -> γ
         let f_type = Arc::new(Type::Arrow(

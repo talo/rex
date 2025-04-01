@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     fmt::{self, Display, Formatter},
     sync::Arc,
 };
@@ -587,12 +587,11 @@ fn generalize(env: &TypeEnv, ty: &Arc<Type>, deps: BTreeSet<Id>) -> Arc<Type> {
 
 // Instantiate a type by replacing quantified variables with fresh ones
 fn instantiate(ty: &Arc<Type>, constraint_system: &mut ConstraintSystem) -> Arc<Type> {
-    let mut subst = HashMap::new();
+    let mut subst = Subst::new();
 
     fn inst_helper(
         ty: &Arc<Type>,
-        subst: &mut HashMap<Id, Arc<Type>>,
-
+        subst: &mut Subst,
         constraint_system: &mut ConstraintSystem,
     ) -> Arc<Type> {
         let result = match &**ty {
@@ -705,6 +704,7 @@ fn instantiate(ty: &Arc<Type>, constraint_system: &mut ConstraintSystem) -> Arc<
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::collections::HashMap;
 
     use rex_ast::expr::{Scope, Var};
     use rex_lexer::span::Span;
@@ -830,7 +830,7 @@ mod tests {
         let ty = generate_constraints(&expr, &env, &mut expr_env, &mut constraint_system)?;
 
         // Solve constraints
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst)?,
@@ -936,7 +936,7 @@ mod tests {
         let _ty = generate_constraints(&expr, &env, &mut expr_env, &mut constraint_system)?;
 
         // This should fail unification because the list elements don't match
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
@@ -1329,7 +1329,7 @@ mod tests {
         let mut expr_env = ExprTypeEnv::new();
         let result = generate_constraints(&expr, &env, &mut expr_env, &mut constraint_system)
             .and_then(|ty| {
-                let mut subst = HashMap::new();
+                let mut subst = Subst::new();
                 for constraint in constraint_system.constraints() {
                     match constraint {
                         Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst)?,
@@ -1584,7 +1584,7 @@ mod tests {
         let mut expr_env = ExprTypeEnv::new();
         let _ty = generate_constraints(&expr, &env, &mut expr_env, &mut constraint_system)?;
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
 
         // This should fail because both types are possible
         let result = constraint_system
