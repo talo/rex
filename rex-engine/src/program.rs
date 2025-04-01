@@ -21,7 +21,7 @@ where
     State: Clone + Send + Sync + 'static,
 {
     pub ftable: Ftable<State>,
-    pub res_type: Type,
+    pub res_type: Arc<Type>,
     pub expr: Expr,
     pub expr_type_env: ExprTypeEnv,
     pub subst: Subst,

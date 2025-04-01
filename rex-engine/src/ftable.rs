@@ -1,5 +1,4 @@
-use std::fmt;
-use std::{collections::HashMap, future::Future, pin::Pin};
+use std::{collections::HashMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
@@ -135,7 +134,7 @@ where
 }
 
 #[derive(Clone)]
-pub struct Ftable<State>(pub HashMap<String, Vec<(Type, FtableFn<State>)>>)
+pub struct Ftable<State>(pub HashMap<String, Vec<(Arc<Type>, FtableFn<State>)>>)
 where
     State: Clone + Sync + 'static;
 
@@ -152,13 +151,17 @@ where
     }
 
     // NOTE(loong): We do not support overloaded parametric polymorphism.
-    pub fn lookup_fns(&self, n: &str, t: Type) -> impl Iterator<Item = (&FtableFn<State>, &Type)> {
+    pub fn lookup_fns(
+        &self,
+        n: &str,
+        t: &Type,
+    ) -> impl Iterator<Item = (&FtableFn<State>, &Arc<Type>)> {
         self.0
             .get(n)
             .map(|v| v.iter())
             .into_iter()
             .flatten()
-            .filter_map(move |(ftype, f)| match ftype.maybe_compatible(&t) {
+            .filter_map(move |(ftype, f)| match ftype.maybe_compatible(t) {
                 Ok(()) => Some((f, ftype)),
                 Err(_e) => None,
             })
@@ -271,8 +274,8 @@ macro_rules! define_polymorphic_types {
             }
 
             impl ToType for $ty {
-                fn to_type() -> ::rex_type_system::types::Type {
-                    Type::UnresolvedVar(stringify!($ty).to_string())
+                fn to_type() -> ::std::sync::Arc<::rex_type_system::types::Type> {
+                    ::std::sync::Arc::new(::rex_type_system::types::Type::UnresolvedVar(stringify!($ty).to_string()))
                 }
             }
 

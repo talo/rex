@@ -7,6 +7,7 @@ use std::{
     future::Future,
     pin::Pin,
     str::FromStr,
+    sync::Arc,
 };
 
 use crate::{
@@ -22,7 +23,7 @@ use rex_ast::id::Id;
 use rex_lexer::span::Span;
 use uuid::Uuid;
 
-fn register_fn_core<State>(builder: &mut Builder<State>, n: &str, t: Type)
+fn register_fn_core<State>(builder: &mut Builder<State>, n: &str, t: Arc<Type>)
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -37,7 +38,7 @@ where
             let mut assignments = HashMap::new();
             for var in &unresolved_vars {
                 if let None = assignments.get(var) {
-                    assignments.insert(var.clone(), Type::Var(Id::new()));
+                    assignments.insert(var.clone(), Arc::new(Type::Var(Id::new())));
                 }
             }
 
@@ -46,8 +47,8 @@ where
             // Build the type from inside out
             let mut for_all = t;
             for var in assignments.into_values() {
-                if let Type::Var(var) = var {
-                    for_all = Type::ForAll(var, Box::new(for_all), BTreeSet::new());
+                if let Type::Var(var) = *var {
+                    for_all = Arc::new(Type::ForAll(var.clone(), for_all, BTreeSet::new()));
                 } else {
                     panic!("Expected a type variable");
                 }
@@ -57,10 +58,13 @@ where
         }
         None => {
             let new_id = Id::new();
+            builder.fconstraints.insert(
+                n.to_string(),
+                Constraint::Eq(Arc::new(Type::Var(new_id)), t),
+            );
             builder
-                .fconstraints
-                .insert(n.to_string(), Constraint::Eq(Type::Var(new_id), t));
-            builder.ftenv.insert(n.to_string(), Type::Var(new_id));
+                .ftenv
+                .insert(n.to_string(), Arc::new(Type::Var(new_id)));
         }
         Some(_) if !unresolved_vars.is_empty() => {
             panic!("Attempt to overload function {} with generic type {}", n, t);
@@ -485,22 +489,22 @@ where
         Ok(this)
     }
 
-    pub fn register_fn_core_with_name(&mut self, name: &str, t: &Type, f: FtableFn<State>) {
+    pub fn register_fn_core_with_name(&mut self, name: &str, t: Arc<Type>, f: FtableFn<State>) {
         register_fn_core(self, name, t.clone());
         self.ftable
             .0
             .entry(name.to_string())
             .or_default()
-            .push((t.clone(), f));
+            .push((t, f));
     }
 
     pub fn register_adt(
         &mut self,
-        adt_type: &Type,
+        adt_type: &Arc<Type>,
         prefix: Option<&str>,
         defaults: Option<&BTreeMap<String, FtableFn<State>>>,
     ) {
-        let Type::ADT(adt) = adt_type else {
+        let Type::ADT(adt) = &**adt_type else {
             panic!("register_adt) called with non-ADT type: {}", adt_type);
         };
 
@@ -518,7 +522,7 @@ where
 
     pub fn register_adt_variant(
         &mut self,
-        adt_type: &Type,
+        adt_type: &Arc<Type>,
         variant: &ADTVariant,
         prefix: Option<&str>,
         defaults: Option<&BTreeMap<String, FtableFn<State>>>,
@@ -547,11 +551,11 @@ where
             (Some(Type::Tuple(fields)), _) => {
                 let mut fun_type = adt_type.clone();
                 for field in fields.iter().rev() {
-                    fun_type = Type::Arrow(Box::new(field.clone()), Box::new(fun_type));
+                    fun_type = Arc::new(Type::Arrow(field.clone(), fun_type));
                 }
                 self.register_fn_core_with_name(
                     &constructor_name,
-                    &fun_type,
+                    fun_type,
                     Box::new(move |_, args| {
                         let base_name = base_name.clone();
                         Box::pin(async move {
@@ -570,20 +574,20 @@ where
                 );
             }
             (Some(Type::Dict(entries)), Some(defaults)) => {
-                let mut entries_without_defaults: BTreeMap<String, Type> = BTreeMap::new();
+                let mut entries_without_defaults: BTreeMap<String, Arc<Type>> = BTreeMap::new();
                 for (k, v) in entries.iter() {
                     if !defaults.contains_key(k) {
                         entries_without_defaults.insert(k.clone(), v.clone());
                     }
                 }
-                let t = Type::Dict(entries_without_defaults);
+                let t = Arc::new(Type::Dict(entries_without_defaults));
 
-                let fun_type = Type::Arrow(Box::new(t.clone()), Box::new(adt_type.clone()));
+                let fun_type = Arc::new(Type::Arrow(t.clone(), adt_type.clone()));
                 let defaults: BTreeMap<String, FtableFn<State>> = (*defaults).clone();
                 let base_name1 = base_name.clone();
                 self.register_fn_core_with_name(
                     &constructor_name,
-                    &fun_type,
+                    fun_type,
                     Box::new(move |ctx, args| {
                         let base_name = base_name1.clone();
                         let defaults = defaults.clone();
@@ -612,13 +616,13 @@ where
                 for (entry_key, entry_type) in entries.iter() {
                     let entry_key2 = entry_key.clone();
                     let accessor_fun_type =
-                        Type::Arrow(Box::new(adt_type.clone()), Box::new(entry_type.clone()));
+                        Arc::new(Type::Arrow(adt_type.clone(), entry_type.clone()));
                     let base_name1 = base_name.clone();
 
                     let full_name = format!("{}_{}", base_name, entry_key);
                     self.register_fn_core_with_name(
                         &full_name,
-                        &accessor_fun_type,
+                        accessor_fun_type,
                         Box::new(move |_, args: &Vec<Expr>| {
                             let entry_key2 = entry_key2.clone();
                             let adt_name = base_name1.clone();
@@ -655,11 +659,11 @@ where
                 }
             }
             _ => {
-                if let Some(t) = variant.t.as_ref().map(|t| &**t) {
-                    let fun_type = Type::Arrow(Box::new(t.clone()), Box::new(adt_type.clone()));
+                if let Some(t) = &variant.t {
+                    let fun_type = Arc::new(Type::Arrow(t.clone(), adt_type.clone()));
                     self.register_fn_core_with_name(
                         &constructor_name,
-                        &fun_type,
+                        fun_type,
                         Box::new(move |_, args| {
                             let base_name = base_name.clone();
                             Box::pin(async move {
@@ -676,7 +680,7 @@ where
                 } else {
                     self.register_fn_core_with_name(
                         &constructor_name,
-                        adt_type,
+                        adt_type.clone(),
                         Box::new(move |_, _| {
                             let base_name = base_name.clone();
                             Box::pin(async move {

@@ -1,30 +1,31 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     fmt::{self, Display, Formatter},
+    sync::Arc,
 };
 
 use chrono::{DateTime, Utc};
 use rex_ast::id::Id;
 use uuid::Uuid;
 
-pub type TypeEnv = HashMap<String, Type>;
+pub type TypeEnv = HashMap<String, Arc<Type>>;
 
-pub type ExprTypeEnv = HashMap<Id, Type>;
+pub type ExprTypeEnv = HashMap<Id, Arc<Type>>;
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Type {
     UnresolvedVar(String),
     Var(Id),
-    ForAll(Id, Box<Type>, BTreeSet<Id>),
+    ForAll(Id, Arc<Type>, BTreeSet<Id>),
 
     ADT(ADT),
-    Arrow(Box<Type>, Box<Type>),
-    Result(Box<Type>, Box<Type>),
-    Option(Box<Type>),
-    List(Box<Type>),
-    Dict(BTreeMap<String, Type>),
-    Tuple(Vec<Type>),
+    Arrow(Arc<Type>, Arc<Type>),
+    Result(Arc<Type>, Arc<Type>),
+    Option(Arc<Type>),
+    List(Arc<Type>),
+    Dict(BTreeMap<String, Arc<Type>>),
+    Tuple(Vec<Arc<Type>>),
 
     Bool,
     Uint,
@@ -36,11 +37,11 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn build_arrow(params: Vec<Type>, ret: Type) -> Type {
+    pub fn build_arrow(params: Vec<Arc<Type>>, ret: Arc<Type>) -> Arc<Type> {
         params
             .into_iter()
             .rev()
-            .fold(ret, |acc, t| Type::Arrow(Box::new(t), Box::new(acc)))
+            .fold(ret, |acc, t| Arc::new(Type::Arrow(t, acc)))
     }
 
     pub fn num_params(&self) -> usize {
@@ -57,62 +58,59 @@ impl Type {
         }
     }
 
-    pub fn resolve_vars(&self, assignments: &HashMap<String, Type>) -> Type {
+    pub fn resolve_vars(&self, assignments: &HashMap<String, Arc<Type>>) -> Arc<Type> {
         match self {
             Type::UnresolvedVar(x) => {
                 if let Some(t) = assignments.get(x) {
                     t.clone()
                 } else {
-                    Type::UnresolvedVar(x.clone())
+                    Arc::new(Type::UnresolvedVar(x.clone()))
                 }
             }
-            Type::Var(v) => Type::Var(v.clone()),
-            Type::ForAll(id, t, ids) => Type::ForAll(
+            Type::Var(v) => Arc::new(Type::Var(v.clone())),
+            Type::ForAll(id, t, ids) => Arc::new(Type::ForAll(
                 id.clone(),
-                Box::new(t.resolve_vars(assignments)),
+                t.resolve_vars(assignments),
                 ids.clone(),
-            ),
-            Type::ADT(adt) => Type::ADT(ADT {
+            )),
+            Type::ADT(adt) => Arc::new(Type::ADT(ADT {
                 name: adt.name.clone(),
                 variants: adt
                     .variants
                     .iter()
                     .map(|variant| ADTVariant {
                         name: variant.name.clone(),
-                        t: variant
-                            .t
-                            .as_ref()
-                            .map(|t| Box::new(t.resolve_vars(assignments))),
+                        t: variant.t.as_ref().map(|t| t.resolve_vars(assignments)),
                         docs: variant.docs.clone(),
                         t_docs: variant.t_docs.clone(),
                     })
                     .collect(),
                 docs: adt.docs.clone(),
-            }),
-            Type::Arrow(a, b) => Type::Arrow(
-                Box::new(a.resolve_vars(assignments)),
-                Box::new(b.resolve_vars(assignments)),
-            ),
-            Type::Result(a, b) => Type::Result(
-                Box::new(a.resolve_vars(assignments)),
-                Box::new(b.resolve_vars(assignments)),
-            ),
-            Type::Option(t) => Type::Option(Box::new(t.resolve_vars(assignments))),
-            Type::List(t) => Type::List(Box::new(t.resolve_vars(assignments))),
-            Type::Dict(xs) => Type::Dict(BTreeMap::from_iter(
+            })),
+            Type::Arrow(a, b) => Arc::new(Type::Arrow(
+                a.resolve_vars(assignments),
+                b.resolve_vars(assignments),
+            )),
+            Type::Result(a, b) => Arc::new(Type::Result(
+                a.resolve_vars(assignments),
+                b.resolve_vars(assignments),
+            )),
+            Type::Option(t) => Arc::new(Type::Option(t.resolve_vars(assignments))),
+            Type::List(t) => Arc::new(Type::List(t.resolve_vars(assignments))),
+            Type::Dict(xs) => Arc::new(Type::Dict(BTreeMap::from_iter(
                 xs.iter()
                     .map(|(k, v)| (k.clone(), v.resolve_vars(assignments))),
+            ))),
+            Type::Tuple(xs) => Arc::new(Type::Tuple(
+                xs.iter().map(|x| x.resolve_vars(assignments)).collect(),
             )),
-            Type::Tuple(xs) => {
-                Type::Tuple(xs.iter().map(|x| x.resolve_vars(assignments)).collect())
-            }
-            Type::Bool => Type::Bool,
-            Type::Uint => Type::Uint,
-            Type::Int => Type::Int,
-            Type::Float => Type::Float,
-            Type::String => Type::String,
-            Type::Uuid => Type::Uuid,
-            Type::DateTime => Type::DateTime,
+            Type::Bool => Arc::new(Type::Bool),
+            Type::Uint => Arc::new(Type::Uint),
+            Type::Int => Arc::new(Type::Int),
+            Type::Float => Arc::new(Type::Float),
+            Type::String => Arc::new(Type::String),
+            Type::Uuid => Arc::new(Type::Uuid),
+            Type::DateTime => Arc::new(Type::DateTime),
         }
     }
 
@@ -382,7 +380,7 @@ impl Display for ADT {
 #[serde(rename_all = "lowercase")]
 pub struct ADTVariant {
     pub name: String,
-    pub t: Option<Box<Type>>,
+    pub t: Option<Arc<Type>>,
     pub docs: Option<String>,
     pub t_docs: Option<BTreeMap<String, String>>,
 }
@@ -400,108 +398,108 @@ impl Display for ADTVariant {
 }
 
 pub trait ToType {
-    fn to_type() -> Type;
+    fn to_type() -> Arc<Type>;
 }
 
 impl ToType for bool {
-    fn to_type() -> Type {
-        Type::Bool
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Bool)
     }
 }
 
 impl ToType for u8 {
-    fn to_type() -> Type {
-        Type::Uint
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Uint)
     }
 }
 
 impl ToType for u16 {
-    fn to_type() -> Type {
-        Type::Uint
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Uint)
     }
 }
 
 impl ToType for u32 {
-    fn to_type() -> Type {
-        Type::Uint
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Uint)
     }
 }
 
 impl ToType for u64 {
-    fn to_type() -> Type {
-        Type::Uint
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Uint)
     }
 }
 
 impl ToType for u128 {
-    fn to_type() -> Type {
-        Type::Uint
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Uint)
     }
 }
 
 impl ToType for i8 {
-    fn to_type() -> Type {
-        Type::Int
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Int)
     }
 }
 
 impl ToType for i16 {
-    fn to_type() -> Type {
-        Type::Int
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Int)
     }
 }
 
 impl ToType for i32 {
-    fn to_type() -> Type {
-        Type::Int
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Int)
     }
 }
 
 impl ToType for i64 {
-    fn to_type() -> Type {
-        Type::Int
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Int)
     }
 }
 
 impl ToType for i128 {
-    fn to_type() -> Type {
-        Type::Int
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Int)
     }
 }
 
 impl ToType for f32 {
-    fn to_type() -> Type {
-        Type::Float
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Float)
     }
 }
 
 impl ToType for f64 {
-    fn to_type() -> Type {
-        Type::Float
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Float)
     }
 }
 
 impl ToType for str {
-    fn to_type() -> Type {
-        Type::String
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::String)
     }
 }
 
 impl ToType for String {
-    fn to_type() -> Type {
-        Type::String
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::String)
     }
 }
 
 impl ToType for Uuid {
-    fn to_type() -> Type {
-        Type::Uuid
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Uuid)
     }
 }
 
 impl ToType for DateTime<Utc> {
-    fn to_type() -> Type {
-        Type::DateTime
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::DateTime)
     }
 }
 
@@ -509,7 +507,7 @@ impl<B> ToType for fn() -> B
 where
     B: ToType,
 {
-    fn to_type() -> Type {
+    fn to_type() -> Arc<Type> {
         B::to_type()
     }
 }
@@ -519,8 +517,8 @@ where
     A0: ToType,
     B: ToType,
 {
-    fn to_type() -> Type {
-        Type::Arrow(Box::new(A0::to_type()), Box::new(B::to_type()))
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Arrow(A0::to_type(), B::to_type()))
     }
 }
 
@@ -530,11 +528,11 @@ where
     A1: ToType,
     B: ToType,
 {
-    fn to_type() -> Type {
-        Type::Arrow(
-            Box::new(A0::to_type()),
-            Box::new(Type::Arrow(Box::new(A1::to_type()), Box::new(B::to_type()))),
-        )
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Arrow(
+            A0::to_type(),
+            Arc::new(Type::Arrow(A1::to_type(), B::to_type())),
+        ))
     }
 }
 
@@ -545,14 +543,14 @@ where
     A2: ToType,
     B: ToType,
 {
-    fn to_type() -> Type {
-        Type::Arrow(
-            Box::new(A0::to_type()),
-            Box::new(Type::Arrow(
-                Box::new(A1::to_type()),
-                Box::new(Type::Arrow(Box::new(A2::to_type()), Box::new(B::to_type()))),
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Arrow(
+            A0::to_type(),
+            Arc::new(Type::Arrow(
+                A1::to_type(),
+                Arc::new(Type::Arrow(A2::to_type(), B::to_type())),
             )),
-        )
+        ))
     }
 }
 
@@ -564,17 +562,17 @@ where
     A3: ToType,
     B: ToType,
 {
-    fn to_type() -> Type {
-        Type::Arrow(
-            Box::new(A0::to_type()),
-            Box::new(Type::Arrow(
-                Box::new(A1::to_type()),
-                Box::new(Type::Arrow(
-                    Box::new(A2::to_type()),
-                    Box::new(Type::Arrow(Box::new(A3::to_type()), Box::new(B::to_type()))),
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Arrow(
+            A0::to_type(),
+            Arc::new(Type::Arrow(
+                A1::to_type(),
+                Arc::new(Type::Arrow(
+                    A2::to_type(),
+                    Arc::new(Type::Arrow(A3::to_type(), B::to_type())),
                 )),
             )),
-        )
+        ))
     }
 }
 
@@ -583,8 +581,8 @@ where
     T: ToType,
     E: ToType,
 {
-    fn to_type() -> Type {
-        Type::Result(Box::new(T::to_type()), Box::new(E::to_type()))
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Result(T::to_type(), E::to_type()))
     }
 }
 
@@ -592,8 +590,8 @@ impl<T> ToType for Option<T>
 where
     T: ToType,
 {
-    fn to_type() -> Type {
-        Type::Option(Box::new(T::to_type()))
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Option(T::to_type()))
     }
 }
 
@@ -601,8 +599,8 @@ impl<T> ToType for [T]
 where
     T: ToType,
 {
-    fn to_type() -> Type {
-        Type::List(Box::new(T::to_type()))
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::List(T::to_type()))
     }
 }
 
@@ -610,8 +608,8 @@ impl<T> ToType for Vec<T>
 where
     T: ToType,
 {
-    fn to_type() -> Type {
-        Type::List(Box::new(T::to_type()))
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::List(T::to_type()))
     }
 }
 
@@ -619,14 +617,14 @@ impl<T> ToType for VecDeque<T>
 where
     T: ToType,
 {
-    fn to_type() -> Type {
-        Type::List(Box::new(T::to_type()))
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::List(T::to_type()))
     }
 }
 
 impl ToType for () {
-    fn to_type() -> Type {
-        Type::Tuple(vec![])
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Tuple(vec![]))
     }
 }
 
@@ -634,8 +632,8 @@ impl<T0> ToType for (T0,)
 where
     T0: ToType,
 {
-    fn to_type() -> Type {
-        Type::Tuple(vec![T0::to_type()])
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Tuple(vec![T0::to_type()]))
     }
 }
 
@@ -644,8 +642,8 @@ where
     T0: ToType,
     T1: ToType,
 {
-    fn to_type() -> Type {
-        Type::Tuple(vec![T0::to_type(), T1::to_type()])
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Tuple(vec![T0::to_type(), T1::to_type()]))
     }
 }
 
@@ -655,8 +653,12 @@ where
     T1: ToType,
     T2: ToType,
 {
-    fn to_type() -> Type {
-        Type::Tuple(vec![T0::to_type(), T1::to_type(), T2::to_type()])
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Tuple(vec![
+            T0::to_type(),
+            T1::to_type(),
+            T2::to_type(),
+        ]))
     }
 }
 
@@ -667,13 +669,13 @@ where
     T2: ToType,
     T3: ToType,
 {
-    fn to_type() -> Type {
-        Type::Tuple(vec![
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Tuple(vec![
             T0::to_type(),
             T1::to_type(),
             T2::to_type(),
             T3::to_type(),
-        ])
+        ]))
     }
 }
 
@@ -685,14 +687,14 @@ where
     T3: ToType,
     T4: ToType,
 {
-    fn to_type() -> Type {
-        Type::Tuple(vec![
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Tuple(vec![
             T0::to_type(),
             T1::to_type(),
             T2::to_type(),
             T3::to_type(),
             T4::to_type(),
-        ])
+        ]))
     }
 }
 
@@ -705,15 +707,15 @@ where
     T4: ToType,
     T5: ToType,
 {
-    fn to_type() -> Type {
-        Type::Tuple(vec![
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Tuple(vec![
             T0::to_type(),
             T1::to_type(),
             T2::to_type(),
             T3::to_type(),
             T4::to_type(),
             T5::to_type(),
-        ])
+        ]))
     }
 }
 
@@ -727,8 +729,8 @@ where
     T5: ToType,
     T6: ToType,
 {
-    fn to_type() -> Type {
-        Type::Tuple(vec![
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Tuple(vec![
             T0::to_type(),
             T1::to_type(),
             T2::to_type(),
@@ -736,7 +738,7 @@ where
             T4::to_type(),
             T5::to_type(),
             T6::to_type(),
-        ])
+        ]))
     }
 }
 
@@ -751,8 +753,8 @@ where
     T6: ToType,
     T7: ToType,
 {
-    fn to_type() -> Type {
-        Type::Tuple(vec![
+    fn to_type() -> Arc<Type> {
+        Arc::new(Type::Tuple(vec![
             T0::to_type(),
             T1::to_type(),
             T2::to_type(),
@@ -761,6 +763,6 @@ where
             T5::to_type(),
             T6::to_type(),
             T7::to_type(),
-        ])
+        ]))
     }
 }

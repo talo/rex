@@ -175,7 +175,7 @@ where
         Some(non_var_expr) => return eval(ctx, non_var_expr).await, // Ok(non_var_expr.clone()),
     };
 
-    let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
+    let f = ctx.ftable.lookup_fns(&var.name, &*var_type).next();
     if let Some((f, f_type)) = f {
         if f_type.num_params() == 0 {
             let res = f(ctx, &vec![]).await?;
@@ -221,15 +221,15 @@ pub async fn apply<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let f_type: Type = unify::apply_subst(
+    let f_type = unify::apply_subst(
         ctx.env.read().await.get(f.borrow().id()).unwrap(),
         &ctx.subst,
     );
-    let x_type: Type = unify::apply_subst(
+    let x_type = unify::apply_subst(
         ctx.env.read().await.get(x.borrow().id()).unwrap(),
         &ctx.subst,
     );
-    let (_, b_type) = match &f_type {
+    let (_, b_type) = match &*f_type {
         Type::Arrow(a, b) => (a.clone(), b.clone()),
         _ => panic!("Function application on non-function type"),
     };
@@ -241,7 +241,7 @@ where
         Expr::Var(var) => {
             // TODO(loong): we should be checking if more than one function is
             // found. This is an ambiguity error.
-            let f = ctx.ftable.lookup_fns(&var.name, f_type.clone()).next();
+            let f = ctx.ftable.lookup_fns(&var.name, &*f_type).next();
             if let Some((f, _ftype)) = f {
                 match f_type.num_params() {
                     0 => panic!("Function application on non-function type"),
@@ -303,7 +303,7 @@ where
                 body => body,
             };
             *body.id_mut() = new_body_id;
-            ctx.env.write().await.insert(new_body_id, *b_type.clone());
+            ctx.env.write().await.insert(new_body_id, b_type.clone());
 
             let mut ctx: Context<State> = ctx.clone();
             ctx.scope.insert_mut(param.name, x);
@@ -365,11 +365,11 @@ where
                     &b_type
                 );
 
-                let f_type = Type::build_arrow(arg_types, *b_type.clone());
+                let f_type = Type::build_arrow(arg_types, b_type.clone());
 
                 // TODO(loong): we should be checking if more than one function is
                 // found. This is an ambiguity error.
-                let f = ctx.ftable.lookup_fns(&var.name, f_type.clone()).next();
+                let f = ctx.ftable.lookup_fns(&var.name, &*f_type).next();
 
                 if let Some((f, found_ftype)) = f {
                     traceln!(ctx, "  ↳curried function found: {}", found_ftype);
@@ -397,7 +397,7 @@ where
         _ => unimplemented!(),
     };
 
-    ctx.env.write().await.insert(*res.id(), *b_type);
+    ctx.env.write().await.insert(*res.id(), b_type);
 
     Ok(res)
 }
@@ -479,7 +479,7 @@ pub mod test {
     /// Helper function for parsing, inferring, and evaluating a given code
     /// snippet. Pretty much all of the test suites can use this flow for
     /// testing that the engine is correctly evaluating types and expressions.
-    async fn parse_infer_and_eval(code: &str) -> Result<(Expr, Type), Error> {
+    async fn parse_infer_and_eval(code: &str) -> Result<(Expr, Arc<Type>), Error> {
         let builder: Builder<()> = Builder::with_prelude().unwrap();
         let program = Program::compile(builder, code)?;
         let res_type = program.res_type.clone();
@@ -712,8 +712,8 @@ pub mod test {
     async fn test_list() {
         // Empty list
         let (res, res_type) = parse_infer_and_eval(r#"[]"#).await.unwrap();
-        assert!(match res_type {
-            Type::List(inner) => matches!(&*inner, Type::Var(_)),
+        assert!(match &*res_type {
+            Type::List(inner) => matches!(&**inner, Type::Var(_)),
             _ => false,
         });
         assert_expr_eq!(res, l!(); ignore span);
@@ -774,11 +774,11 @@ pub mod test {
     #[tokio::test]
     async fn test_uuid() -> Result<(), String> {
         let (res, res_type) = parse_infer_and_eval(r#"random_uuid"#).await.unwrap();
-        assert!(matches!(res_type, Type::Uuid));
+        assert!(matches!(&*res_type, Type::Uuid));
         assert!(matches!(res, Expr::Uuid(..))); // Don't check value; it's random!
 
         let (res, res_type) = parse_infer_and_eval(r#"string random_uuid"#).await.unwrap();
-        assert!(matches!(res_type, Type::String));
+        assert!(matches!(&*res_type, Type::String));
         assert!(matches!(res, Expr::String(..))); // Don't check value; it's random!
 
         Ok(())
@@ -787,11 +787,11 @@ pub mod test {
     #[tokio::test]
     async fn test_datetime() -> Result<(), String> {
         let (res, res_type) = parse_infer_and_eval(r#"now"#).await.unwrap();
-        assert!(matches!(res_type, Type::DateTime));
+        assert!(matches!(&*res_type, Type::DateTime));
         assert!(matches!(res, Expr::DateTime(..))); // Don't check value; depends on current time
 
         let (res, res_type) = parse_infer_and_eval(r#"string now"#).await.unwrap();
-        assert!(matches!(res_type, Type::String));
+        assert!(matches!(&*res_type, Type::String));
         assert!(matches!(res, Expr::String(..))); // Don't check value; depends on current time
 
         Ok(())

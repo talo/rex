@@ -111,8 +111,8 @@ fn impl_to_type(ast: &DeriveInput) -> TokenStream {
 
     let expanded = quote! {
         impl #impl_generics ::rex::type_system::types::ToType for #name #ty_generics #where_clause {
-            fn to_type() -> ::rex::type_system::types::Type {
-                #r#impl
+            fn to_type() -> ::std::sync::Arc<::rex::type_system::types::Type> {
+                ::std::sync::Arc::new(#r#impl)
             }
         }
     };
@@ -149,7 +149,7 @@ fn fields_unnamed_to_adt_variant(
         quote!(
             ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
-                t: Some(Box::new(#t)),
+                t: Some(#t),
                 docs: #variant_docs,
                 t_docs: None,
             }
@@ -160,7 +160,7 @@ fn fields_unnamed_to_adt_variant(
             #(elems.push(#ts);)*
             ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
-                t: Some(Box::new(::rex::type_system::types::Type::Tuple(elems))),
+                t: Some(::std::sync::Arc::new(::rex::type_system::types::Type::Tuple(elems))),
                 docs: #variant_docs,
                 t_docs: None,
             }
@@ -205,7 +205,7 @@ fn fields_named_to_adt_variant(
             #(#docs_and_fields;)*
             ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
-                t: Some(Box::new(::rex::type_system::types::Type::Dict(fields))),
+                t: Some(::std::sync::Arc::new(::rex::type_system::types::Type::Dict(fields))),
                 docs: #variant_docs,
                 t_docs: if docs.len() > 0 { Some(docs) } else { None },
             }
@@ -318,8 +318,8 @@ fn to_type(ty: &Type) -> proc_macro2::TokenStream {
         }
         Type::Tuple(tuple) => {
             let inner_types = tuple.elems.iter().map(to_type);
-            quote!(::rex::type_system::types::Type::Tuple(
-                vec![#(#inner_types,)*]
+            quote!(::std::sync::Arc::new(
+                ::rex::type_system::types::Type::Tuple(vec![#(#inner_types,)*])
             ))
         }
         _ => panic!("Unsupported type"),

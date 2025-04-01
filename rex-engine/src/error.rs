@@ -3,7 +3,7 @@ use rex_lexer::span::Span;
 use rex_parser::error::ParserErr;
 use rex_type_system::types::Type;
 use serde_json::Value;
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 
 // TODO(loong): re-implement traces so that developers can get meaningful
 // errors when something goes wrong.
@@ -18,9 +18,9 @@ pub enum Error {
     #[error("variable not found {var}")]
     VarNotFound { var: Var },
     #[error("expected {expected}, got {got}")]
-    ExpectedTypeGotValue { expected: Type, got: Expr },
+    ExpectedTypeGotValue { expected: Arc<Type>, got: Expr },
     #[error("expected {expected}, got {got}")]
-    ExpectedTypeGotJSON { expected: Type, got: Value },
+    ExpectedTypeGotJSON { expected: Arc<Type>, got: Value },
     #[error("missing argument {argument}")]
     MissingArgument { argument: usize },
     #[error("{0}")]
@@ -30,8 +30,8 @@ pub enum Error {
     #[error("cannot overload a parametrically polymorphic function")]
     ParametricOverload {
         name: String,
-        prev_insts: Vec<Type>,
-        curr_inst: Type,
+        prev_insts: Vec<Arc<Type>>,
+        curr_inst: Arc<Type>,
     },
     #[error("{0}")]
     RegexCompilationError(#[from] regex::Error),
