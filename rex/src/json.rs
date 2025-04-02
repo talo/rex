@@ -288,6 +288,9 @@ pub fn expr_to_json(expr: &Expr, want: &Arc<Type>) -> Result<Value, EngineError>
         (Type::DateTime, Expr::DateTime(_, _, dt)) => {
             Ok(serde_json::to_value(dt).map_err(|_| expr_error(expr, want))?)
         }
+        (Type::Promise(_), Expr::Promise(_, _, u)) => {
+            Ok(serde_json::to_value(u).map_err(|_| expr_error(expr, want))?)
+        }
         _ => Err(expr_error(expr, want)),
     }
 }

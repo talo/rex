@@ -143,6 +143,9 @@ pub fn unify_eq(t1: &Arc<Type>, t2: &Arc<Type>, subst: &mut Subst) -> Result<(),
         // Option
         (Type::Option(a1), Type::Option(a2)) => unify_eq(&a1, &a2, subst),
 
+        // Promise
+        (Type::Promise(a1), Type::Promise(a2)) => unify_eq(&a1, &a2, subst),
+
         // Type variable case requires occurs check
         (Type::Var(v1), Type::Var(v2)) => {
             if v1 != v2 {
@@ -276,6 +279,7 @@ pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
         Type::Arrow(a, b) => Arc::new(Type::Arrow(apply_subst(a, subst), apply_subst(b, subst))),
         Type::Result(t, e) => Arc::new(Type::Result(apply_subst(t, subst), apply_subst(e, subst))),
         Type::Option(t) => Arc::new(Type::Option(apply_subst(t, subst))),
+        Type::Promise(t) => Arc::new(Type::Promise(apply_subst(t, subst))),
         Type::List(t) => Arc::new(Type::List(apply_subst(t, subst))),
         Type::Dict(kts) => Arc::new(Type::Dict(
             kts.iter()
@@ -317,6 +321,7 @@ pub fn occurs_check(var: &Id, t: &Arc<Type>) -> bool {
         Type::Arrow(a, b) => occurs_check(var, a) || occurs_check(var, b),
         Type::Result(t, e) => occurs_check(var, t) || occurs_check(var, e),
         Type::Option(t) => occurs_check(var, t),
+        Type::Promise(t) => occurs_check(var, t),
         Type::List(t) => occurs_check(var, t),
         Type::Dict(kts) => kts.values().any(|t| occurs_check(var, t)),
         Type::Tuple(ts) => ts.iter().any(|t| occurs_check(var, t)),

@@ -286,6 +286,11 @@ pub fn generate_constraints(
             unimplemented!("Named expressions are not expected to be present in the AST")
         }
 
+        Expr::Promise(..) => {
+            // As for Named
+            unimplemented!("Promise expressions are not expected to be present in the AST")
+        }
+
         Expr::Tuple(id, _span, exprs) => {
             let mut types = Vec::new();
 
@@ -528,6 +533,7 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
             set
         }
         Type::Option(t) => free_vars(t),
+        Type::Promise(t) => free_vars(t),
         Type::List(t) => free_vars(t),
         Type::Dict(kts) => {
             let mut vars = HashSet::new();
@@ -672,6 +678,7 @@ fn instantiate(ty: &Arc<Type>, constraint_system: &mut ConstraintSystem) -> Arc<
                 inst_helper(e, subst, constraint_system),
             )),
             Type::Option(t) => Arc::new(Type::Option(inst_helper(t, subst, constraint_system))),
+            Type::Promise(t) => Arc::new(Type::Promise(inst_helper(t, subst, constraint_system))),
             Type::List(t) => Arc::new(Type::List(inst_helper(t, subst, constraint_system))),
             Type::Dict(kts) => Arc::new(Type::Dict(
                 kts.iter()

@@ -41,7 +41,8 @@ where
         | Expr::String(..)
         | Expr::Uuid(..)
         | Expr::DateTime(..)
-        | Expr::Named(..) => Ok(expr.clone()),
+        | Expr::Named(..)
+        | Expr::Promise(..) => Ok(expr.clone()),
         Expr::Tuple(id, span, tuple) => eval_tuple(ctx, id, span, tuple).await,
         Expr::List(id, span, list) => eval_list(ctx, id, span, list).await,
         Expr::Dict(id, span, dict) => eval_dict(ctx, id, span, dict).await,

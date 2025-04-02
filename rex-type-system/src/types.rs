@@ -23,6 +23,7 @@ pub enum Type {
     Arrow(Arc<Type>, Arc<Type>),
     Result(Arc<Type>, Arc<Type>),
     Option(Arc<Type>),
+    Promise(Arc<Type>),
     List(Arc<Type>),
     Dict(BTreeMap<String, Arc<Type>>),
     Tuple(Vec<Arc<Type>>),
@@ -96,6 +97,7 @@ impl Type {
                 b.resolve_vars(assignments),
             )),
             Type::Option(t) => Arc::new(Type::Option(t.resolve_vars(assignments))),
+            Type::Promise(t) => Arc::new(Type::Promise(t.resolve_vars(assignments))),
             Type::List(t) => Arc::new(Type::List(t.resolve_vars(assignments))),
             Type::Dict(xs) => Arc::new(Type::Dict(BTreeMap::from_iter(
                 xs.iter()
@@ -139,6 +141,7 @@ impl Type {
                 e1.maybe_compatible(e2)
             }
             (Self::Option(t1), Self::Option(t2)) => t1.maybe_compatible(t2),
+            (Self::Promise(t1), Self::Promise(t2)) => t1.maybe_compatible(t2),
             (Self::List(t1), Self::List(t2)) => t1.maybe_compatible(t2),
             (Self::Dict(d1), Self::Dict(d2)) => {
                 for (k, v1) in d1 {
@@ -239,6 +242,7 @@ impl Type {
                 b.unresolved_vars_accum(set);
             }
             Type::Option(t) => t.unresolved_vars_accum(set),
+            Type::Promise(t) => t.unresolved_vars_accum(set),
             Type::List(t) => t.unresolved_vars_accum(set),
             Type::Dict(xs) => {
                 for (_, v) in xs {
@@ -273,6 +277,11 @@ impl Display for Type {
             Type::DateTime => "datetime".fmt(f),
             Type::Option(x) => {
                 "Option (".fmt(f)?;
+                x.fmt(f)?;
+                ')'.fmt(f)
+            }
+            Type::Promise(x) => {
+                "Promise (".fmt(f)?;
                 x.fmt(f)?;
                 ')'.fmt(f)
             }
