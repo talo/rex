@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -113,16 +113,13 @@ pub fn unify_eq(t1: &Arc<Type>, t2: &Arc<Type>, subst: &mut Subst) -> Result<(),
         // Dictionaries
         (Type::Dict(d1), Type::Dict(d2)) => {
             if d1.len() != d2.len() {
-                return Err(format!(
-                    "Cannot unify {} with {}: different no. of keys",
-                    t1, t2
-                ));
+                return Err(missing_keys_error(d1, d2));
             }
             for (key, entry1) in d1.iter() {
                 if let Some(entry2) = d2.get(key) {
                     unify_eq(entry1, entry2, subst)?;
                 } else {
-                    return Err(format!("Cannot unify {} with {}: different keys", t1, t2));
+                    return Err(missing_keys_error(d1, d2));
                 }
             }
             Ok(())
@@ -334,6 +331,27 @@ pub fn occurs_check(var: &Id, t: &Arc<Type>) -> bool {
         | Type::Uuid
         | Type::DateTime => false,
     }
+}
+
+fn missing_keys_error(
+    d1: &BTreeMap<String, Arc<Type>>,
+    d2: &BTreeMap<String, Arc<Type>>,
+) -> String {
+    let mut missing_keys: Vec<String> = Vec::new();
+    for k in d1.keys() {
+        if !d2.contains_key(k) {
+            missing_keys.push(k.clone());
+        }
+    }
+
+    for k in d2.keys() {
+        if !d1.contains_key(k) {
+            missing_keys.push(k.clone());
+        }
+    }
+
+    missing_keys.sort();
+    format!("Missing keys: {:?}", missing_keys)
 }
 
 // Test cases
