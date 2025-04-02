@@ -1402,4 +1402,42 @@ pub mod test {
             ignore span
         );
     }
+
+    #[tokio::test]
+    async fn test_elem() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let
+                tuple = (3, 1.5, "test", true) in
+            {
+                field0 = (elem_4_0 tuple),
+                field1 = (elem_4_1 tuple),
+                field2 = (elem_4_2 tuple),
+                field3 = (elem_4_3 tuple),
+            }
+        "#,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            res_type,
+            dict! {
+                field0: uint!(),
+                field1: float!(),
+                field2: string!(),
+                field3: bool!(),
+            }
+        );
+
+        assert_expr_eq!(
+            res,
+            d!{
+                field0 = u!(3),
+                field1 = f!(1.5),
+                field2 = s!("test"),
+                field3 = b!(true),
+            };
+            ignore span);
+    }
 }

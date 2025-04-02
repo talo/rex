@@ -14,7 +14,7 @@ use crate::{
     codec::{Decode, Encode, Func},
     error::Error,
     eval::{apply, Context},
-    ftable::{Ftable, FtableFn, A, B, C, D, E, F},
+    ftable::{Ftable, FtableFn, A, B, C, E, F},
 };
 use chrono::{DateTime, Utc};
 use regex::Regex;
@@ -22,6 +22,8 @@ use rex_ast::expr::Expr;
 use rex_ast::id::Id;
 use rex_lexer::span::Span;
 use uuid::Uuid;
+
+const MAX_TUPLE_LEN: usize = 8; // register elem_M_N functions for tuple sizes up to M
 
 fn register_fn_core<State>(builder: &mut Builder<State>, n: &str, t: Arc<Type>)
 where
@@ -232,12 +234,7 @@ where
             Ok(xs[n as usize].clone())
         });
 
-        this.register_fn1("elem0", |_ctx: &Context<_>, xs: (A,)| Ok(xs.0.clone()));
-        this.register_fn1("elem1", |_ctx: &Context<_>, xs: (A, B)| Ok(xs.1.clone()));
-        this.register_fn1("elem2", |_ctx: &Context<_>, xs: (A, B, C)| Ok(xs.2.clone()));
-        this.register_fn1("elem3", |_ctx: &Context<_>, xs: (A, B, C, D)| {
-            Ok(xs.3.clone())
-        });
+        this.register_elem_functions();
 
         this.register_fn2("++", |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<A>| {
             let mut zs = Vec::with_capacity(xs.len() + ys.len());
@@ -487,6 +484,46 @@ where
         this.register_fn0("now", |_ctx: &Context<_>| Ok(Utc::now()));
 
         Ok(this)
+    }
+
+    pub fn register_elem_functions(&mut self) {
+        // Note: Each of these has a unique name, because we don't currently support overloading
+        // of functions containing generic types.
+        for tuple_len in 1..=MAX_TUPLE_LEN {
+            let mut element_types: Vec<Arc<Type>> = Vec::new();
+            for i in 0..tuple_len {
+                element_types.push(Arc::new(Type::UnresolvedVar(format!("T{}", i))));
+            }
+            let tuple_type = Arc::new(Type::Tuple(element_types.clone()));
+
+            for tuple_index in 0..tuple_len {
+                let fun_name = format!("elem_{}_{}", tuple_len, tuple_index);
+                let fun_type = Arc::new(Type::Arrow(
+                    tuple_type.clone(),
+                    element_types[tuple_index].clone(),
+                ));
+                let tuple_type = tuple_type.clone();
+                self.register_fn_core_with_name(
+                    &fun_name,
+                    fun_type,
+                    Box::new(move |_, args| {
+                        let tuple_type = tuple_type.clone();
+                        Box::pin(async move {
+                            match args.get(0) {
+                                Some(Expr::Tuple(_, _, elems)) if elems.len() == tuple_len => {
+                                    Ok(elems[tuple_index].clone())
+                                }
+                                Some(arg) => Err(Error::ExpectedTypeGotValue {
+                                    expected: tuple_type.clone(),
+                                    got: arg.clone(),
+                                }),
+                                _ => Err(Error::MissingArgument { argument: 0 }),
+                            }
+                        })
+                    }),
+                );
+            }
+        }
     }
 
     pub fn register_fn_core_with_name(&mut self, name: &str, t: Arc<Type>, f: FtableFn<State>) {
