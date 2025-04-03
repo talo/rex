@@ -8,7 +8,7 @@ use rex_lexer::span::Span;
 use rex_proc_macro::Rex;
 use rex_type_system::{
     adt, tuple,
-    types::{ADTVariant, ToType, Type, ADT},
+    types::{ADTVariant, ToType, ADT},
 };
 use std::sync::Arc;
 
@@ -338,14 +338,31 @@ async fn adt_enum() {
 #[tokio::test]
 async fn adt_enum_int() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub enum Color {
         Red = 1,
         Green = 2,
         Blue = 3,
     }
 
-    assert_eq!(Color::to_type(), Arc::new(Type::Uint));
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Color::to_type(), None, None);
+    let program = Program::compile(builder, r#"(Red, Green, Blue)"#).unwrap();
+    assert_eq!(
+        program.res_type,
+        tuple!(Color::to_type(), Color::to_type(), Color::to_type())
+    );
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(
+        res,
+        tup!(n!("Red", None), n!("Green", None), n!("Blue", None));
+        ignore span);
+
+    let colors = (Color::Red, Color::Green, Color::Blue);
+    let encoded = colors.clone().try_encode(Span::default()).unwrap();
+    let decoded = <(Color, Color, Color)>::try_decode(&encoded).unwrap();
+    assert_eq!(colors, decoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
