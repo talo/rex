@@ -32,7 +32,7 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyInnerStruct::to_type(),
-        Arc::new(Type::ADT(adt!(
+        Type::ADT(adt!(
             MyInnerStruct = MyInnerStruct {
                 x: bool!(),
                 y: int!(),
@@ -40,7 +40,7 @@ pub fn derive_struct() {
                 w: list![string!()],
                 renamed: tuple!(bool!(), int!(), float!(), list![string!()])
             }
-        )))
+        ))
     );
 
     #[derive(Rex)]
@@ -56,17 +56,17 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyStruct::to_type(),
-        Arc::new(Type::ADT(adt!(
+        Type::ADT(adt!(
             MyStruct = MyStruct {
                 x: bool!(),
                 y: int!(),
                 z: float!(),
                 w: list![string!()],
                 t: tuple!(bool!(), int!(), float!(), list![string!()]),
-                u: MyInnerStruct::to_type(),
-                v: list![MyInnerStruct::to_type()]
+                u: Arc::new(MyInnerStruct::to_type()),
+                v: list![Arc::new(MyInnerStruct::to_type())]
             }
-        )))
+        ))
     );
 
     #[derive(Rex)]
@@ -82,7 +82,7 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyTupleStruct::to_type(),
-        Arc::new(Type::ADT(ADT {
+        Type::ADT(ADT {
             name: String::from("MyTupleStruct"),
             variants: vec![ADTVariant {
                 name: String::from("MyTupleStruct"),
@@ -92,14 +92,14 @@ pub fn derive_struct() {
                     float!(),
                     list![string!()],
                     tuple!(bool!(), int!(), float!(), list![string!()]),
-                    MyInnerStruct::to_type(),
-                    list![MyInnerStruct::to_type()]
+                    Arc::new(MyInnerStruct::to_type()),
+                    list![Arc::new(MyInnerStruct::to_type())]
                 )),
                 docs: None,
                 t_docs: None,
             }],
             docs: None,
-        }))
+        })
     );
 
     #[derive(Rex)]
@@ -107,7 +107,7 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyEmptyStruct::to_type(),
-        Arc::new(Type::ADT(ADT {
+        Type::ADT(ADT {
             name: String::from("MyEmptyStruct"),
             variants: vec![ADTVariant {
                 name: String::from("MyEmptyStruct"),
@@ -116,7 +116,7 @@ pub fn derive_struct() {
                 t_docs: None,
             }],
             docs: None,
-        }))
+        })
     );
 
     #[derive(Rex)]
@@ -124,7 +124,7 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyEmptyTupleStruct::to_type(),
-        Arc::new(Type::ADT(ADT {
+        Type::ADT(ADT {
             name: String::from("MyEmptyTupleStruct"),
             variants: vec![ADTVariant {
                 name: String::from("MyEmptyTupleStruct"),
@@ -133,7 +133,7 @@ pub fn derive_struct() {
                 t_docs: None,
             }],
             docs: None,
-        }))
+        })
     );
 
     #[derive(Rex)]
@@ -141,11 +141,11 @@ pub fn derive_struct() {
 
     assert_eq!(
         MyUnitStruct::to_type(),
-        Arc::new(Type::ADT(ADT {
+        Type::ADT(ADT {
             name: String::from("MyUnitStruct"),
             variants: vec![],
             docs: None,
-        }))
+        })
     );
 }
 
@@ -168,7 +168,7 @@ pub fn derive_enum() {
 
     assert_eq!(
         MyInnerStruct::to_type(),
-        Arc::new(Type::ADT(adt!(
+        Type::ADT(adt!(
             MyInnerStruct = MyInnerStruct {
                 x: bool!(),
                 y: int!(),
@@ -176,7 +176,7 @@ pub fn derive_enum() {
                 w: list![string!()],
                 t: tuple!(bool!(), int!(), float!(), list![string!()])
             }
-        )))
+        ))
     );
 
     /// MyEnum has been documented.
@@ -217,7 +217,7 @@ pub fn derive_enum() {
 
     assert_eq!(
         MyEnum::to_type(),
-        Arc::new(Type::ADT(ADT {
+        Type::ADT(ADT {
             docs: Some(
                 r#"MyEnum has been documented.
 
@@ -296,12 +296,12 @@ MyEnum::Z{}
                 },
                 ADTVariant {
                     name: "Renamed".to_string(),
-                    t: Some(MyInnerStruct::to_type()),
+                    t: Some(Arc::new(MyInnerStruct::to_type())),
                     docs: None,
                     t_docs: None,
                 }
             ]
-        }))
+        })
     );
 }
 
@@ -316,11 +316,15 @@ async fn adt_enum() {
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Color::to_type(), None, None);
+    builder.register_adt(&Arc::new(Color::to_type()), None, None);
     let program = Program::compile(builder, r#"(Red, Green, Blue)"#).unwrap();
     assert_eq!(
         program.res_type,
-        tuple!(Color::to_type(), Color::to_type(), Color::to_type())
+        tuple!(
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type())
+        )
     );
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(
@@ -346,11 +350,15 @@ async fn adt_enum_int() {
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Color::to_type(), None, None);
+    builder.register_adt(&Arc::new(Color::to_type()), None, None);
     let program = Program::compile(builder, r#"(Red, Green, Blue)"#).unwrap();
     assert_eq!(
         program.res_type,
-        tuple!(Color::to_type(), Color::to_type(), Color::to_type())
+        tuple!(
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type())
+        )
     );
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(
@@ -375,9 +383,9 @@ async fn adt_variant_tuple() {
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Shape::to_type(), None, None);
+    builder.register_adt(&Arc::new(Shape::to_type()), None, None);
     let program = Program::compile(builder, r#"Rectangle (2.0 * 3.0) (4.0 * 5.0)"#).unwrap();
-    assert_eq!(program.res_type, Shape::to_type());
+    assert_eq!(*program.res_type, Shape::to_type());
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
@@ -393,9 +401,9 @@ async fn adt_variant_tuple() {
     assert_expr_eq!(res, encoded; ignore span);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Shape::to_type(), None, None);
+    builder.register_adt(&Arc::new(Shape::to_type()), None, None);
     let program = Program::compile(builder, r#"Circle (3.0 * 4.0)"#).unwrap();
-    assert_eq!(program.res_type, Shape::to_type());
+    assert_eq!(*program.res_type, Shape::to_type());
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
@@ -421,13 +429,13 @@ async fn adt_variant_struct() {
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Shape::to_type(), None, None);
+    builder.register_adt(&Arc::new(Shape::to_type()), None, None);
     let program = Program::compile(
         builder,
         r#"Rectangle { width = 2.0 * 3.0, height = 4.0 * 5.0 }"#,
     )
     .unwrap();
-    assert_eq!(program.res_type, Shape::to_type());
+    assert_eq!(*program.res_type, Shape::to_type());
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
@@ -456,10 +464,10 @@ async fn adt_struct() {
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Movie::to_type(), None, None);
+    builder.register_adt(&Arc::new(Movie::to_type()), None, None);
     let program =
         Program::compile(builder, r#"Movie { title = "Godzilla", year = 1954 }"#).unwrap();
-    assert_eq!(program.res_type, Movie::to_type());
+    assert_eq!(*program.res_type, Movie::to_type());
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
@@ -483,9 +491,9 @@ async fn adt_tuple() {
     pub struct Movie(pub String, pub u16);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Movie::to_type(), None, None);
+    builder.register_adt(&Arc::new(Movie::to_type()), None, None);
     let program = Program::compile(builder, r#"Movie "Godzilla" 1954 }"#).unwrap();
-    assert_eq!(program.res_type, Movie::to_type());
+    assert_eq!(*program.res_type, Movie::to_type());
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
@@ -506,9 +514,9 @@ async fn adt_unary_tuple() {
     pub struct Movie(pub String);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Movie::to_type(), None, None);
+    builder.register_adt(&Arc::new(Movie::to_type()), None, None);
     let program = Program::compile(builder, r#"Movie "Godzilla" }"#).unwrap();
-    assert_eq!(program.res_type, Movie::to_type());
+    assert_eq!(*program.res_type, Movie::to_type());
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
@@ -532,13 +540,16 @@ async fn adt_curry() {
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Shape::to_type(), None, None);
+    builder.register_adt(&Arc::new(Shape::to_type()), None, None);
     let program = Program::compile(
         builder,
         r#"let partial = Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#,
     )
     .unwrap();
-    assert_eq!(program.res_type, tuple!(Shape::to_type(), Shape::to_type()));
+    assert_eq!(
+        program.res_type,
+        tuple!(Arc::new(Shape::to_type()), Arc::new(Shape::to_type()))
+    );
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,

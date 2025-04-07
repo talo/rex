@@ -4,7 +4,6 @@ use rex::lexer::span::Span;
 use rex::type_system::types::{ToType, Type, ADT};
 use rex::type_system::{adt, adt_variant, bool, float, string, uint};
 use rex::Rex;
-use std::sync::Arc;
 
 #[test]
 fn derive_codec_enum_unit() {
@@ -14,10 +13,7 @@ fn derive_codec_enum_unit() {
         Two,
     }
 
-    assert_eq!(
-        Foo::to_type(),
-        Arc::new(Type::ADT(adt! { Foo = One . | Two . }))
-    );
+    assert_eq!(Foo::to_type(), Type::ADT(adt! { Foo = One . | Two . }));
 
     let expr = Foo::One.try_encode(Span::default()).unwrap();
     assert_expr_eq!(expr, n!("One", None));
@@ -40,10 +36,10 @@ fn derive_codec_enum_named_fields() {
 
     assert_eq!(
         Foo::to_type(),
-        Arc::new(Type::ADT(adt! {
+        Type::ADT(adt! {
             Foo = One { a: uint!(), b: string!() }
                 | Two { c: bool!(), d: float!() }
-        }))
+        })
     );
 
     let foo = Foo::One {
@@ -78,10 +74,10 @@ fn derive_codec_enum_unnamed_fields() {
 
     assert_eq!(
         Foo::to_type(),
-        Arc::new(Type::ADT(adt! {
+        Type::ADT(adt! {
             Foo = One ( uint!(), string!() )
                 | Two ( bool!(), float!(), uint!() )
-        }))
+        })
     );
 
     let foo = Foo::One(42, "Hello".to_string());
@@ -108,11 +104,11 @@ fn derive_codec_enum_mixed() {
 
     assert_eq!(
         Foo::to_type(),
-        Arc::new(Type::ADT(adt!(
+        Type::ADT(adt!(
             Foo = One .
                 | Two { a: uint!(), b: string!() }
                 | Three ( bool!(), float!(), uint!() )
-        )))
+        ))
     );
 
     let foo = Foo::One;
@@ -153,7 +149,7 @@ fn derive_codec_struct_named_fields() {
 
     assert_eq!(
         Foo::to_type(),
-        Arc::new(Type::ADT(adt! { Foo = Foo { a: uint!(), b: string!() }}))
+        Type::ADT(adt! { Foo = Foo { a: uint!(), b: string!() }})
     );
 
     let foo = Foo {
@@ -180,7 +176,7 @@ fn derive_codec_struct_unnamed_fields() {
 
     assert_eq!(
         Foo::to_type(),
-        Arc::new(Type::ADT(adt! { Foo = Foo ( uint!(), string!() )}))
+        Type::ADT(adt! { Foo = Foo ( uint!(), string!() )})
     );
 
     let foo = Foo(42, "Hello".to_string());
@@ -197,11 +193,11 @@ fn derive_codec_struct_unit() {
 
     assert_eq!(
         Foo::to_type(),
-        Arc::new(Type::ADT(ADT {
+        Type::ADT(ADT {
             name: "Foo".to_string(),
             docs: None,
             variants: vec![]
-        }))
+        })
     );
 
     let foo = Foo;

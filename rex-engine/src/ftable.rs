@@ -31,7 +31,7 @@ macro_rules! impl_register_fn {
                 + Sync
                 + 'static
         {
-            let t = <fn($($($param,)*)?) -> B as ToType>::to_type();
+            let t = Arc::new(<fn($($($param,)*)?) -> B as ToType>::to_type());
             let t_num_params = t.num_params();
 
             self.0.entry(n.to_string()).or_default().push((
@@ -73,7 +73,7 @@ macro_rules! impl_register_fn_async {
                 + 'static,
         {
             self.0.entry(n.to_string()).or_default().push((
-                <fn($($param,)*) -> B as ToType>::to_type(),
+                Arc::new(<fn($($param,)*) -> B as ToType>::to_type()),
                 Box::new(move |ctx, args| {
                     let f = f.clone();
                     Box::pin(async move {
@@ -274,8 +274,8 @@ macro_rules! define_polymorphic_types {
             }
 
             impl ToType for $ty {
-                fn to_type() -> ::std::sync::Arc<::rex_type_system::types::Type> {
-                    ::std::sync::Arc::new(::rex_type_system::types::Type::UnresolvedVar(stringify!($ty).to_string()))
+                fn to_type() -> ::rex_type_system::types::Type {
+                    ::rex_type_system::types::Type::UnresolvedVar(stringify!($ty).to_string())
                 }
             }
 

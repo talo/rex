@@ -410,7 +410,7 @@ impl Decode for Uuid {
         match v {
             Expr::Uuid(_, _, u) => Ok(u.clone()),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -422,7 +422,7 @@ impl Decode for DateTime<Utc> {
         match v {
             Expr::DateTime(_, _, dt) => Ok(dt.clone()),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -434,7 +434,7 @@ impl Decode for () {
         match v {
             Expr::Tuple(_id, _span, xs) if xs.len() == 0 => Ok(()),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -449,7 +449,7 @@ where
         match v {
             Expr::Tuple(_id, _span, xs) if xs.len() == 1 => Ok((T0::try_decode(&xs[0])?,)),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -467,7 +467,7 @@ where
                 Ok((T0::try_decode(&xs[0])?, T1::try_decode(&xs[1])?))
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -488,7 +488,7 @@ where
                 T2::try_decode(&xs[2])?,
             )),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -511,7 +511,7 @@ where
                 T3::try_decode(&xs[3])?,
             )),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -549,7 +549,7 @@ where
             Expr::Named(_id, _span, name, Some(x)) if name == "Ok" => Ok(Ok(T::try_decode(x)?)),
             Expr::Named(_id, _span, name, Some(x)) if name == "Err" => Ok(Err(E::try_decode(x)?)),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Result(T::to_type(), E::to_type())),
+                expected: Arc::new(Type::Result(Arc::new(T::to_type()), Arc::new(E::to_type()))),
                 got: v.clone(),
             }),
         }
@@ -565,7 +565,7 @@ where
             Expr::Named(_id, _span, name, Some(x)) if name == "Some" => Ok(Some(T::try_decode(x)?)),
             Expr::Named(_id, _span, name, None) if name == "None" => Ok(None),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Option(T::to_type())),
+                expected: Arc::new(Type::Option(Arc::new(T::to_type()))),
                 got: v.clone(),
             }),
         }
@@ -630,7 +630,7 @@ where
     A: ToType,
     B: ToType,
 {
-    fn to_type() -> Arc<Type> {
-        Arc::new(Type::Arrow(A::to_type(), B::to_type()))
+    fn to_type() -> Type {
+        Type::Arrow(Arc::new(A::to_type()), Arc::new(B::to_type()))
     }
 }

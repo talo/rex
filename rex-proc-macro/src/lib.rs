@@ -90,8 +90,8 @@ fn impl_to_type(ast: &DeriveInput) -> TokenStream {
 
     let expanded = quote! {
         impl #impl_generics ::rex::type_system::types::ToType for #name #ty_generics #where_clause {
-            fn to_type() -> ::std::sync::Arc<::rex::type_system::types::Type> {
-                ::std::sync::Arc::new(#r#impl)
+            fn to_type() -> ::rex::type_system::types::Type {
+                #r#impl
             }
         }
     };
@@ -110,7 +110,7 @@ fn fields_unnamed_to_adt_variant(
         .map(|field| {
             let t = to_type(&field.ty);
             quote! {
-                #t
+                ::std::sync::Arc::new(#t)
             }
         })
         .collect::<Vec<_>>();
@@ -164,7 +164,7 @@ fn fields_named_to_adt_variant(
                 if let Some(d) = #docs {
                     docs.insert(String::from(#name), d);
                 }
-                fields.insert(String::from(#name), #t);
+                fields.insert(String::from(#name), ::std::sync::Arc::new(#t));
             }
         })
         .collect::<Vec<_>>();
@@ -297,8 +297,11 @@ fn to_type(ty: &Type) -> proc_macro2::TokenStream {
         }
         Type::Tuple(tuple) => {
             let inner_types = tuple.elems.iter().map(to_type);
-            quote!(::std::sync::Arc::new(
-                ::rex::type_system::types::Type::Tuple(vec![#(#inner_types,)*])
+            quote!(::rex::type_system::types::Type::Tuple(
+                vec![#(#inner_types,)*]
+                    .into_iter()
+                    .map(::std::sync::Arc::new)
+                    .collect()
             ))
         }
         _ => panic!("Unsupported type"),
@@ -491,7 +494,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                             entries.get(stringify!(#field_ident))
                                 .ok_or_else(||
                                     ::rex::engine::error::Error::ExpectedTypeGotValue {
-                                        expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                        expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                         got: v.clone(),
                                     })?
                             )? )
@@ -507,7 +510,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                 }
                                 _ => {
                                     Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                        expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                        expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                         got: v.clone(),
                                     })
                                 }
@@ -515,7 +518,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                         }
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
                             })
                         }
@@ -530,7 +533,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                         },
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
                             })
                         }
@@ -553,7 +556,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                 }
                                 _ => {
                                     Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                        expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                        expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                         got: v.clone(),
                                     })
                                 }
@@ -561,7 +564,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                         },
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
                             })
                         }
@@ -576,7 +579,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                         }
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
                             })
                         }
@@ -598,7 +601,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                 entries.get(stringify!(#field_ident))
                                     .ok_or_else(||
                                         ::rex::engine::error::Error::ExpectedTypeGotValue {
-                                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                            expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                             got: v.clone(),
                                         })?
                                 )? )
@@ -613,7 +616,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                     }
                                     _ => {
                                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                            expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                             got: v.clone(),
                                         })
                                     }
@@ -649,7 +652,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                     }
                                     _ => {
                                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                            expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                             got: v.clone(),
                                         })
                                     }
@@ -672,7 +675,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                     #(#variants,)*
                     _ => {
                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                            expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                             got: v.clone(),
                         })
                     }

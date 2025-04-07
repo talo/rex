@@ -8,6 +8,7 @@ use rex::{
     Rex,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::{uuid, Uuid};
 
 #[test]
@@ -224,7 +225,7 @@ where
     // );
     let json_actual = expr_to_json(
         &foo.clone().try_encode(Span::default()).unwrap(),
-        &T::to_type(),
+        &Arc::new(T::to_type()),
     )
     .unwrap();
     // println!(
@@ -232,7 +233,7 @@ where
     //     serde_json::to_string_pretty(&json_actual).unwrap()
     // );
     assert_eq!(json_expected, json_actual);
-    let expr2 = json_to_expr(&json_expected, &T::to_type()).unwrap();
+    let expr2 = json_to_expr(&json_expected, &Arc::new(T::to_type())).unwrap();
     // println!("expr2 = {}", expr2);
     assert_expr_eq!(expr1, expr2);
 }

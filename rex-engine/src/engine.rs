@@ -94,7 +94,7 @@ where
 macro_rules! impl_register_fn_core {
     ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
         let n = $n.to_string();
-        let t = <fn($($($param,)*)?) -> B as ToType>::to_type();
+        let t = Arc::new(<fn($($($param,)*)?) -> B as ToType>::to_type());
         register_fn_core($self, &n, t);
         $self.ftable.$name(n, $f);
     }}
@@ -436,7 +436,10 @@ where
                         None => {
                             let x_id = Id::new();
                             let x = Expr::Tuple(x_id, Span::default(), vec![]);
-                            ctx.env.write().await.insert(x_id, <()>::to_type());
+                            ctx.env
+                                .write()
+                                .await
+                                .insert(x_id, Arc::new(<()>::to_type()));
                             let res = apply(ctx, &f, &x).await?;
                             ctx.env.write().await.remove(&x_id);
                             Ok(Option::<A>::try_decode(&res)?)
@@ -454,7 +457,10 @@ where
                         None => {
                             let x_id = Id::new();
                             let x = Expr::Tuple(x_id, Span::default(), vec![]);
-                            ctx.env.write().await.insert(x_id, <()>::to_type());
+                            ctx.env
+                                .write()
+                                .await
+                                .insert(x_id, Arc::new(<()>::to_type()));
                             let res = apply(ctx, &f, &x).await?;
                             ctx.env.write().await.remove(&x_id);
                             Ok(A(res))
