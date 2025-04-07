@@ -13,7 +13,6 @@ use rex_type_system::{
 use tokio::sync::RwLock;
 
 use crate::{error::Error, ftable::Ftable};
-use crate::{trace, traceln};
 
 #[derive(Clone)]
 pub struct Context<State>
@@ -25,7 +24,6 @@ where
     pub subst: Subst,
     pub env: Arc<RwLock<ExprTypeEnv>>,
     pub state: State,
-    pub trace_eval: bool,
 }
 
 #[async_recursion::async_recursion]
@@ -139,13 +137,8 @@ where
     State: Clone + Send + Sync + 'static,
 {
     let var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
-    trace!(ctx, "evaluating var: ({}):({})...", var, var_type);
 
     if let Some(expr) = ctx.scope.get(&var.name) {
-        let expr_type =
-            unify::apply_subst(ctx.env.read().await.get(expr.id()).unwrap(), &ctx.subst);
-        traceln!(ctx, " found in scope: {}:{}", expr, expr_type);
-
         let mut new_expr = expr.clone();
         *new_expr.id_mut() = Id::new();
         ctx.env
@@ -162,7 +155,6 @@ where
             // We have arrived at a concrete value
             new_expr.clone()
         } else {
-            traceln!(ctx, " overriding with type: {}", var_type);
             // We have not arrived at a concrete value
             eval(ctx, &new_expr).await?
         };
@@ -181,27 +173,18 @@ where
         if f_type.num_params() == 0 {
             let res = f(ctx, &vec![]).await?;
             ctx.env.write().await.insert(*res.id(), var_type.clone());
-            traceln!(
-                ctx,
-                " found in ftable: {} and evaluated to: ({}):({})",
-                f_type,
-                res,
-                var_type
-            );
             return Ok(res);
         }
-        traceln!(ctx, " found in ftable: {}", var_type);
 
         return Ok(Expr::Var(var.clone()));
     }
 
-    traceln!(ctx, " not found in ftable!");
     Err(Error::VarNotFound { var: var.clone() })
 }
 
 pub async fn eval_app<State>(
     ctx: &Context<State>,
-    id: &Id,
+    _id: &Id,
     _span: &Span,
     f: &Expr,
     x: &Expr,
@@ -209,8 +192,6 @@ pub async fn eval_app<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let fx_type = unify::apply_subst(ctx.env.read().await.get(id).unwrap(), &ctx.subst);
-    traceln!(ctx, "applying: ({} {}): {}", f, x, fx_type);
     apply(ctx, f, x).await
 }
 
@@ -246,29 +227,9 @@ where
             if let Some((f, _ftype)) = f {
                 match f_type.num_params() {
                     0 => panic!("Function application on non-function type"),
-                    1 => {
-                        traceln!(
-                            ctx,
-                            "calling function: ({}:{}) ({}:{}) results in type: {}",
-                            &var,
-                            &f_type,
-                            &x,
-                            &x_type,
-                            &b_type
-                        );
-                        f(ctx, &vec![x]).await?
-                    }
+                    1 => f(ctx, &vec![x]).await?,
                     // TODO(loong): fix the span.
                     _ => {
-                        traceln!(
-                            ctx,
-                            "creating curry: ({}:{}) ({}:{})",
-                            &var,
-                            &f_type,
-                            &x,
-                            &x_type
-                        );
-
                         let mut x = x.clone();
                         *x.id_mut() = Id::new();
                         ctx.env.write().await.insert(*x.id(), x_type.clone());
@@ -330,16 +291,6 @@ where
             // The solution is to alter the way a curried function is actually
             // called by the `ftable` and it loops until all arguments are
             // consumed.
-            traceln!(
-                ctx,
-                "pushing to args: {}[{}] arg: {}",
-                var,
-                args.iter()
-                    .map(|a| a.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                x
-            );
             args.push(x.clone());
             if f_type.num_params() < args.len() {
                 panic!("Too many arguments");
@@ -357,36 +308,14 @@ where
                     ));
                 }
 
-                traceln!(
-                    ctx,
-                    "curried function lookup: ({}:{}) {} -> ({})",
-                    &var,
-                    &f_type,
-                    &args_fmt.join(" -> "),
-                    &b_type
-                );
-
                 let f_type = Type::build_arrow(arg_types, b_type.clone());
 
                 // TODO(loong): we should be checking if more than one function is
                 // found. This is an ambiguity error.
                 let f = ctx.ftable.lookup_fns(&var.name, &*f_type).next();
 
-                if let Some((f, found_ftype)) = f {
-                    traceln!(ctx, "  ↳curried function found: {}", found_ftype);
-                    traceln!(
-                        ctx,
-                        "  ↳calling curried function: ({}:{}) ({}:{}) results in type: {}",
-                        &var,
-                        &f_type,
-                        &x,
-                        &x_type,
-                        &b_type
-                    );
-                    let res = f(ctx, &args).await?;
-
-                    traceln!(ctx, "  ↳curry function result: {}", &res);
-                    res
+                if let Some((f, _)) = f {
+                    f(ctx, &args).await?
                 } else {
                     panic!("Function not found: {}:{}", var.name, f_type)
                 }
