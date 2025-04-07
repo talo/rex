@@ -8,7 +8,7 @@ use crate::{
 pub fn sprint_subst(subst: &Subst) -> String {
     let mut s = String::new();
     s.push_str("{\n");
-    for (k, v) in subst.entries_iter() {
+    for (k, v) in subst.iter() {
         s.push_str(&format!("  τ{}: {}\n", k, v));
     }
     s.push('}');

@@ -10,37 +10,7 @@ use crate::{
     types::{ADTVariant, Type, ADT},
 };
 
-#[derive(Clone)]
-pub struct Subst {
-    entries: HashMap<Id, Arc<Type>>,
-    changed: bool,
-}
-
-impl Subst {
-    pub fn new() -> Self {
-        Subst {
-            entries: HashMap::new(),
-            changed: false,
-        }
-    }
-
-    pub fn get(&self, id: &Id) -> Option<&Arc<Type>> {
-        self.entries.get(id)
-    }
-
-    pub fn insert(&mut self, id: Id, t: Arc<Type>) {
-        self.entries.insert(id, t);
-        self.changed = true;
-    }
-
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    pub fn entries_iter(&self) -> std::collections::hash_map::Iter<'_, Id, Arc<Type>> {
-        self.entries.iter()
-    }
-}
+pub type Subst = HashMap<Id, Arc<Type>>;
 
 // NOTE(loong): We do not support overloaded parametric polymorphism.
 pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, String> {
@@ -49,11 +19,11 @@ pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, 
     // because unifications that happen in later contraints may enable unifications in earlier
     // ones.
     loop {
-        subst.changed = false;
+        let mut did_change = false;
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(t1, t2) => {
-                    unify_eq(t1, t2, &mut subst)?;
+                    unify_eq(t1, t2, &mut subst, &mut did_change)?;
                 }
                 Constraint::OneOf(..) => {}
             }
@@ -67,19 +37,24 @@ pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, 
                     // overloaded type variables. This is because we are resolving
                     // all constraints, not just the ones that are actually used by
                     // the expression.
-                    unify_one_of(t1, t2_possibilties, &mut subst)?;
+                    unify_one_of(t1, t2_possibilties, &mut subst, &mut did_change)?;
                 }
             }
         }
 
-        if !subst.changed {
+        if !did_change {
             break;
         }
     }
     Ok(subst)
 }
 
-pub fn unify_eq(t1: &Arc<Type>, t2: &Arc<Type>, subst: &mut Subst) -> Result<(), String> {
+pub fn unify_eq(
+    t1: &Arc<Type>,
+    t2: &Arc<Type>,
+    subst: &mut Subst,
+    did_change: &mut bool,
+) -> Result<(), String> {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
     let t2 = apply_subst(t2, subst);
@@ -101,14 +76,14 @@ pub fn unify_eq(t1: &Arc<Type>, t2: &Arc<Type>, subst: &mut Subst) -> Result<(),
             }
 
             for (t1, t2) in ts1.iter().zip(ts2.iter()) {
-                unify_eq(t1, t2, subst)?;
+                unify_eq(t1, t2, subst, did_change)?;
             }
 
             Ok(())
         }
 
         // Lists
-        (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, subst),
+        (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, subst, did_change),
 
         // Dictionaries
         (Type::Dict(d1), Type::Dict(d2)) => {
@@ -117,7 +92,7 @@ pub fn unify_eq(t1: &Arc<Type>, t2: &Arc<Type>, subst: &mut Subst) -> Result<(),
             }
             for (key, entry1) in d1.iter() {
                 if let Some(entry2) = d2.get(key) {
-                    unify_eq(entry1, entry2, subst)?;
+                    unify_eq(entry1, entry2, subst, did_change)?;
                 } else {
                     return Err(missing_keys_error(d1, d2));
                 }
@@ -127,26 +102,27 @@ pub fn unify_eq(t1: &Arc<Type>, t2: &Arc<Type>, subst: &mut Subst) -> Result<(),
 
         // For function types, unify arguments and results
         (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
-            unify_eq(&a1, &a2, subst)?;
-            unify_eq(&b1, &b2, subst)
+            unify_eq(&a1, &a2, subst, did_change)?;
+            unify_eq(&b1, &b2, subst, did_change)
         }
 
         // Result
         (Type::Result(a1, b1), Type::Result(a2, b2)) => {
-            unify_eq(&a1, &a2, subst)?;
-            unify_eq(&b1, &b2, subst)
+            unify_eq(&a1, &a2, subst, did_change)?;
+            unify_eq(&b1, &b2, subst, did_change)
         }
 
         // Option
-        (Type::Option(a1), Type::Option(a2)) => unify_eq(&a1, &a2, subst),
+        (Type::Option(a1), Type::Option(a2)) => unify_eq(&a1, &a2, subst, did_change),
 
         // Promise
-        (Type::Promise(a1), Type::Promise(a2)) => unify_eq(&a1, &a2, subst),
+        (Type::Promise(a1), Type::Promise(a2)) => unify_eq(&a1, &a2, subst, did_change),
 
         // Type variable case requires occurs check
         (Type::Var(v1), Type::Var(v2)) => {
             if v1 != v2 {
                 subst.insert(v1.clone(), Arc::new(Type::Var(v2.clone())));
+                *did_change = true;
             }
             Ok(())
         }
@@ -157,6 +133,7 @@ pub fn unify_eq(t1: &Arc<Type>, t2: &Arc<Type>, subst: &mut Subst) -> Result<(),
                 Err("Occurs check failed".to_string())
             } else {
                 subst.insert(v.clone(), t2);
+                *did_change = true;
                 Ok(())
             }
         }
@@ -165,6 +142,7 @@ pub fn unify_eq(t1: &Arc<Type>, t2: &Arc<Type>, subst: &mut Subst) -> Result<(),
                 Err("Occurs check failed".to_string())
             } else {
                 subst.insert(v.clone(), t1.clone());
+                *did_change = true;
                 Ok(())
             }
         }
@@ -190,7 +168,7 @@ pub fn unify_eq(t1: &Arc<Type>, t2: &Arc<Type>, subst: &mut Subst) -> Result<(),
                 match (&v1.t, &v2.t) {
                     (None, None) => (),
                     (Some(vt1), Some(vt2)) => {
-                        unify_eq(vt1, vt2, subst)?;
+                        unify_eq(vt1, vt2, subst, did_change)?;
                     }
                     _ => {
                         return Err(format!("Cannot unify {} with {}", t1, t2));
@@ -210,6 +188,7 @@ pub fn unify_one_of(
     t1: &Arc<Type>,
     t2_possibilities: &HashSet<Arc<Type>>,
     subst: &mut Subst,
+    did_change: &mut bool,
 ) -> Result<(), String> {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
@@ -220,9 +199,10 @@ pub fn unify_one_of(
     for t2 in t2_possibilities {
         let t2 = apply_subst(t2, subst);
         let mut test_subst = subst.clone();
+        let mut test_did_change = *did_change;
 
-        if unify_eq(&t1, &t2, &mut test_subst).is_ok() {
-            successes.push((t2, test_subst));
+        if unify_eq(&t1, &t2, &mut test_subst, &mut test_did_change).is_ok() {
+            successes.push((t2, test_subst, test_did_change));
         }
     }
 
@@ -239,6 +219,7 @@ pub fn unify_one_of(
         1 => {
             // Use the successful substitution
             *subst = successes[0].1.clone();
+            *did_change = successes[0].2.clone();
             Ok(())
         }
         _ => Ok(()),
@@ -369,11 +350,12 @@ mod tests {
         let beta = Id::new();
 
         let mut subst = Subst::new();
+        let mut did_change = false;
 
         // Test case 1: α = Int
         let t1 = Arc::new(Type::Var(alpha));
         let t2 = Arc::new(Type::Int);
-        assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
+        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
         assert_eq!(
             apply_subst(&Arc::new(Type::Var(alpha)), &subst),
             Arc::new(Type::Int)
@@ -385,7 +367,7 @@ mod tests {
             Arc::new(Type::Var(beta)),
         ));
         let t2 = Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Bool)));
-        assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
+        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
         assert_eq!(
             apply_subst(&Arc::new(Type::Var(alpha)), &subst),
             Arc::new(Type::Int)
@@ -402,11 +384,12 @@ mod tests {
         let beta = Id::new();
 
         let mut subst = Subst::new();
+        let mut did_change = false;
 
         // Unify α = β
         let t1 = Arc::new(Type::Var(alpha));
         let t2 = Arc::new(Type::Var(beta));
-        assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
+        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
 
         // Now α should be mapped to β
         assert_eq!(
@@ -422,6 +405,7 @@ mod tests {
         let gamma = Id::new();
 
         let mut subst = Subst::new();
+        let mut did_change = false;
 
         // f : α -> β
         let f_type = Arc::new(Type::Arrow(
@@ -436,7 +420,7 @@ mod tests {
         ));
 
         // Unify f with g directly
-        assert!(unify_eq(&f_type, &g_type, &mut subst).is_ok());
+        assert!(unify_eq(&f_type, &g_type, &mut subst, &mut did_change).is_ok());
 
         // After unification:
         let final_f = apply_subst(&f_type, &subst);
@@ -462,6 +446,7 @@ mod tests {
         let gamma = Id::new();
 
         let mut subst = Subst::new();
+        let mut did_change = false;
 
         // f : α -> β
         let f_type = Arc::new(Type::Arrow(
@@ -478,13 +463,14 @@ mod tests {
         // Now unify g's output with f's input
         let g_output = Arc::new(Type::Var(gamma)); // γ
         let f_input = Arc::new(Type::Var(alpha)); // α
-        assert!(unify_eq(&g_output, &f_input, &mut subst).is_ok());
+        assert!(unify_eq(&g_output, &f_input, &mut subst, &mut did_change).is_ok());
 
         // Let's make g take an Int
         assert!(unify_eq(
             &Arc::new(Type::Var(gamma)),
             &Arc::new(Type::Int),
-            &mut subst
+            &mut subst,
+            &mut did_change,
         )
         .is_ok());
 
@@ -513,6 +499,7 @@ mod tests {
         let delta = Id::new();
 
         let mut subst = Subst::new();
+        let mut did_change = false;
 
         // f : (α -> β) -> γ
         let f_type = Arc::new(Type::Arrow(
@@ -530,7 +517,7 @@ mod tests {
         ));
 
         // Unify f with g
-        assert!(unify_eq(&f_type, &g_type, &mut subst).is_ok());
+        assert!(unify_eq(&f_type, &g_type, &mut subst, &mut did_change).is_ok());
 
         // After unification:
         let final_f = apply_subst(&f_type, &subst);

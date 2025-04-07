@@ -648,7 +648,7 @@ fn instantiate(ty: &Arc<Type>, constraint_system: &mut ConstraintSystem) -> Arc<
                     }
                 }
 
-                new_constraint_sytem.apply_subst(&subst);
+                new_constraint_sytem.apply_subst(subst);
                 constraint_system.extend(new_constraint_sytem);
 
                 inst_helper(ty, subst, constraint_system)
@@ -702,10 +702,7 @@ fn instantiate(ty: &Arc<Type>, constraint_system: &mut ConstraintSystem) -> Arc<
         result
     }
 
-    let res = inst_helper(ty, &mut subst, constraint_system);
-    // let res = unify::apply_subst(&res, &subst);
-
-    res
+    inst_helper(ty, &mut subst, constraint_system)
 }
 
 #[cfg(test)]
@@ -719,7 +716,7 @@ mod tests {
     use crate::{
         trace::{sprint_expr_type_env, sprint_expr_with_type, sprint_subst, sprint_type_env},
         types::TypeEnv,
-        unify::{self, Subst},
+        unify,
     };
 
     use super::*;
@@ -838,9 +835,10 @@ mod tests {
 
         // Solve constraints
         let mut subst = Subst::new();
+        let mut did_change = false;
         for constraint in constraint_system.constraints() {
             match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst)?,
+                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst, &mut did_change)?,
                 _ => panic!("Expected equality constraint"),
             }
         }
@@ -864,10 +862,11 @@ mod tests {
 
         // This should fail unification
         let mut subst = Subst::new();
+        let mut did_change = false;
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst),
+                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst, &mut did_change),
                 _ => panic!("Expected equality constraint"),
             });
         assert!(result.is_err());
@@ -944,10 +943,11 @@ mod tests {
 
         // This should fail unification because the list elements don't match
         let mut subst = Subst::new();
+        let mut did_change = false;
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst),
+                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst, &mut did_change),
                 _ => panic!("Expected equality constraint"),
             });
         assert!(result.is_err());
@@ -1337,9 +1337,12 @@ mod tests {
         let result = generate_constraints(&expr, &env, &mut expr_env, &mut constraint_system)
             .and_then(|ty| {
                 let mut subst = Subst::new();
+                let mut did_change = false;
                 for constraint in constraint_system.constraints() {
                     match constraint {
-                        Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst)?,
+                        Constraint::Eq(t1, t2) => {
+                            unify::unify_eq(t1, t2, &mut subst, &mut did_change)?
+                        }
                         _ => panic!("Expected equality constraint"),
                     }
                 }
@@ -1592,14 +1595,15 @@ mod tests {
         let _ty = generate_constraints(&expr, &env, &mut expr_env, &mut constraint_system)?;
 
         let mut subst = Subst::new();
+        let mut did_change = false;
 
         // This should fail because both types are possible
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst),
+                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst, &mut did_change),
                 Constraint::OneOf(t1, t2_possibilties) => {
-                    unify::unify_one_of(t1, &t2_possibilties, &mut subst)
+                    unify::unify_one_of(t1, &t2_possibilties, &mut subst, &mut did_change)
                 }
             });
         assert!(result.is_err());
