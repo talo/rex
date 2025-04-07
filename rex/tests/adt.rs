@@ -211,8 +211,8 @@ fn test_field_atomic() {
     compare(value, &expected_type, &encoded);
 }
 
-#[test]
-fn test_field_vec() {
+#[tokio::test]
+async fn test_field_vec() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     pub struct Foo {
         pub a: String,
@@ -237,10 +237,26 @@ fn test_field_vec() {
     );
 
     compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(
+        builder,
+        r#"
+            Foo {
+                a = "Hello",
+                b = [12, 345, 6789]
+            }
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
 }
 
-#[test]
-fn test_field_tuple() {
+#[tokio::test]
+async fn test_field_tuple() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     pub struct Foo {
         pub a: String,
@@ -268,6 +284,22 @@ fn test_field_tuple() {
     );
 
     compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(
+        builder,
+        r#"
+            Foo {
+                a = "Hello",
+                b = (99, true, 3.14, "test")
+            }
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
 }
 
 #[tokio::test]
@@ -410,8 +442,8 @@ fn test_field_datetime() {
     compare(value, &expected_type, &expected_encoding);
 }
 
-#[test]
-fn test_field_uuid() {
+#[tokio::test]
+async fn test_field_uuid() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     pub struct Foo {
         pub a: String,
@@ -440,6 +472,22 @@ fn test_field_uuid() {
     );
 
     compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(
+        builder,
+        r#"
+            Foo {
+                a = "Hello",
+                b = uuid "f5d62567-7a45-4637-bbfb-252f4162574f",
+            }
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
 }
 
 #[tokio::test]
@@ -599,8 +647,8 @@ async fn test_enum_unnamed_fields() {
     assert_expr_eq!(res, expected_encoding2; ignore span);
 }
 
-#[test]
-fn test_enum_mixed() {
+#[tokio::test]
+async fn test_enum_mixed() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     enum Foo {
         One,
@@ -629,6 +677,26 @@ fn test_enum_mixed() {
     compare(value1, &expected_type, &expected_encoding1);
     compare(value2, &expected_type, &expected_encoding2);
     compare(value3, &expected_type, &expected_encoding3);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(
+        builder,
+        r#"
+        [
+            One,
+            Two { a = 42, b = "Hello" },
+            Three true (5.0 / 2.0) (100 - 1)
+        ]
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, list!(expected_type));
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(
+        res,
+        l!(expected_encoding1, expected_encoding2, expected_encoding3);
+        ignore span);
 }
 
 fn compare<T>(orig_value: T, expected_type: &Arc<Type>, expected_encoding: &Expr)
