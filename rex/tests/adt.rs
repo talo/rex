@@ -648,6 +648,46 @@ async fn test_enum_unnamed_fields() {
 }
 
 #[tokio::test]
+async fn test_enum_rename() {
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    enum Color {
+        Red,
+        Green,
+        #[serde(rename = "blOO")]
+        Blue,
+    }
+
+    let expected_type = Arc::new(Type::ADT(adt! {
+        Color = Red . | Green . | blOO .
+    }));
+
+    let expected_encoding1 = n!("Red", None);
+    let expected_encoding2 = n!("Green", None);
+    let expected_encoding3 = n!("blOO", None);
+
+    compare(Color::Red, &expected_type, &expected_encoding1);
+    compare(Color::Green, &expected_type, &expected_encoding2);
+    compare(Color::Blue, &expected_type, &expected_encoding3);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Color::to_type()), None, None);
+    let program = Program::compile(builder, r#"(Red, Green, blOO)"#).unwrap();
+    assert_eq!(
+        program.res_type,
+        tuple!(
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type())
+        )
+    );
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(
+        res,
+        tup!(n!("Red", None), n!("Green", None), n!("blOO", None));
+        ignore span);
+}
+
+#[tokio::test]
 async fn test_enum_mixed() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     enum Foo {
@@ -706,13 +746,15 @@ where
     assert_eq!(**expected_type, T::to_type());
 
     let actual_encoding = orig_value.clone().try_encode(Span::default()).unwrap();
+    assert_expr_eq!(expected_encoding, actual_encoding; ignore span);
+
     let decoded_value = T::try_decode(&actual_encoding).unwrap();
     assert_eq!(orig_value, decoded_value);
 
-    assert_expr_eq!(expected_encoding, actual_encoding; ignore span);
     let json_expected = serde_json::to_value(orig_value.clone()).unwrap();
     let json_actual = expr_to_json(&actual_encoding, &Arc::new(T::to_type())).unwrap();
     assert_eq!(json_expected, json_actual);
+
     let json_encoding = json_to_expr(&json_expected, &Arc::new(T::to_type())).unwrap();
     assert_expr_eq!(actual_encoding, json_encoding);
 }
