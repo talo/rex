@@ -54,6 +54,21 @@ fn test_struct_unit() {
 }
 
 #[test]
+fn test_struct_unnamed_fields() {
+    #[derive(Rex, Serialize, Deserialize, Clone, Debug, PartialEq)]
+    struct Foo(u64, String);
+
+    let expected_type = Arc::new(Type::ADT(adt! { Foo = Foo ( uint!(), string!() )}));
+
+    assert_eq!(Foo::to_type(), *expected_type);
+
+    let value = Foo(42, "Hello".to_string());
+    let expected_encoding = n!("Foo", Some(tup!(u!(42), s!("Hello"))));
+
+    compare(value, &expected_type, &expected_encoding);
+}
+
+#[test]
 fn test_field_atomic() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     pub struct Foo {
@@ -401,6 +416,38 @@ fn test_enum_unnamed_fields() {
 
     compare(value1, &expected_type, &expected_encoding1);
     compare(value2, &expected_type, &expected_encoding2);
+}
+
+#[test]
+fn test_enum_mixed() {
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    enum Foo {
+        One,
+        Two { a: u64, b: String },
+        Three(bool, f64, u64),
+    }
+
+    let expected_type = Arc::new(Type::ADT(adt!(
+        Foo = One .
+            | Two { a: uint!(), b: string!() }
+            | Three ( bool!(), float!(), uint!() )
+    )));
+
+    let value1 = Foo::One;
+    let expected_encoding1 = n!("One", None);
+
+    let value2 = Foo::Two {
+        a: 42,
+        b: "Hello".to_string(),
+    };
+    let expected_encoding2 = n!("Two", Some(d!(a = u!(42), b = s!("Hello"))));
+
+    let value3 = Foo::Three(true, 2.5, 99);
+    let expected_encoding3 = n!("Three", Some(tup!(b!(true), f!(2.5), u!(99))));
+
+    compare(value1, &expected_type, &expected_encoding1);
+    compare(value2, &expected_type, &expected_encoding2);
+    compare(value3, &expected_type, &expected_encoding3);
 }
 
 fn compare<T>(orig_value: T, expected_type: &Arc<Type>, expected_encoding: &Expr)
