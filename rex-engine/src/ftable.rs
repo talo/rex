@@ -1,5 +1,4 @@
-use std::fmt;
-use std::{collections::HashMap, future::Future, pin::Pin};
+use std::{collections::HashMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
@@ -32,7 +31,7 @@ macro_rules! impl_register_fn {
                 + Sync
                 + 'static
         {
-            let t = <fn($($($param,)*)?) -> B as ToType>::to_type();
+            let t = Arc::new(<fn($($($param,)*)?) -> B as ToType>::to_type());
             let t_num_params = t.num_params();
 
             self.0.entry(n.to_string()).or_default().push((
@@ -74,7 +73,7 @@ macro_rules! impl_register_fn_async {
                 + 'static,
         {
             self.0.entry(n.to_string()).or_default().push((
-                <fn($($param,)*) -> B as ToType>::to_type(),
+                Arc::new(<fn($($param,)*) -> B as ToType>::to_type()),
                 Box::new(move |ctx, args| {
                     let f = f.clone();
                     Box::pin(async move {
@@ -135,7 +134,7 @@ where
 }
 
 #[derive(Clone)]
-pub struct Ftable<State>(pub HashMap<String, Vec<(Type, FtableFn<State>)>>)
+pub struct Ftable<State>(pub HashMap<String, Vec<(Arc<Type>, FtableFn<State>)>>)
 where
     State: Clone + Sync + 'static;
 
@@ -152,13 +151,17 @@ where
     }
 
     // NOTE(loong): We do not support overloaded parametric polymorphism.
-    pub fn lookup_fns(&self, n: &str, t: Type) -> impl Iterator<Item = (&FtableFn<State>, &Type)> {
+    pub fn lookup_fns(
+        &self,
+        n: &str,
+        t: &Type,
+    ) -> impl Iterator<Item = (&FtableFn<State>, &Arc<Type>)> {
         self.0
             .get(n)
             .map(|v| v.iter())
             .into_iter()
             .flatten()
-            .filter_map(move |(ftype, f)| match ftype.maybe_compatible(&t) {
+            .filter_map(move |(ftype, f)| match ftype.maybe_compatible(t) {
                 Ok(()) => Some((f, ftype)),
                 Err(_e) => None,
             })
@@ -180,7 +183,7 @@ where
 
 impl<State> fmt::Display for Ftable<State>
 where
-    State: Clone + Sync + 'static
+    State: Clone + Sync + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "Ftable")?;
@@ -190,8 +193,7 @@ where
         for (name, entries) in items.iter() {
             if entries.len() == 1 {
                 write!(f, "\n    {} :: {}", name, entries[0].0)?;
-            }
-            else {
+            } else {
                 write!(f, "\n    {} ::", name)?;
                 for entry in entries.iter() {
                     write!(f, "\n        {}", entry.0)?;
@@ -273,7 +275,7 @@ macro_rules! define_polymorphic_types {
 
             impl ToType for $ty {
                 fn to_type() -> ::rex_type_system::types::Type {
-                    Type::UnresolvedVar(stringify!($ty).to_string())
+                    ::rex_type_system::types::Type::UnresolvedVar(stringify!($ty).to_string())
                 }
             }
 

@@ -52,55 +52,34 @@ fn impl_to_type(ast: &DeriveInput) -> TokenStream {
             },
         },
         Data::Enum(data) => {
-            // TODO: serde seems to serialize these as strings; i'm not sure we should actually
-            // treat them specially
-            let mut int_count = 0;
-            for variant in data.variants.iter() {
-                if !matches!(variant.fields, Fields::Unit) {
-                    continue;
-                }
-                if let Some((_, syn::Expr::Lit(ref literal))) = variant.discriminant {
-                    if let syn::Lit::Int(_) = &literal.lit {
-                        int_count += 1;
-                    }
-                }
-            }
-            if int_count > 0 && int_count == data.variants.len() {
-                quote! {
-                    ::rex::type_system::types::Type::Uint
-                }
-            } else if int_count > 0 && int_count != data.variants.len() {
-                panic!("Mixed Enum with only some int values")
-            } else {
-                let variants = data.variants.iter().map(|variant| {
-                    let variant_docs = docs_from_attrs(&variant.attrs);
-                    let mut variant_name = format!("{}", variant.ident.clone());
-                    rename_variant(&mut variant_name, variant);
+            let variants = data.variants.iter().map(|variant| {
+                let variant_docs = docs_from_attrs(&variant.attrs);
+                let mut variant_name = format!("{}", variant.ident.clone());
+                rename_variant(&mut variant_name, variant);
 
-                    match &variant.fields {
-                        Fields::Unnamed(unnamed) => {
-                            fields_unnamed_to_adt_variant(&variant_docs, &variant_name, unnamed)
-                        }
-                        Fields::Named(named) => {
-                            fields_named_to_adt_variant(&variant_docs, &variant_name, named)
-                        }
-                        Fields::Unit => quote! {
-                            ::rex::type_system::types::ADTVariant {
-                                name: String::from(#variant_name),
-                                t: None,
-                                docs: #variant_docs,
-                                t_docs: None,
-                            }
-                        },
+                match &variant.fields {
+                    Fields::Unnamed(unnamed) => {
+                        fields_unnamed_to_adt_variant(&variant_docs, &variant_name, unnamed)
                     }
-                });
-                quote! {
-                    ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
-                        name: String::from(#name_as_str),
-                        variants: vec![#(#variants,)*],
-                        docs: #docs,
-                    })
+                    Fields::Named(named) => {
+                        fields_named_to_adt_variant(&variant_docs, &variant_name, named)
+                    }
+                    Fields::Unit => quote! {
+                        ::rex::type_system::types::ADTVariant {
+                            name: String::from(#variant_name),
+                            t: None,
+                            docs: #variant_docs,
+                            t_docs: None,
+                        }
+                    },
                 }
+            });
+            quote! {
+                ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
+                    name: String::from(#name_as_str),
+                    variants: vec![#(#variants,)*],
+                    docs: #docs,
+                })
             }
         }
         _ => panic!("Rex can only be derived for structs and enums"),
@@ -131,7 +110,7 @@ fn fields_unnamed_to_adt_variant(
         .map(|field| {
             let t = to_type(&field.ty);
             quote! {
-                #t
+                ::std::sync::Arc::new(#t)
             }
         })
         .collect::<Vec<_>>();
@@ -149,7 +128,7 @@ fn fields_unnamed_to_adt_variant(
         quote!(
             ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
-                t: Some(Box::new(#t)),
+                t: Some(#t),
                 docs: #variant_docs,
                 t_docs: None,
             }
@@ -160,7 +139,7 @@ fn fields_unnamed_to_adt_variant(
             #(elems.push(#ts);)*
             ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
-                t: Some(Box::new(::rex::type_system::types::Type::Tuple(elems))),
+                t: Some(::std::sync::Arc::new(::rex::type_system::types::Type::Tuple(elems))),
                 docs: #variant_docs,
                 t_docs: None,
             }
@@ -185,7 +164,7 @@ fn fields_named_to_adt_variant(
                 if let Some(d) = #docs {
                     docs.insert(String::from(#name), d);
                 }
-                fields.insert(String::from(#name), #t);
+                fields.insert(String::from(#name), ::std::sync::Arc::new(#t));
             }
         })
         .collect::<Vec<_>>();
@@ -205,7 +184,7 @@ fn fields_named_to_adt_variant(
             #(#docs_and_fields;)*
             ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
-                t: Some(Box::new(::rex::type_system::types::Type::Dict(fields))),
+                t: Some(::std::sync::Arc::new(::rex::type_system::types::Type::Dict(fields))),
                 docs: #variant_docs,
                 t_docs: if docs.len() > 0 { Some(docs) } else { None },
             }
@@ -313,15 +292,16 @@ fn rename_field(field_name: &mut String, field: &syn::Field) {
 
 fn to_type(ty: &Type) -> proc_macro2::TokenStream {
     match ty {
-        Type::Path(type_path) if type_path.qself.is_none() => {
-            let ident = &type_path.path.segments.last().unwrap().ident;
-            let inner_types = &type_path.path.segments.last().unwrap().arguments;
-            quote!(<#ident #inner_types as ::rex::type_system::types::ToType>::to_type())
+        Type::Path(type_path) => {
+            quote!(<#type_path as ::rex::type_system::types::ToType>::to_type())
         }
         Type::Tuple(tuple) => {
             let inner_types = tuple.elems.iter().map(to_type);
             quote!(::rex::type_system::types::Type::Tuple(
                 vec![#(#inner_types,)*]
+                    .into_iter()
+                    .map(::std::sync::Arc::new)
+                    .collect()
             ))
         }
         _ => panic!("Unsupported type"),
@@ -342,10 +322,25 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                         )
                     )
                 });
-                quote!(Ok(::rex::ast::expr::Expr::Dict(
+                quote!(Ok(::rex::ast::expr::Expr::Named(
                     ::rex::ast::id::Id::new(),
                     ::rex::lexer::span::Span::default(),
-                    ::std::collections::BTreeMap::from_iter(vec![#(#items,)*].into_iter())
+                    stringify!(#name).to_string(),
+                    Some(Box::new(::rex::ast::expr::Expr::Dict(
+                        ::rex::ast::id::Id::new(),
+                        ::rex::lexer::span::Span::default(),
+                        ::std::collections::BTreeMap::from_iter(vec![#(#items,)*].into_iter())
+                    )))
+                )))
+            }
+            Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
+                quote!(Ok(::rex::ast::expr::Expr::Named(
+                    ::rex::ast::id::Id::new(),
+                    ::rex::lexer::span::Span::default(),
+                    stringify!(#name).to_string(),
+                    Some(Box::new(::rex::engine::codec::Encode::try_encode(
+                        self.0, span
+                    )?))
                 )))
             }
             Fields::Unnamed(unnamed) => {
@@ -353,17 +348,23 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                     let identifier = syn::Index::from(i);
                     quote!(::rex::engine::codec::Encode::try_encode(self.#identifier, span)?)
                 });
-                quote!(Ok(::rex::ast::expr::Expr::Tuple(
+                quote!(Ok(::rex::ast::expr::Expr::Named(
                     ::rex::ast::id::Id::new(),
                     ::rex::lexer::span::Span::default(),
-                    vec![#(#items,)*]
+                    stringify!(#name).to_string(),
+                    Some(Box::new(::rex::ast::expr::Expr::Tuple(
+                        ::rex::ast::id::Id::new(),
+                        ::rex::lexer::span::Span::default(),
+                        vec![#(#items,)*]
+                    )))
                 )))
             }
             Fields::Unit => {
-                quote!(Ok(::rex::ast::expr::Expr::Tuple(
+                quote!(Ok(::rex::ast::expr::Expr::Named(
                     ::rex::ast::id::Id::new(),
                     ::rex::lexer::span::Span::default(),
-                    vec![]
+                    stringify!(#name).to_string(),
+                    None
                 )))
             }
         },
@@ -402,6 +403,21 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                             }
                         )
                     }
+                    Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
+                        let identifier = Ident::new(&format!("x{}", 0), Span::call_site());
+                        let field_ident = quote!( #identifier );
+                        let field_expr = quote!(
+                            ::rex::engine::codec::Encode::try_encode(#identifier, span)?);
+                        quote!(
+                            Self::#variant_ident ( #field_ident ) =>
+                                Ok(::rex::ast::expr::Expr::Named(
+                                    ::rex::ast::id::Id::new(),
+                                    ::rex::lexer::span::Span::default(),
+                                    String::from(stringify!(#variant_ident)),
+                                    Some(Box::new(#field_expr))
+                                ))
+                        )
+                    }
                     Fields::Unnamed(unnamed) => {
                         let mut field_idents: Vec<proc_macro2::TokenStream> = Vec::new();
                         let mut field_exprs: Vec<proc_macro2::TokenStream> = Vec::new();
@@ -411,6 +427,7 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                             field_exprs.push(quote!(
                                 ::rex::engine::codec::Encode::try_encode(#identifier, span)?));
                         }
+
                         quote!(
                             Self::#variant_ident ( #(#field_idents,)* ) =>
                                 Ok(::rex::ast::expr::Expr::Named(
@@ -477,21 +494,46 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                             entries.get(stringify!(#field_ident))
                                 .ok_or_else(||
                                     ::rex::engine::error::Error::ExpectedTypeGotValue {
-                                        expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                        expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                         got: v.clone(),
                                     })?
                             )? )
                 });
                 quote!(
                     match v {
-                        ::rex::ast::expr::Expr::Dict(_, _, entries) => {
-                            Ok(#name {
-                                #(#fields,)*
-                            })
+                        ::rex::ast::expr::Expr::Named(_, _, n, Some(inner)) if n == stringify!(#name) => {
+                            match &**inner {
+                                ::rex::ast::expr::Expr::Dict(_, _, entries) => {
+                                    Ok(#name {
+                                        #(#fields,)*
+                                    })
+                                }
+                                _ => {
+                                    Err(::rex::engine::error::Error::ExpectedTypeGotValue {
+                                        expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
+                                        got: v.clone(),
+                                    })
+                                }
+                            }
                         }
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
+                                got: v.clone(),
+                            })
+                        }
+                    }
+                )
+            }
+            Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
+                quote!(
+                    match v {
+                        ::rex::ast::expr::Expr::Named(_, _, n, Some(inner)) if n == stringify!(#name) => {
+                            Ok(#name (::rex::engine::codec::Decode::try_decode(&**inner)?))
+                        },
+                        _ => {
+                            Err(::rex::engine::error::Error::ExpectedTypeGotValue {
+                                expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
                             })
                         }
@@ -502,16 +544,27 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                 let items_len = unnamed.unnamed.len();
                 let fields = (0..items_len)
                     .map(|i| quote!( ::rex::engine::codec::Decode::try_decode(&items[#i])?));
+
                 quote!(
                     match v {
-                        ::rex::ast::expr::Expr::Tuple(_, _, items) if items.len() == #items_len => {
-                            Ok(#name (
-                                #(#fields,)*
-                            ))
-                        }
+                        ::rex::ast::expr::Expr::Named(_, _, n, Some(inner)) if n == stringify!(#name) => {
+                            match &**inner {
+                                ::rex::ast::expr::Expr::Tuple(_, _, items) if items.len() == #items_len => {
+                                    Ok(#name (
+                                        #(#fields,)*
+                                    ))
+                                }
+                                _ => {
+                                    Err(::rex::engine::error::Error::ExpectedTypeGotValue {
+                                        expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
+                                        got: v.clone(),
+                                    })
+                                }
+                            }
+                        },
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
                             })
                         }
@@ -521,12 +574,12 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
             Fields::Unit => {
                 quote!(
                     match v {
-                        ::rex::ast::expr::Expr::Tuple(_, _, items) if items.len() == 0 => {
+                        ::rex::ast::expr::Expr::Named(_, _, n, None) if n == stringify!(#name) => {
                             Ok(#name)
                         }
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
                             })
                         }
@@ -548,7 +601,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                 entries.get(stringify!(#field_ident))
                                     .ok_or_else(||
                                         ::rex::engine::error::Error::ExpectedTypeGotValue {
-                                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                            expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                             got: v.clone(),
                                         })?
                                 )? )
@@ -563,11 +616,21 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                     }
                                     _ => {
                                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                            expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                             got: v.clone(),
                                         })
                                     }
                                 }
+                            }
+                        )
+                    }
+                    Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
+                        quote!(
+                            ::rex::ast::expr::Expr::Named(_, _, n, Some(inner))
+                            if n == stringify!(#variant_ident) => {
+                                Ok(Self::#variant_ident (
+                                    ::rex::engine::codec::Decode::try_decode(&**inner)?
+                                ))
                             }
                         )
                     }
@@ -589,7 +652,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                     }
                                     _ => {
                                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                                            expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                             got: v.clone(),
                                         })
                                     }
@@ -612,7 +675,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                     #(#variants,)*
                     _ => {
                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
-                            expected: <Self as ::rex::type_system::types::ToType>::to_type(),
+                            expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                             got: v.clone(),
                         })
                     }

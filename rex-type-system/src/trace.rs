@@ -8,7 +8,7 @@ use crate::{
 pub fn sprint_subst(subst: &Subst) -> String {
     let mut s = String::new();
     s.push_str("{\n");
-    for (k, v) in subst {
+    for (k, v) in subst.iter() {
         s.push_str(&format!("  τ{}: {}\n", k, v));
     }
     s.push('}');
@@ -168,6 +168,9 @@ pub fn sprint_expr_with_type(expr: &Expr, env: &ExprTypeEnv, subst: Option<&Subs
         }
         Expr::Named(..) => {
             unimplemented!("Named expressions are not expected to be present in the AST")
+        }
+        Expr::Promise(..) => {
+            unimplemented!("Promise expressions are not expected to be present in the AST")
         }
         Expr::Var(Var { id, name, .. }) => format!(
             "{}:{}",

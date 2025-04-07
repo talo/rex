@@ -157,9 +157,9 @@ fn derive_codec_struct_named_fields() {
         b: "Hello".to_string(),
     };
     let expr = foo.try_encode(Span::default()).unwrap();
-    assert_expr_eq!(expr, d!(a = u!(42), b = s!("Hello")));
+    assert_expr_eq!(expr, n!("Foo", Some(d!(a = u!(42), b = s!("Hello")))));
 
-    let decoded = Foo::try_decode(&d!(a = u!(42), b = s!("Hello"))).unwrap();
+    let decoded = Foo::try_decode(&n!("Foo", Some(d!(a = u!(42), b = s!("Hello"))))).unwrap();
     assert_eq!(
         decoded,
         Foo {
@@ -181,14 +181,14 @@ fn derive_codec_struct_unnamed_fields() {
 
     let foo = Foo(42, "Hello".to_string());
     let expr = foo.try_encode(Span::default()).unwrap();
-    assert_expr_eq!(expr, tup!(u!(42), s!("Hello")));
-    let decoded = Foo::try_decode(&tup!(u!(42), s!("Hello"))).unwrap();
+    assert_expr_eq!(expr, n!("Foo", Some(tup!(u!(42), s!("Hello")))));
+    let decoded = Foo::try_decode(&n!("Foo", Some(tup!(u!(42), s!("Hello"))))).unwrap();
     assert_eq!(decoded, Foo(42, "Hello".to_string()));
 }
 
 #[test]
 fn derive_codec_struct_unit() {
-    #[derive(Rex, Debug, PartialEq)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     struct Foo;
 
     assert_eq!(
@@ -202,8 +202,13 @@ fn derive_codec_struct_unit() {
 
     let foo = Foo;
     let expr = foo.try_encode(Span::default()).unwrap();
-    assert_expr_eq!(expr, tup!());
+    assert_expr_eq!(expr, n!("Foo", None));
 
-    let decoded = Foo::try_decode(&tup!()).unwrap();
+    let decoded = Foo::try_decode(&n!("Foo", None)).unwrap();
     assert_eq!(decoded, Foo);
+
+    let foo = Foo;
+    let encoded = foo.clone().try_encode(Span::default()).unwrap();
+    let decoded = Foo::try_decode(&encoded).unwrap();
+    assert_eq!(foo, decoded);
 }

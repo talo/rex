@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::Arc,
+};
 
 use rex_ast::id::Id;
 
@@ -7,18 +10,20 @@ use crate::{
     types::{ADTVariant, Type, ADT},
 };
 
-pub type Subst = HashMap<Id, Type>;
+pub type Subst = HashMap<Id, Arc<Type>>;
 
 // NOTE(loong): We do not support overloaded parametric polymorphism.
 pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, String> {
     let mut subst = Subst::new();
-    // FIXME(loong): loop until no more progress is made in resolving
-    // constraints instead of dumbly looping 100 times.
-    for _ in 1..100 {
+    // Loop until no more progress is made in resolving. We often need multiple iterations
+    // because unifications that happen in later contraints may enable unifications in earlier
+    // ones.
+    loop {
+        let mut did_change = false;
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(t1, t2) => {
-                    unify_eq(t1, t2, &mut subst)?;
+                    unify_eq(t1, t2, &mut subst, &mut did_change)?;
                 }
                 Constraint::OneOf(..) => {}
             }
@@ -32,20 +37,29 @@ pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, 
                     // overloaded type variables. This is because we are resolving
                     // all constraints, not just the ones that are actually used by
                     // the expression.
-                    unify_one_of(t1, t2_possibilties, &mut subst)?;
+                    unify_one_of(t1, t2_possibilties, &mut subst, &mut did_change)?;
                 }
             }
+        }
+
+        if !did_change {
+            break;
         }
     }
     Ok(subst)
 }
 
-pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
+pub fn unify_eq(
+    t1: &Arc<Type>,
+    t2: &Arc<Type>,
+    subst: &mut Subst,
+    did_change: &mut bool,
+) -> Result<(), String> {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
     let t2 = apply_subst(t2, subst);
 
-    match (t1, t2) {
+    match (&*t1, &*t2) {
         // Base types must match exactly
         (Type::Bool, Type::Bool) => Ok(()),
         (Type::Uint, Type::Uint) => Ok(()),
@@ -62,28 +76,25 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
             }
 
             for (t1, t2) in ts1.iter().zip(ts2.iter()) {
-                unify_eq(t1, t2, subst)?;
+                unify_eq(t1, t2, subst, did_change)?;
             }
 
             Ok(())
         }
 
         // Lists
-        (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, subst),
+        (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, subst, did_change),
 
         // Dictionaries
         (Type::Dict(d1), Type::Dict(d2)) => {
             if d1.len() != d2.len() {
-                return Err(format!("Cannot unify {} with {}: different no. of keys",
-                    Type::Dict(d1), Type::Dict(d2)));
+                return Err(missing_keys_error(d1, d2));
             }
             for (key, entry1) in d1.iter() {
                 if let Some(entry2) = d2.get(key) {
-                    unify_eq(entry1, entry2, subst)?;
-                }
-                else {
-                    return Err(format!("Cannot unify {} with {}: different keys",
-                        Type::Dict(d1), Type::Dict(d2)));
+                    unify_eq(entry1, entry2, subst, did_change)?;
+                } else {
+                    return Err(missing_keys_error(d1, d2));
                 }
             }
             Ok(())
@@ -91,33 +102,47 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
 
         // For function types, unify arguments and results
         (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
-            unify_eq(&a1, &a2, subst)?;
-            unify_eq(&b1, &b2, subst)
+            unify_eq(&a1, &a2, subst, did_change)?;
+            unify_eq(&b1, &b2, subst, did_change)
         }
 
         // Result
         (Type::Result(a1, b1), Type::Result(a2, b2)) => {
-            unify_eq(&a1, &a2, subst)?;
-            unify_eq(&b1, &b2, subst)
+            unify_eq(&a1, &a2, subst, did_change)?;
+            unify_eq(&b1, &b2, subst, did_change)
         }
 
         // Option
-        (Type::Option(a1), Type::Option(a2)) => unify_eq(&a1, &a2, subst),
+        (Type::Option(a1), Type::Option(a2)) => unify_eq(&a1, &a2, subst, did_change),
+
+        // Promise
+        (Type::Promise(a1), Type::Promise(a2)) => unify_eq(&a1, &a2, subst, did_change),
 
         // Type variable case requires occurs check
         (Type::Var(v1), Type::Var(v2)) => {
             if v1 != v2 {
-                subst.insert(v1, Type::Var(v2));
+                subst.insert(v1.clone(), Arc::new(Type::Var(v2.clone())));
+                *did_change = true;
             }
             Ok(())
         }
 
         // Type variable case requires occurs check
-        (Type::Var(v), t) | (t, Type::Var(v)) => {
-            if occurs_check(v, &t) {
+        (Type::Var(v), _) => {
+            if occurs_check(v, &t2) {
                 Err("Occurs check failed".to_string())
             } else {
-                subst.insert(v, t);
+                subst.insert(v.clone(), t2);
+                *did_change = true;
+                Ok(())
+            }
+        }
+        (_, Type::Var(v)) => {
+            if occurs_check(v, &t1) {
+                Err("Occurs check failed".to_string())
+            } else {
+                subst.insert(v.clone(), t1.clone());
+                *did_change = true;
                 Ok(())
             }
         }
@@ -125,11 +150,11 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
         // ADTs
         (Type::ADT(adt1), Type::ADT(adt2)) => {
             if adt1.name != adt2.name {
-                return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+                return Err(format!("Cannot unify {} with {}", t1, t2));
             }
 
             if adt1.variants.len() != adt2.variants.len() {
-                return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+                return Err(format!("Cannot unify {} with {}", t1, t2));
             }
 
             for i in 0..adt1.variants.len() {
@@ -137,16 +162,16 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
                 let v2 = &adt2.variants[i];
 
                 if v1.name != v2.name {
-                    return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+                    return Err(format!("Cannot unify {} with {}", t1, t2));
                 }
 
                 match (&v1.t, &v2.t) {
                     (None, None) => (),
                     (Some(vt1), Some(vt2)) => {
-                        unify_eq(vt1, vt2, subst)?;
+                        unify_eq(vt1, vt2, subst, did_change)?;
                     }
                     _ => {
-                        return Err(format!("Cannot unify {} with {}", Type::ADT(adt1), Type::ADT(adt2)));
+                        return Err(format!("Cannot unify {} with {}", t1, t2));
                     }
                 }
             }
@@ -160,9 +185,10 @@ pub fn unify_eq(t1: &Type, t2: &Type, subst: &mut Subst) -> Result<(), String> {
 }
 
 pub fn unify_one_of(
-    t1: &Type,
-    t2_possibilities: &HashSet<Type>,
+    t1: &Arc<Type>,
+    t2_possibilities: &HashSet<Arc<Type>>,
     subst: &mut Subst,
+    did_change: &mut bool,
 ) -> Result<(), String> {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
@@ -173,9 +199,10 @@ pub fn unify_one_of(
     for t2 in t2_possibilities {
         let t2 = apply_subst(t2, subst);
         let mut test_subst = subst.clone();
+        let mut test_did_change = *did_change;
 
-        if unify_eq(&t1, &t2, &mut test_subst).is_ok() {
-            successes.push((t2, test_subst));
+        if unify_eq(&t1, &t2, &mut test_subst, &mut test_did_change).is_ok() {
+            successes.push((t2, test_subst, test_did_change));
         }
     }
 
@@ -192,14 +219,15 @@ pub fn unify_one_of(
         1 => {
             // Use the successful substitution
             *subst = successes[0].1.clone();
+            *did_change = successes[0].2.clone();
             Ok(())
         }
         _ => Ok(()),
     }
 }
 
-pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
-    match t {
+pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
+    match &**t {
         Type::UnresolvedVar(_) => todo!("apply_subst should return a result"),
         Type::Var(v) => {
             if let Some(t2) = subst.get(v) {
@@ -209,10 +237,10 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
             }
         }
         Type::ForAll(id, ty, deps) => {
-            Type::ForAll(*id, Box::new(apply_subst(ty, subst)), deps.clone())
+            Arc::new(Type::ForAll(*id, apply_subst(ty, subst), deps.clone()))
         }
 
-        Type::ADT(adt) => Type::ADT(ADT {
+        Type::ADT(adt) => Arc::new(Type::ADT(ADT {
             docs: adt.docs.clone(),
             name: adt.name.clone(),
             variants: adt
@@ -221,27 +249,24 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
                 .map(|v| ADTVariant {
                     docs: v.docs.clone(),
                     name: v.name.clone(),
-                    t: v.t.as_ref().map(|t| Box::new(apply_subst(t, subst))),
+                    t: v.t.as_ref().map(|t| apply_subst(t, subst)),
                     t_docs: v.t_docs.clone(),
                 })
                 .collect(),
-        }),
-        Type::Arrow(a, b) => Type::Arrow(
-            Box::new(apply_subst(a, subst)),
-            Box::new(apply_subst(b, subst)),
-        ),
-        Type::Result(t, e) => Type::Result(
-            Box::new(apply_subst(t, subst)),
-            Box::new(apply_subst(e, subst)),
-        ),
-        Type::Option(t) => Type::Option(Box::new(apply_subst(t, subst))),
-        Type::List(t) => Type::List(Box::new(apply_subst(t, subst))),
-        Type::Dict(kts) => Type::Dict(
+        })),
+        Type::Arrow(a, b) => Arc::new(Type::Arrow(apply_subst(a, subst), apply_subst(b, subst))),
+        Type::Result(t, e) => Arc::new(Type::Result(apply_subst(t, subst), apply_subst(e, subst))),
+        Type::Option(t) => Arc::new(Type::Option(apply_subst(t, subst))),
+        Type::Promise(t) => Arc::new(Type::Promise(apply_subst(t, subst))),
+        Type::List(t) => Arc::new(Type::List(apply_subst(t, subst))),
+        Type::Dict(kts) => Arc::new(Type::Dict(
             kts.iter()
                 .map(|(k, t)| (k.clone(), apply_subst(t, subst)))
                 .collect(),
-        ),
-        Type::Tuple(ts) => Type::Tuple(ts.iter().map(|t| apply_subst(t, subst)).collect()),
+        )),
+        Type::Tuple(ts) => Arc::new(Type::Tuple(
+            ts.iter().map(|t| apply_subst(t, subst)).collect(),
+        )),
 
         Type::Bool
         | Type::Uint
@@ -253,14 +278,14 @@ pub fn apply_subst(t: &Type, subst: &Subst) -> Type {
     }
 }
 
-pub fn occurs_check(var: Id, t: &Type) -> bool {
-    match t {
+pub fn occurs_check(var: &Id, t: &Arc<Type>) -> bool {
+    match &**t {
         Type::UnresolvedVar(_) => false, // TODO(loong): should this function return a result?
-        Type::Var(v) => *v == var,
+        Type::Var(v) => v == var,
         Type::ForAll(id, ty, _deps) => {
             // If we're looking for the same variable that's quantified,
             // then it doesn't occur freely (it's bound)
-            if *id == var {
+            if id == var {
                 false
             } else {
                 occurs_check(var, ty)
@@ -274,6 +299,7 @@ pub fn occurs_check(var: Id, t: &Type) -> bool {
         Type::Arrow(a, b) => occurs_check(var, a) || occurs_check(var, b),
         Type::Result(t, e) => occurs_check(var, t) || occurs_check(var, e),
         Type::Option(t) => occurs_check(var, t),
+        Type::Promise(t) => occurs_check(var, t),
         Type::List(t) => occurs_check(var, t),
         Type::Dict(kts) => kts.values().any(|t| occurs_check(var, t)),
         Type::Tuple(ts) => ts.iter().any(|t| occurs_check(var, t)),
@@ -286,6 +312,27 @@ pub fn occurs_check(var: Id, t: &Type) -> bool {
         | Type::Uuid
         | Type::DateTime => false,
     }
+}
+
+fn missing_keys_error(
+    d1: &BTreeMap<String, Arc<Type>>,
+    d2: &BTreeMap<String, Arc<Type>>,
+) -> String {
+    let mut missing_keys: Vec<String> = Vec::new();
+    for k in d1.keys() {
+        if !d2.contains_key(k) {
+            missing_keys.push(k.clone());
+        }
+    }
+
+    for k in d2.keys() {
+        if !d1.contains_key(k) {
+            missing_keys.push(k.clone());
+        }
+    }
+
+    missing_keys.sort();
+    format!("Missing keys: {:?}", missing_keys)
 }
 
 // Test cases
@@ -302,20 +349,33 @@ mod tests {
         let alpha = Id::new();
         let beta = Id::new();
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
+        let mut did_change = false;
 
         // Test case 1: α = Int
-        let t1 = Type::Var(alpha);
-        let t2 = Type::Int;
-        assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
-        assert_eq!(apply_subst(&Type::Var(alpha), &subst), Type::Int);
+        let t1 = Arc::new(Type::Var(alpha));
+        let t2 = Arc::new(Type::Int);
+        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
+        assert_eq!(
+            apply_subst(&Arc::new(Type::Var(alpha)), &subst),
+            Arc::new(Type::Int)
+        );
 
         // Test case 2: (α -> β) = (Int -> Bool)
-        let t1 = Type::Arrow(Box::new(Type::Var(alpha)), Box::new(Type::Var(beta)));
-        let t2 = Type::Arrow(Box::new(Type::Int), Box::new(Type::Bool));
-        assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
-        assert_eq!(apply_subst(&Type::Var(alpha), &subst), Type::Int);
-        assert_eq!(apply_subst(&Type::Var(beta), &subst), Type::Bool);
+        let t1 = Arc::new(Type::Arrow(
+            Arc::new(Type::Var(alpha)),
+            Arc::new(Type::Var(beta)),
+        ));
+        let t2 = Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Bool)));
+        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
+        assert_eq!(
+            apply_subst(&Arc::new(Type::Var(alpha)), &subst),
+            Arc::new(Type::Int)
+        );
+        assert_eq!(
+            apply_subst(&Arc::new(Type::Var(beta)), &subst),
+            Arc::new(Type::Bool)
+        );
     }
 
     #[test]
@@ -323,15 +383,19 @@ mod tests {
         let alpha = Id::new();
         let beta = Id::new();
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
+        let mut did_change = false;
 
         // Unify α = β
-        let t1 = Type::Var(alpha);
-        let t2 = Type::Var(beta);
-        assert!(unify_eq(&t1, &t2, &mut subst).is_ok());
+        let t1 = Arc::new(Type::Var(alpha));
+        let t2 = Arc::new(Type::Var(beta));
+        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
 
         // Now α should be mapped to β
-        assert_eq!(apply_subst(&Type::Var(alpha), &subst), Type::Var(beta));
+        assert_eq!(
+            apply_subst(&Arc::new(Type::Var(alpha)), &subst),
+            Arc::new(Type::Var(beta))
+        );
     }
 
     #[test]
@@ -340,22 +404,23 @@ mod tests {
         let beta = Id::new();
         let gamma = Id::new();
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
+        let mut did_change = false;
 
         // f : α -> β
-        let f_type = Type::Arrow(
-            Box::new(Type::Var(alpha)), // α
-            Box::new(Type::Var(beta)),  // β
-        );
+        let f_type = Arc::new(Type::Arrow(
+            Arc::new(Type::Var(alpha)), // α
+            Arc::new(Type::Var(beta)),  // β
+        ));
 
         // g : γ -> γ
-        let g_type = Type::Arrow(
-            Box::new(Type::Var(gamma)), // γ
-            Box::new(Type::Var(gamma)), // γ (same type)
-        );
+        let g_type = Arc::new(Type::Arrow(
+            Arc::new(Type::Var(gamma)), // γ
+            Arc::new(Type::Var(gamma)), // γ (same type)
+        ));
 
         // Unify f with g directly
-        assert!(unify_eq(&f_type, &g_type, &mut subst).is_ok());
+        assert!(unify_eq(&f_type, &g_type, &mut subst, &mut did_change).is_ok());
 
         // After unification:
         let final_f = apply_subst(&f_type, &subst);
@@ -367,7 +432,10 @@ mod tests {
         // And specifically they should both be γ -> γ
         assert_eq!(
             final_f,
-            Type::Arrow(Box::new(Type::Var(gamma)), Box::new(Type::Var(gamma)))
+            Arc::new(Type::Arrow(
+                Arc::new(Type::Var(gamma)),
+                Arc::new(Type::Var(gamma))
+            ))
         );
     }
 
@@ -377,27 +445,34 @@ mod tests {
         let beta = Id::new();
         let gamma = Id::new();
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
+        let mut did_change = false;
 
         // f : α -> β
-        let f_type = Type::Arrow(
-            Box::new(Type::Var(alpha)), // α
-            Box::new(Type::Var(beta)),  // β
-        );
+        let f_type = Arc::new(Type::Arrow(
+            Arc::new(Type::Var(alpha)), // α
+            Arc::new(Type::Var(beta)),  // β
+        ));
 
         // g : γ -> γ
-        let g_type = Type::Arrow(
-            Box::new(Type::Var(gamma)), // γ
-            Box::new(Type::Var(gamma)), // γ (same type)
-        );
+        let g_type = Arc::new(Type::Arrow(
+            Arc::new(Type::Var(gamma)), // γ
+            Arc::new(Type::Var(gamma)), // γ (same type)
+        ));
 
         // Now unify g's output with f's input
-        let g_output = Type::Var(gamma); // γ
-        let f_input = Type::Var(alpha); // α
-        assert!(unify_eq(&g_output, &f_input, &mut subst).is_ok());
+        let g_output = Arc::new(Type::Var(gamma)); // γ
+        let f_input = Arc::new(Type::Var(alpha)); // α
+        assert!(unify_eq(&g_output, &f_input, &mut subst, &mut did_change).is_ok());
 
         // Let's make g take an Int
-        assert!(unify_eq(&Type::Var(gamma), &Type::Int, &mut subst).is_ok());
+        assert!(unify_eq(
+            &Arc::new(Type::Var(gamma)),
+            &Arc::new(Type::Int),
+            &mut subst,
+            &mut did_change,
+        )
+        .is_ok());
 
         // After unification:
         let final_g = apply_subst(&g_type, &subst);
@@ -406,13 +481,13 @@ mod tests {
         // g should be Int -> Int
         assert_eq!(
             final_g,
-            Type::Arrow(Box::new(Type::Int), Box::new(Type::Int))
+            Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int)))
         );
 
         // f should be Int -> β (where β is still free)
         assert_eq!(
             final_f,
-            Type::Arrow(Box::new(Type::Int), Box::new(Type::Var(beta)))
+            Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Var(beta))))
         );
     }
 
@@ -423,25 +498,26 @@ mod tests {
         let gamma = Id::new();
         let delta = Id::new();
 
-        let mut subst = HashMap::new();
+        let mut subst = Subst::new();
+        let mut did_change = false;
 
         // f : (α -> β) -> γ
-        let f_type = Type::Arrow(
-            Box::new(Type::Arrow(
-                Box::new(Type::Var(alpha)), // α
-                Box::new(Type::Var(beta)),  // β
+        let f_type = Arc::new(Type::Arrow(
+            Arc::new(Type::Arrow(
+                Arc::new(Type::Var(alpha)), // α
+                Arc::new(Type::Var(beta)),  // β
             )),
-            Box::new(Type::Var(gamma)), // γ
-        );
+            Arc::new(Type::Var(gamma)), // γ
+        ));
 
         // g : (Int -> Bool) -> δ
-        let g_type = Type::Arrow(
-            Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Bool))),
-            Box::new(Type::Var(delta)), // δ
-        );
+        let g_type = Arc::new(Type::Arrow(
+            Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Bool))),
+            Arc::new(Type::Var(delta)), // δ
+        ));
 
         // Unify f with g
-        assert!(unify_eq(&f_type, &g_type, &mut subst).is_ok());
+        assert!(unify_eq(&f_type, &g_type, &mut subst, &mut did_change).is_ok());
 
         // After unification:
         let final_f = apply_subst(&f_type, &subst);
@@ -449,10 +525,10 @@ mod tests {
         // final_f should be (Int -> Bool) -> δ
         assert_eq!(
             final_f,
-            Type::Arrow(
-                Box::new(Type::Arrow(Box::new(Type::Int), Box::new(Type::Bool))),
-                Box::new(Type::Var(delta))
-            )
+            Arc::new(Type::Arrow(
+                Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Bool))),
+                Arc::new(Type::Var(delta))
+            ))
         );
     }
 
@@ -464,64 +540,82 @@ mod tests {
         let var = alpha.clone();
 
         // Simple variable occurrence
-        assert!(occurs_check(var, &Type::Var(alpha)));
-        assert!(!occurs_check(var, &Type::Var(beta)));
+        assert!(occurs_check(&var, &Arc::new(Type::Var(alpha))));
+        assert!(!occurs_check(&var, &Arc::new(Type::Var(beta))));
 
         // Arrow type occurrences
         assert!(occurs_check(
-            var,
-            &Type::Arrow(Box::new(Type::Var(alpha)), Box::new(Type::Int))
+            &var,
+            &Arc::new(Type::Arrow(Arc::new(Type::Var(alpha)), Arc::new(Type::Int)))
         ));
         assert!(occurs_check(
-            var,
-            &Type::Arrow(Box::new(Type::Int), Box::new(Type::Var(alpha)))
+            &var,
+            &Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Var(alpha))))
         ));
 
         // Tuple occurrences - would have failed before our fix
         assert!(occurs_check(
-            var,
-            &Type::Tuple(vec![Type::Int, Type::Var(alpha), Type::Bool])
+            &var,
+            &Arc::new(Type::Tuple(vec![
+                Arc::new(Type::Int),
+                Arc::new(Type::Var(alpha)),
+                Arc::new(Type::Bool)
+            ]))
         ));
         assert!(!occurs_check(
-            var,
-            &Type::Tuple(vec![Type::Int, Type::Var(beta), Type::Bool])
+            &var,
+            &Arc::new(Type::Tuple(vec![
+                Arc::new(Type::Int),
+                Arc::new(Type::Var(beta)),
+                Arc::new(Type::Bool)
+            ]))
         ));
 
         // List occurrences - would have failed before our fix
-        assert!(occurs_check(var, &Type::List(Box::new(Type::Var(alpha)))));
-        assert!(!occurs_check(var, &Type::List(Box::new(Type::Var(beta)))));
+        assert!(occurs_check(
+            &var,
+            &Arc::new(Type::List(Arc::new(Type::Var(alpha))))
+        ));
+        assert!(!occurs_check(
+            &var,
+            &Arc::new(Type::List(Arc::new(Type::Var(beta))))
+        ));
 
         // Nested structures - would have failed before our fix
         assert!(occurs_check(
-            var,
-            &Type::Tuple(vec![
-                Type::List(Box::new(Type::Var(alpha))),
-                Type::Arrow(
-                    Box::new(Type::Int),
-                    Box::new(Type::List(Box::new(Type::Bool)))
-                )
-            ])
+            &var,
+            &Arc::new(Type::Tuple(vec![
+                Arc::new(Type::List(Arc::new(Type::Var(alpha)))),
+                Arc::new(Type::Arrow(
+                    Arc::new(Type::Int),
+                    Arc::new(Type::List(Arc::new(Type::Bool)))
+                ))
+            ]))
         ));
 
         // ForAll cases - would have failed before our fix
         // Case 1: The variable we're looking for is bound by the ForAll
         assert!(!occurs_check(
-            var,
-            &Type::ForAll(alpha, Box::new(Type::Var(alpha)), BTreeSet::new())
+            &var,
+            &Arc::new(Type::ForAll(
+                alpha,
+                Arc::new(Type::Var(alpha)),
+                BTreeSet::new()
+            ))
         ));
 
         // Case 2: The variable we're looking for occurs freely in the body
         let var2 = beta;
         assert!(occurs_check(
-            var2,
-            &Type::ForAll(
+            &var2,
+            &Arc::new(Type::ForAll(
                 alpha,
-                Box::new(Type::Arrow(
-                    Box::new(Type::Var(beta)),
-                    Box::new(Type::Var(alpha))
+                Arc::new(Type::Arrow(
+                    Arc::new(Type::Var(beta)),
+                    Arc::new(Type::Var(alpha))
                 )),
                 BTreeSet::new()
-            )
+            ))
         ));
     }
 }

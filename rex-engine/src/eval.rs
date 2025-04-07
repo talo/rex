@@ -39,7 +39,8 @@ where
         | Expr::String(..)
         | Expr::Uuid(..)
         | Expr::DateTime(..)
-        | Expr::Named(..) => Ok(expr.clone()),
+        | Expr::Named(..)
+        | Expr::Promise(..) => Ok(expr.clone()),
         Expr::Tuple(id, span, tuple) => eval_tuple(ctx, id, span, tuple).await,
         Expr::List(id, span, list) => eval_list(ctx, id, span, list).await,
         Expr::Dict(id, span, dict) => eval_dict(ctx, id, span, dict).await,
@@ -136,13 +137,8 @@ where
     State: Clone + Send + Sync + 'static,
 {
     let var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
-    print!("evaluating var: ({}):({})...", var, var_type);
 
     if let Some(expr) = ctx.scope.get(&var.name) {
-        let expr_type =
-            unify::apply_subst(ctx.env.read().await.get(expr.id()).unwrap(), &ctx.subst);
-        println!(" found in scope: {}:{}", expr, expr_type);
-
         let mut new_expr = expr.clone();
         *new_expr.id_mut() = Id::new();
         ctx.env
@@ -159,7 +155,6 @@ where
             // We have arrived at a concrete value
             new_expr.clone()
         } else {
-            println!(" overriding with type: {}", var_type);
             // We have not arrived at a concrete value
             eval(ctx, &new_expr).await?
         };
@@ -173,29 +168,23 @@ where
         Some(non_var_expr) => return eval(ctx, non_var_expr).await, // Ok(non_var_expr.clone()),
     };
 
-    let f = ctx.ftable.lookup_fns(&var.name, var_type.clone()).next();
+    let f = ctx.ftable.lookup_fns(&var.name, &*var_type).next();
     if let Some((f, f_type)) = f {
         if f_type.num_params() == 0 {
             let res = f(ctx, &vec![]).await?;
             ctx.env.write().await.insert(*res.id(), var_type.clone());
-            println!(
-                " found in ftable: {} and evaluated to: ({}):({})",
-                f_type, res, var_type
-            );
             return Ok(res);
         }
-        println!(" found in ftable: {}", var_type);
 
         return Ok(Expr::Var(var.clone()));
     }
 
-    println!(" not found in ftable!");
     Err(Error::VarNotFound { var: var.clone() })
 }
 
 pub async fn eval_app<State>(
     ctx: &Context<State>,
-    id: &Id,
+    _id: &Id,
     _span: &Span,
     f: &Expr,
     x: &Expr,
@@ -203,8 +192,6 @@ pub async fn eval_app<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let fx_type = unify::apply_subst(ctx.env.read().await.get(id).unwrap(), &ctx.subst);
-    println!("applying: ({} {}): {}", f, x, fx_type);
     apply(ctx, f, x).await
 }
 
@@ -216,15 +203,15 @@ pub async fn apply<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let f_type: Type = unify::apply_subst(
+    let f_type = unify::apply_subst(
         ctx.env.read().await.get(f.borrow().id()).unwrap(),
         &ctx.subst,
     );
-    let x_type: Type = unify::apply_subst(
+    let x_type = unify::apply_subst(
         ctx.env.read().await.get(x.borrow().id()).unwrap(),
         &ctx.subst,
     );
-    let (_, b_type) = match &f_type {
+    let (_, b_type) = match &*f_type {
         Type::Arrow(a, b) => (a.clone(), b.clone()),
         _ => panic!("Function application on non-function type"),
     };
@@ -236,24 +223,13 @@ where
         Expr::Var(var) => {
             // TODO(loong): we should be checking if more than one function is
             // found. This is an ambiguity error.
-            let f = ctx.ftable.lookup_fns(&var.name, f_type.clone()).next();
+            let f = ctx.ftable.lookup_fns(&var.name, &*f_type).next();
             if let Some((f, _ftype)) = f {
                 match f_type.num_params() {
                     0 => panic!("Function application on non-function type"),
-                    1 => {
-                        println!(
-                            "calling function: ({}:{}) ({}:{}) results in type: {}",
-                            &var, &f_type, &x, &x_type, &b_type
-                        );
-                        f(ctx, &vec![x]).await?
-                    }
+                    1 => f(ctx, &vec![x]).await?,
                     // TODO(loong): fix the span.
                     _ => {
-                        println!(
-                            "creating curry: ({}:{}) ({}:{})",
-                            &var, &f_type, &x, &x_type
-                        );
-
                         let mut x = x.clone();
                         *x.id_mut() = Id::new();
                         ctx.env.write().await.insert(*x.id(), x_type.clone());
@@ -289,7 +265,7 @@ where
                 body => body,
             };
             *body.id_mut() = new_body_id;
-            ctx.env.write().await.insert(new_body_id, *b_type.clone());
+            ctx.env.write().await.insert(new_body_id, b_type.clone());
 
             let mut ctx: Context<State> = ctx.clone();
             ctx.scope.insert_mut(param.name, x);
@@ -315,15 +291,6 @@ where
             // The solution is to alter the way a curried function is actually
             // called by the `ftable` and it loops until all arguments are
             // consumed.
-            println!(
-                "pushing to args: {}[{}] arg: {}",
-                var,
-                args.iter()
-                    .map(|a| a.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                x
-            );
             args.push(x.clone());
             if f_type.num_params() < args.len() {
                 panic!("Too many arguments");
@@ -341,30 +308,14 @@ where
                     ));
                 }
 
-                println!(
-                    "curried function lookup: ({}:{}) {} -> ({})",
-                    &var,
-                    &f_type,
-                    &args_fmt.join(" -> "),
-                    &b_type
-                );
-
-                let f_type = Type::build_arrow(arg_types, *b_type.clone());
+                let f_type = Type::build_arrow(arg_types, b_type.clone());
 
                 // TODO(loong): we should be checking if more than one function is
                 // found. This is an ambiguity error.
-                let f = ctx.ftable.lookup_fns(&var.name, f_type.clone()).next();
+                let f = ctx.ftable.lookup_fns(&var.name, &*f_type).next();
 
-                if let Some((f, found_ftype)) = f {
-                    println!("  ↳curried function found: {}", found_ftype);
-                    println!(
-                        "  ↳calling curried function: ({}:{}) ({}:{}) results in type: {}",
-                        &var, &f_type, &x, &x_type, &b_type
-                    );
-                    let res = f(ctx, &args).await?;
-
-                    println!("  ↳curry function result: {}", &res);
-                    res
+                if let Some((f, _)) = f {
+                    f(ctx, &args).await?
                 } else {
                     panic!("Function not found: {}:{}", var.name, f_type)
                 }
@@ -376,7 +327,7 @@ where
         _ => unimplemented!(),
     };
 
-    ctx.env.write().await.insert(*res.id(), *b_type);
+    ctx.env.write().await.insert(*res.id(), b_type);
 
     Ok(res)
 }
@@ -447,18 +398,24 @@ where
 
 #[cfg(test)]
 pub mod test {
+    use crate::{engine::Builder, program::Program};
     use rex_ast::{assert_expr_eq, b, d, f, i, l, n, s, tup, u};
     use rex_type_system::{
-        bool,
-        dict, float, int, list, option, result, string,
-        tuple,
-        types::Type,
-        uint,
+        bool, dict, float, int, list, option, result, string, tuple, types::Type, uint,
     };
 
-    use crate::util::parse_infer_and_eval;
-
     use super::*;
+
+    /// Helper function for parsing, inferring, and evaluating a given code
+    /// snippet. Pretty much all of the test suites can use this flow for
+    /// testing that the engine is correctly evaluating types and expressions.
+    async fn parse_infer_and_eval(code: &str) -> Result<(Expr, Arc<Type>), Error> {
+        let builder: Builder<()> = Builder::with_prelude().unwrap();
+        let program = Program::compile(builder, code)?;
+        let res_type = program.res_type.clone();
+        let res = program.run(()).await?;
+        Ok((res, res_type))
+    }
 
     #[tokio::test]
     async fn test_literals() {
@@ -685,8 +642,8 @@ pub mod test {
     async fn test_list() {
         // Empty list
         let (res, res_type) = parse_infer_and_eval(r#"[]"#).await.unwrap();
-        assert!(match res_type {
-            Type::List(inner) => matches!(&*inner, Type::Var(_)),
+        assert!(match &*res_type {
+            Type::List(inner) => matches!(&**inner, Type::Var(_)),
             _ => false,
         });
         assert_expr_eq!(res, l!(); ignore span);
@@ -747,11 +704,11 @@ pub mod test {
     #[tokio::test]
     async fn test_uuid() -> Result<(), String> {
         let (res, res_type) = parse_infer_and_eval(r#"random_uuid"#).await.unwrap();
-        assert!(matches!(res_type, Type::Uuid));
+        assert!(matches!(&*res_type, Type::Uuid));
         assert!(matches!(res, Expr::Uuid(..))); // Don't check value; it's random!
 
         let (res, res_type) = parse_infer_and_eval(r#"string random_uuid"#).await.unwrap();
-        assert!(matches!(res_type, Type::String));
+        assert!(matches!(&*res_type, Type::String));
         assert!(matches!(res, Expr::String(..))); // Don't check value; it's random!
 
         Ok(())
@@ -760,11 +717,11 @@ pub mod test {
     #[tokio::test]
     async fn test_datetime() -> Result<(), String> {
         let (res, res_type) = parse_infer_and_eval(r#"now"#).await.unwrap();
-        assert!(matches!(res_type, Type::DateTime));
+        assert!(matches!(&*res_type, Type::DateTime));
         assert!(matches!(res, Expr::DateTime(..))); // Don't check value; depends on current time
 
         let (res, res_type) = parse_infer_and_eval(r#"string now"#).await.unwrap();
-        assert!(matches!(res_type, Type::String));
+        assert!(matches!(&*res_type, Type::String));
         assert!(matches!(res, Expr::String(..))); // Don't check value; depends on current time
 
         Ok(())
@@ -1374,5 +1331,43 @@ pub mod test {
             ];
             ignore span
         );
+    }
+
+    #[tokio::test]
+    async fn test_elem() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let
+                tuple = (3, 1.5, "test", true) in
+            {
+                field0 = (elem_4_0 tuple),
+                field1 = (elem_4_1 tuple),
+                field2 = (elem_4_2 tuple),
+                field3 = (elem_4_3 tuple),
+            }
+        "#,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            res_type,
+            dict! {
+                field0: uint!(),
+                field1: float!(),
+                field2: string!(),
+                field3: bool!(),
+            }
+        );
+
+        assert_expr_eq!(
+            res,
+            d!{
+                field0 = u!(3),
+                field1 = f!(1.5),
+                field2 = s!("test"),
+                field3 = b!(true),
+            };
+            ignore span);
     }
 }

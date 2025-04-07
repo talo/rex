@@ -1,6 +1,7 @@
 use std::{
     borrow::{Borrow, BorrowMut},
     marker::PhantomData,
+    sync::Arc,
 };
 
 use chrono::{DateTime, Utc};
@@ -242,7 +243,7 @@ impl Decode for bool {
         match v {
             Expr::Bool(_, _, x) => Ok(*x as bool),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Arc::new(Type::Int),
                 got: v.clone(),
             }),
         }
@@ -254,7 +255,7 @@ impl Decode for u8 {
         match v {
             Expr::Uint(_, _, x) => Ok(*x as u8),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Uint,
+                expected: Arc::new(Type::Uint),
                 got: v.clone(),
             }),
         }
@@ -266,7 +267,7 @@ impl Decode for u16 {
         match v {
             Expr::Uint(_, _, x) => Ok(*x as u16),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Uint,
+                expected: Arc::new(Type::Uint),
                 got: v.clone(),
             }),
         }
@@ -278,7 +279,7 @@ impl Decode for u32 {
         match v {
             Expr::Uint(_, _, x) => Ok(*x as u32),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Uint,
+                expected: Arc::new(Type::Uint),
                 got: v.clone(),
             }),
         }
@@ -289,7 +290,7 @@ impl Decode for u64 {
         match v {
             Expr::Uint(_, _, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Uint,
+                expected: Arc::new(Type::Uint),
                 got: v.clone(),
             }),
         }
@@ -301,7 +302,7 @@ impl Decode for u128 {
         match v {
             Expr::Uint(_, _, x) => Ok(*x as u128),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Uint,
+                expected: Arc::new(Type::Uint),
                 got: v.clone(),
             }),
         }
@@ -313,7 +314,7 @@ impl Decode for i8 {
         match v {
             Expr::Int(_, _, x) => Ok(*x as i8),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Arc::new(Type::Int),
                 got: v.clone(),
             }),
         }
@@ -325,7 +326,7 @@ impl Decode for i16 {
         match v {
             Expr::Int(_, _, x) => Ok(*x as i16),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Arc::new(Type::Int),
                 got: v.clone(),
             }),
         }
@@ -337,7 +338,7 @@ impl Decode for i32 {
         match v {
             Expr::Int(_, _, x) => Ok(*x as i32),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Arc::new(Type::Int),
                 got: v.clone(),
             }),
         }
@@ -349,7 +350,7 @@ impl Decode for i64 {
         match v {
             Expr::Int(_, _, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Arc::new(Type::Int),
                 got: v.clone(),
             }),
         }
@@ -361,7 +362,7 @@ impl Decode for i128 {
         match v {
             Expr::Int(_, _, x) => Ok(*x as i128),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Arc::new(Type::Int),
                 got: v.clone(),
             }),
         }
@@ -373,7 +374,7 @@ impl Decode for f32 {
         match v {
             Expr::Float(_, _, x) => Ok(*x as f32),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Float,
+                expected: Arc::new(Type::Float),
                 got: v.clone(),
             }),
         }
@@ -385,7 +386,7 @@ impl Decode for f64 {
         match v {
             Expr::Float(_, _, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Float,
+                expected: Arc::new(Type::Float),
                 got: v.clone(),
             }),
         }
@@ -397,7 +398,7 @@ impl Decode for String {
         match v {
             Expr::String(_, _, x) => Ok(x.clone()),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Arc::new(Type::Int),
                 got: v.clone(),
             }),
         }
@@ -409,7 +410,7 @@ impl Decode for Uuid {
         match v {
             Expr::Uuid(_, _, u) => Ok(u.clone()),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -421,7 +422,7 @@ impl Decode for DateTime<Utc> {
         match v {
             Expr::DateTime(_, _, dt) => Ok(dt.clone()),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -433,7 +434,7 @@ impl Decode for () {
         match v {
             Expr::Tuple(_id, _span, xs) if xs.len() == 0 => Ok(()),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -448,7 +449,7 @@ where
         match v {
             Expr::Tuple(_id, _span, xs) if xs.len() == 1 => Ok((T0::try_decode(&xs[0])?,)),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -466,7 +467,7 @@ where
                 Ok((T0::try_decode(&xs[0])?, T1::try_decode(&xs[1])?))
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -487,7 +488,7 @@ where
                 T2::try_decode(&xs[2])?,
             )),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -510,7 +511,7 @@ where
                 T3::try_decode(&xs[3])?,
             )),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Self::to_type(),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
             }),
         }
@@ -531,7 +532,7 @@ where
                 Ok(ys)
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Int,
+                expected: Arc::new(Type::Int),
                 got: v.clone(),
             }),
         }
@@ -548,7 +549,7 @@ where
             Expr::Named(_id, _span, name, Some(x)) if name == "Ok" => Ok(Ok(T::try_decode(x)?)),
             Expr::Named(_id, _span, name, Some(x)) if name == "Err" => Ok(Err(E::try_decode(x)?)),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Result(Box::new(T::to_type()), Box::new(E::to_type())),
+                expected: Arc::new(Type::Result(Arc::new(T::to_type()), Arc::new(E::to_type()))),
                 got: v.clone(),
             }),
         }
@@ -564,7 +565,7 @@ where
             Expr::Named(_id, _span, name, Some(x)) if name == "Some" => Ok(Some(T::try_decode(x)?)),
             Expr::Named(_id, _span, name, None) if name == "None" => Ok(None),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Type::Option(Box::new(T::to_type())),
+                expected: Arc::new(Type::Option(Arc::new(T::to_type()))),
                 got: v.clone(),
             }),
         }
@@ -630,6 +631,6 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::Arrow(Box::new(A::to_type()), Box::new(B::to_type()))
+        Type::Arrow(Arc::new(A::to_type()), Arc::new(B::to_type()))
     }
 }

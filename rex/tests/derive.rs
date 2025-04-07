@@ -1,12 +1,16 @@
 use rex_ast::{assert_expr_eq, d, f, n, s, tup, u};
-use rex_proc_macro::Rex;
-use rex_engine::engine::Builder;
-use rex_engine::util::parse_infer_and_eval_with_builder;
-use rex_type_system::{
-    adt,
-    types::{ADTVariant, ADT, ToType, Type},
-    tuple,
+use rex_engine::{
+    codec::{Decode, Encode},
+    engine::Builder,
+    program::Program,
 };
+use rex_lexer::span::Span;
+use rex_proc_macro::Rex;
+use rex_type_system::{
+    adt, tuple,
+    types::{ADTVariant, ToType, ADT},
+};
+use std::sync::Arc;
 
 #[allow(dead_code)]
 #[test]
@@ -59,8 +63,8 @@ pub fn derive_struct() {
                 z: float!(),
                 w: list![string!()],
                 t: tuple!(bool!(), int!(), float!(), list![string!()]),
-                u: MyInnerStruct::to_type(),
-                v: list![MyInnerStruct::to_type()]
+                u: Arc::new(MyInnerStruct::to_type()),
+                v: list![Arc::new(MyInnerStruct::to_type())]
             }
         ))
     );
@@ -82,15 +86,15 @@ pub fn derive_struct() {
             name: String::from("MyTupleStruct"),
             variants: vec![ADTVariant {
                 name: String::from("MyTupleStruct"),
-                t: Some(Box::new(tuple!(
+                t: Some(tuple!(
                     bool!(),
                     int!(),
                     float!(),
                     list![string!()],
                     tuple!(bool!(), int!(), float!(), list![string!()]),
-                    MyInnerStruct::to_type(),
-                    list![MyInnerStruct::to_type()]
-                ))),
+                    Arc::new(MyInnerStruct::to_type()),
+                    list![Arc::new(MyInnerStruct::to_type())]
+                )),
                 docs: None,
                 t_docs: None,
             }],
@@ -255,25 +259,25 @@ MyEnum::Z{}
                 },
                 ADTVariant {
                     name: "W".to_string(),
-                    t: Some(Box::new(bool!())),
+                    t: Some(bool!()),
                     docs: None,
                     t_docs: None,
                 },
                 ADTVariant {
                     name: "T".to_string(),
-                    t: Some(Box::new(tuple!(int!(), float!(), list![string!()]))),
+                    t: Some(tuple!(int!(), float!(), list![string!()])),
                     docs: None,
                     t_docs: None,
                 },
                 ADTVariant {
                     name: "U".to_string(),
-                    t: Some(Box::new(dict! {
+                    t: Some(dict! {
                         x: bool!(),
                         y: int!(),
                         z: float!(),
                         w: list![string!()],
                         renamed: tuple!(bool!(), int!(), float!(), list![string!()]),
-                    })),
+                    }),
                     docs: None,
                     t_docs: Some(
                         [
@@ -292,7 +296,7 @@ MyEnum::Z{}
                 },
                 ADTVariant {
                     name: "Renamed".to_string(),
-                    t: Some(Box::new(MyInnerStruct::to_type())),
+                    t: Some(Arc::new(MyInnerStruct::to_type())),
                     docs: None,
                     t_docs: None,
                 }
@@ -304,7 +308,7 @@ MyEnum::Z{}
 #[tokio::test]
 async fn adt_enum() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub enum Color {
         Red,
         Green,
@@ -312,134 +316,218 @@ async fn adt_enum() {
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Color::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
-        builder,
-        r#"(Red, Green, Blue)"#)
-        .await
-        .unwrap();
+    builder.register_adt(&Arc::new(Color::to_type()), None, None);
+    let program = Program::compile(builder, r#"(Red, Green, Blue)"#).unwrap();
     assert_eq!(
-        res_type,
-        tuple!(Color::to_type(), Color::to_type(), Color::to_type()));
+        program.res_type,
+        tuple!(
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type())
+        )
+    );
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         tup!(n!("Red", None), n!("Green", None), n!("Blue", None));
         ignore span);
+
+    let colors = (Color::Red, Color::Green, Color::Blue);
+    let encoded = colors.clone().try_encode(Span::default()).unwrap();
+    let decoded = <(Color, Color, Color)>::try_decode(&encoded).unwrap();
+    assert_eq!(colors, decoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
 async fn adt_enum_int() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub enum Color {
         Red = 1,
         Green = 2,
         Blue = 3,
     }
 
-    assert_eq!(Color::to_type(), Type::Uint);
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Color::to_type()), None, None);
+    let program = Program::compile(builder, r#"(Red, Green, Blue)"#).unwrap();
+    assert_eq!(
+        program.res_type,
+        tuple!(
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type())
+        )
+    );
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(
+        res,
+        tup!(n!("Red", None), n!("Green", None), n!("Blue", None));
+        ignore span);
+
+    let colors = (Color::Red, Color::Green, Color::Blue);
+    let encoded = colors.clone().try_encode(Span::default()).unwrap();
+    let decoded = <(Color, Color, Color)>::try_decode(&encoded).unwrap();
+    assert_eq!(colors, decoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
 async fn adt_variant_tuple() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub enum Shape {
         Rectangle(f64, f64),
         Circle(f64),
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Shape::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
-        builder,
-        r#"Rectangle (2.0 * 3.0) (4.0 * 5.0)"#)
-        .await
-        .unwrap();
-    assert_eq!(res_type, Shape::to_type());
+    builder.register_adt(&Arc::new(Shape::to_type()), None, None);
+    let program = Program::compile(builder, r#"Rectangle (2.0 * 3.0) (4.0 * 5.0)"#).unwrap();
+    assert_eq!(*program.res_type, Shape::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Rectangle", Some(tup!(f!(6.0), f!(20.0))));
         ignore span);
 
+    let shape1 = Shape::Rectangle(6.0, 20.0);
+    let encoded = shape1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Shape::try_decode(&encoded).unwrap();
+    assert_eq!(shape1, decoded);
+    // println!("res     = {}", res);
+    // println!("encoded = {}", encoded);
+    assert_expr_eq!(res, encoded; ignore span);
+
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Shape::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
-        builder,
-        r#"Circle (3.0 * 4.0)"#)
-        .await
-        .unwrap();
-    assert_eq!(res_type, Shape::to_type());
+    builder.register_adt(&Arc::new(Shape::to_type()), None, None);
+    let program = Program::compile(builder, r#"Circle (3.0 * 4.0)"#).unwrap();
+    assert_eq!(*program.res_type, Shape::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Circle", Some(f!(12.0)));
         ignore span);
+
+    let shape1 = Shape::Circle(12.0);
+    let encoded = shape1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Shape::try_decode(&encoded).unwrap();
+    assert_eq!(shape1, decoded);
+    // println!("res     = {}", res);
+    // println!("encoded = {}", encoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
 async fn adt_variant_struct() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub enum Shape {
         Rectangle { width: f64, height: f64 },
         Circle { radius: f64 },
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Shape::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
+    builder.register_adt(&Arc::new(Shape::to_type()), None, None);
+    let program = Program::compile(
         builder,
-        r#"Rectangle { width = 2.0 * 3.0, height = 4.0 * 5.0 }"#)
-        .await
-        .unwrap();
-    assert_eq!(res_type, Shape::to_type());
+        r#"Rectangle { width = 2.0 * 3.0, height = 4.0 * 5.0 }"#,
+    )
+    .unwrap();
+    assert_eq!(*program.res_type, Shape::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Rectangle", Some(d!(width = f!(6.0), height = f!(20.0))));
         ignore span);
+
+    let shape1 = Shape::Rectangle {
+        width: 6.0,
+        height: 20.0,
+    };
+    let encoded = shape1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Shape::try_decode(&encoded).unwrap();
+    assert_eq!(shape1, decoded);
+    // println!("res     = {}", res);
+    // println!("encoded = {}", encoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
 async fn adt_struct() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub struct Movie {
         pub title: String,
         pub year: u16,
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Movie::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
-        builder,
-        r#"Movie { title = "Godzilla", year = 1954 }"#)
-        .await
-        .unwrap();
-    assert_eq!(res_type, Movie::to_type());
+    builder.register_adt(&Arc::new(Movie::to_type()), None, None);
+    let program =
+        Program::compile(builder, r#"Movie { title = "Godzilla", year = 1954 }"#).unwrap();
+    assert_eq!(*program.res_type, Movie::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Movie", Some(d!(title = s!("Godzilla"), year = u!(1954))));
         ignore span);
+
+    let movie1 = Movie {
+        title: "Godzilla".to_string(),
+        year: 1954,
+    };
+    let encoded = movie1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Movie::try_decode(&encoded).unwrap();
+    assert_eq!(movie1, decoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
 async fn adt_tuple() {
     #![allow(dead_code)]
-    #[derive(Rex)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
     pub struct Movie(pub String, pub u16);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Movie::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
-        builder,
-        r#"Movie "Godzilla" 1954 }"#)
-        .await
-        .unwrap();
-    assert_eq!(res_type, Movie::to_type());
+    builder.register_adt(&Arc::new(Movie::to_type()), None, None);
+    let program = Program::compile(builder, r#"Movie "Godzilla" 1954 }"#).unwrap();
+    assert_eq!(*program.res_type, Movie::to_type());
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         n!("Movie", Some(tup!(s!("Godzilla"), u!(1954))));
         ignore span);
+
+    let movie1 = Movie("Godzilla".to_string(), 1954);
+    let encoded = movie1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Movie::try_decode(&encoded).unwrap();
+    assert_eq!(movie1, decoded);
+    assert_expr_eq!(res, encoded; ignore span);
+}
+
+#[tokio::test]
+async fn adt_unary_tuple() {
+    #![allow(dead_code)]
+    #[derive(Rex, Clone, Debug, PartialEq)]
+    pub struct Movie(pub String);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Movie::to_type()), None, None);
+    let program = Program::compile(builder, r#"Movie "Godzilla" }"#).unwrap();
+    assert_eq!(*program.res_type, Movie::to_type());
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(
+        res,
+        n!("Movie", Some(s!("Godzilla")));
+        ignore span);
+
+    let movie1 = Movie("Godzilla".to_string());
+    let encoded = movie1.clone().try_encode(Span::default()).unwrap();
+    let decoded = Movie::try_decode(&encoded).unwrap();
+    assert_eq!(movie1, decoded);
+    assert_expr_eq!(res, encoded; ignore span);
 }
 
 #[tokio::test]
@@ -452,13 +540,17 @@ async fn adt_curry() {
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Shape::to_type()).unwrap();
-    let (res, res_type) = parse_infer_and_eval_with_builder(
+    builder.register_adt(&Arc::new(Shape::to_type()), None, None);
+    let program = Program::compile(
         builder,
-        r#"let partial = Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#)
-        .await
-        .unwrap();
-    assert_eq!(res_type, tuple!(Shape::to_type(), Shape::to_type()));
+        r#"let partial = Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#,
+    )
+    .unwrap();
+    assert_eq!(
+        program.res_type,
+        tuple!(Arc::new(Shape::to_type()), Arc::new(Shape::to_type()))
+    );
+    let res = program.run(()).await.unwrap();
     assert_expr_eq!(
         res,
         tup!(

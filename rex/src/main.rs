@@ -1,16 +1,9 @@
-use std::{env, io, path::PathBuf, sync::Arc};
+use std::{env, io, path::PathBuf};
 
 use anyhow::Context as _;
 use clap::Parser as CmdLnArgsParser;
-use rex_ast::expr::Scope;
-use rex_engine::{
-    engine::Builder,
-    eval::{eval, Context},
-};
-use rex_lexer::Token;
-use rex_parser::Parser;
-use rex_type_system::{constraint::generate_constraints, types::ExprTypeEnv, unify};
-use tokio::{fs::File, io::AsyncReadExt, sync::RwLock};
+use rex::engine::{engine::Builder, program::Program};
+use tokio::{fs::File, io::AsyncReadExt};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 
 /// The Rex interpreter.
@@ -52,31 +45,9 @@ pub async fn main() -> anyhow::Result<()> {
                 .await
                 .context("reading input file")?;
 
-            let mut parser = Parser::new(Token::tokenize(&input_content).unwrap());
-            let expr = parser.parse_expr().unwrap();
-
             let builder = Builder::with_prelude().unwrap();
-            let (mut constraint_system, ftable, type_env) = builder.build();
-
-            let mut expr_type_env = ExprTypeEnv::new();
-            let ty =
-                generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
-                    .unwrap();
-
-            let subst = unify::unify_constraints(&constraint_system).unwrap();
-            let _res_type = unify::apply_subst(&ty, &subst);
-
-            let res = eval(
-                &Context {
-                    scope: Scope::new_sync(),
-                    ftable,
-                    subst,
-                    env: Arc::new(RwLock::new(expr_type_env)),
-                    state: (),
-                },
-                &expr,
-            )
-            .await;
+            let program = Program::compile(builder, &input_content).unwrap();
+            let res = program.run(()).await;
 
             match res {
                 Ok(val) => println!("{}", val),

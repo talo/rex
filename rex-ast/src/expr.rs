@@ -78,10 +78,11 @@ pub enum Expr {
     Uuid(Id, Span, Uuid),
     DateTime(Id, Span, DateTime<Utc>),
 
-    Tuple(Id, Span, Vec<Expr>),                     // (e1, e2, e3)
-    List(Id, Span, Vec<Expr>),                      // [e1, e2, e3]
-    Dict(Id, Span, BTreeMap<String, Expr>),         // {k1 = v1, k2 = v2}
-    Named(Id, Span, String, Option<Box<Expr>>),     //  MyVariant1 {k1 = v1, k2 = v2}
+    Tuple(Id, Span, Vec<Expr>),                 // (e1, e2, e3)
+    List(Id, Span, Vec<Expr>),                  // [e1, e2, e3]
+    Dict(Id, Span, BTreeMap<String, Expr>),     // {k1 = v1, k2 = v2}
+    Named(Id, Span, String, Option<Box<Expr>>), //  MyVariant1 {k1 = v1, k2 = v2}
+    Promise(Id, Span, Uuid),
     Var(Var),                                       // x
     App(Id, Span, Box<Expr>, Box<Expr>),            // f x
     Lam(Id, Span, Scope, Var, Box<Expr>),           // λx → e
@@ -110,6 +111,7 @@ impl Expr {
             | Self::List(id, ..)
             | Self::Dict(id, ..)
             | Self::Named(id, ..)
+            | Self::Promise(id, ..)
             | Self::Var(Var { id, .. })
             | Self::App(id, ..)
             | Self::Lam(id, ..)
@@ -132,6 +134,7 @@ impl Expr {
             | Self::List(id, ..)
             | Self::Dict(id, ..)
             | Self::Named(id, ..)
+            | Self::Promise(id, ..)
             | Self::Var(Var { id, .. })
             | Self::App(id, ..)
             | Self::Lam(id, ..)
@@ -154,6 +157,7 @@ impl Expr {
             | Self::List(_, span, ..)
             | Self::Dict(_, span, ..)
             | Self::Named(_, span, ..)
+            | Self::Promise(_, span, ..)
             | Self::Var(Var { span, .. })
             | Self::App(_, span, ..)
             | Self::Lam(_, span, ..)
@@ -176,6 +180,7 @@ impl Expr {
             | Self::List(_, span, ..)
             | Self::Dict(_, span, ..)
             | Self::Named(_, span, ..)
+            | Self::Promise(_, span, ..)
             | Self::Var(Var { span, .. })
             | Self::App(_, span, ..)
             | Self::Lam(_, span, ..)
@@ -230,6 +235,9 @@ impl Expr {
                 if let Some(inner) = inner {
                     inner.reset_ids();
                 }
+            }
+            Self::Promise(id, ..) => {
+                *id = Id::default();
             }
             Self::Var(var) => var.reset_id(),
             Self::App(id, _span, g, x) => {
@@ -296,6 +304,9 @@ impl Expr {
                 if let Some(inner) = inner {
                     inner.reset_spans();
                 }
+            }
+            Self::Promise(_, span, ..) => {
+                *span = Span::default();
             }
             Self::Var(var) => var.reset_span(),
             Self::App(_, span, g, x) => {
@@ -381,6 +392,9 @@ impl Display for Expr {
                     ')'.fmt(f)?;
                 }
                 Ok(())
+            }
+            Self::Promise(_id, _span, uuid) => {
+                write!(f, "Promise({}", uuid)
             }
             Self::Var(var) => var.fmt(f),
             Self::App(_id, _span, g, x) => {
