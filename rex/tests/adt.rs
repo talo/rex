@@ -51,8 +51,8 @@ async fn test_struct() {
     assert_expr_eq!(res, expected_encoding; ignore span);
 }
 
-#[test]
-fn test_struct_unit() {
+#[tokio::test]
+async fn test_struct_unit() {
     #[derive(Rex, Serialize, Deserialize, Clone, Debug, PartialEq)]
     struct Foo;
 
@@ -65,6 +65,13 @@ fn test_struct_unit() {
     let expected_encoding = n!("Foo", None);
 
     compare(Foo, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(builder, r#"Foo"#).unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
 }
 
 #[tokio::test]

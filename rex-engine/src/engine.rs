@@ -1,6 +1,6 @@
 use rex_type_system::{
     constraint::{Constraint, ConstraintSystem},
-    types::{ADTVariant, ToType, Type, TypeEnv},
+    types::{ToType, Type, TypeEnv},
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -558,22 +558,27 @@ where
             );
         }
 
-        for variant in &adt.variants {
-            self.register_adt_variant(adt_type, variant, prefix, defaults);
+        if adt.variants.len() == 0 {
+            self.register_adt_variant(adt_type, &adt.name, &None, prefix, defaults);
+        } else {
+            for variant in &adt.variants {
+                self.register_adt_variant(adt_type, &variant.name, &variant.t, prefix, defaults);
+            }
         }
     }
 
     pub fn register_adt_variant(
         &mut self,
         adt_type: &Arc<Type>,
-        variant: &ADTVariant,
+        variant_name: &str,
+        variant_type: &Option<Arc<Type>>,
         prefix: Option<&str>,
         defaults: Option<&BTreeMap<String, FtableFn<State>>>,
     ) {
-        let base_name = variant.name.to_string();
+        let base_name = variant_name.to_string();
         let constructor_name = match prefix {
-            Some(prefix) => format!("{}{}", prefix, variant.name),
-            None => variant.name.to_string(),
+            Some(prefix) => format!("{}{}", prefix, variant_name),
+            None => variant_name.to_string(),
         };
 
         // TODO: Avoid cloning args in the functions. This applies more generally across
@@ -590,7 +595,7 @@ where
 
         // The functions we register here work directly with Expr values; there is no need
         // to convert to and from the corresponding native Rust type.
-        match (variant.t.as_ref().map(|t| &**t), defaults) {
+        match (variant_type.as_ref().map(|t| &**t), defaults) {
             (Some(Type::Tuple(fields)), _) => {
                 let mut fun_type = adt_type.clone();
                 for field in fields.iter().rev() {
@@ -702,7 +707,7 @@ where
                 }
             }
             _ => {
-                if let Some(t) = &variant.t {
+                if let Some(t) = variant_type {
                     let fun_type = Arc::new(Type::Arrow(t.clone(), adt_type.clone()));
                     self.register_fn_core_with_name(
                         &constructor_name,
