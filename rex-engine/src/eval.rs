@@ -413,8 +413,8 @@ pub mod test {
         let builder: Builder<()> = Builder::with_prelude().unwrap();
         let program = Program::compile(builder, code)?;
         let res_type = program.res_type.clone();
-        let res = program.run(()).await;
-        res.map(|res| (res, res_type))
+        let res = program.run(()).await?;
+        Ok((res, res_type))
     }
 
     #[tokio::test]
