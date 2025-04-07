@@ -1,19 +1,26 @@
 use chrono::{DateTime, Utc};
-use rex::type_system::{adt, adt_variant, bool, float, int, list, string, tuple, uint};
 use rex::{
     ast::{assert_expr_eq, b, d, expr::Expr, f, i, id::Id, l, n, s, tup, u},
-    engine::codec::{Decode, Encode},
+    engine::{
+        codec::{Decode, Encode},
+        engine::Builder,
+        program::Program,
+    },
     json::{expr_to_json, json_to_expr},
     lexer::span::Span,
-    type_system::types::{ToType, Type, ADT},
+    type_system::{
+        adt, adt_variant, bool, float, int, list, string, tuple,
+        types::{ADTVariant, ToType, Type, ADT},
+        uint,
+    },
     Rex,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::{uuid, Uuid};
 
-#[test]
-fn test_struct() {
+#[tokio::test]
+async fn test_struct() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     pub struct Foo {
         pub a: u64,
@@ -35,6 +42,13 @@ fn test_struct() {
     let expected_encoding = n!("Foo", Some(d!(a = u!(42), b = s!("Hello"),)));
 
     compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(builder, r#"Foo { a = 42, b = "Hello" }"#).unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
 }
 
 #[test]
@@ -53,8 +67,39 @@ fn test_struct_unit() {
     compare(Foo, &expected_type, &expected_encoding);
 }
 
-#[test]
-fn test_struct_unnamed_fields() {
+#[tokio::test]
+async fn test_struct_single_unnamed_field() {
+    #[derive(Rex, Serialize, Deserialize, Clone, Debug, PartialEq)]
+    struct Foo(String);
+
+    let expected_type = Arc::new(Type::ADT(ADT {
+        name: "Foo".to_string(),
+        docs: None,
+        variants: vec![ADTVariant {
+            name: "Foo".to_string(),
+            t: Some(Arc::new(Type::String)),
+            docs: None,
+            t_docs: None,
+        }],
+    }));
+
+    assert_eq!(Foo::to_type(), *expected_type);
+
+    let value = Foo("Hello".to_string());
+    let expected_encoding = n!("Foo", Some(s!("Hello")));
+
+    compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(builder, r#"Foo "Hello" }"#).unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
+}
+
+#[tokio::test]
+async fn test_struct_unnamed_fields() {
     #[derive(Rex, Serialize, Deserialize, Clone, Debug, PartialEq)]
     struct Foo(u64, String);
 
@@ -66,6 +111,13 @@ fn test_struct_unnamed_fields() {
     let expected_encoding = n!("Foo", Some(tup!(u!(42), s!("Hello"))));
 
     compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(builder, r#"Foo 42 "Hello" }"#).unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
 }
 
 #[test]
@@ -211,8 +263,8 @@ fn test_field_tuple() {
     compare(value, &expected_type, &expected_encoding);
 }
 
-#[test]
-fn test_field_optional() {
+#[tokio::test]
+async fn test_field_optional() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     pub struct Foo {
         pub a: String,
@@ -244,10 +296,27 @@ fn test_field_optional() {
     );
 
     compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(
+        builder,
+        r#"
+            Foo {
+                a = "Hello",
+                b = Some 42,
+                c = None,
+            }
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
 }
 
-#[test]
-fn test_field_result() {
+#[tokio::test]
+async fn test_field_result() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     pub struct Foo {
         pub a: String,
@@ -279,6 +348,23 @@ fn test_field_result() {
     );
 
     compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(
+        builder,
+        r#"
+            Foo {
+                a = "Hello",
+                i1 = Ok 123,
+                i2 = Err "bad",
+            }
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
 }
 
 #[test]
@@ -349,27 +435,87 @@ fn test_field_uuid() {
     compare(value, &expected_type, &expected_encoding);
 }
 
-#[test]
-fn test_enum_unit() {
+#[tokio::test]
+async fn test_enum_unit() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
-    enum Foo {
-        One,
-        Two,
+    enum Color {
+        Red,
+        Green,
+        Blue,
     }
 
     let expected_type = Arc::new(Type::ADT(adt! {
-        Foo = One . | Two .
+        Color = Red . | Green . | Blue .
     }));
 
-    let expected_encoding1 = n!("One", None);
-    let expected_encoding2 = n!("Two", None);
+    let expected_encoding1 = n!("Red", None);
+    let expected_encoding2 = n!("Green", None);
+    let expected_encoding3 = n!("Blue", None);
 
-    compare(Foo::One, &expected_type, &expected_encoding1);
-    compare(Foo::Two, &expected_type, &expected_encoding2);
+    compare(Color::Red, &expected_type, &expected_encoding1);
+    compare(Color::Green, &expected_type, &expected_encoding2);
+    compare(Color::Blue, &expected_type, &expected_encoding3);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Color::to_type()), None, None);
+    let program = Program::compile(builder, r#"(Red, Green, Blue)"#).unwrap();
+    assert_eq!(
+        program.res_type,
+        tuple!(
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type())
+        )
+    );
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(
+        res,
+        tup!(n!("Red", None), n!("Green", None), n!("Blue", None));
+        ignore span);
 }
 
-#[test]
-fn test_enum_named_fields() {
+#[tokio::test]
+async fn test_enum_unit_int() {
+    // This should be handled identically to the version without int values
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    enum Color {
+        Red = 1,
+        Green = 2,
+        Blue = 3,
+    }
+
+    let expected_type = Arc::new(Type::ADT(adt! {
+        Color = Red . | Green . | Blue .
+    }));
+
+    let expected_encoding1 = n!("Red", None);
+    let expected_encoding2 = n!("Green", None);
+    let expected_encoding3 = n!("Blue", None);
+
+    compare(Color::Red, &expected_type, &expected_encoding1);
+    compare(Color::Green, &expected_type, &expected_encoding2);
+    compare(Color::Blue, &expected_type, &expected_encoding3);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Color::to_type()), None, None);
+    let program = Program::compile(builder, r#"(Red, Green, Blue)"#).unwrap();
+    assert_eq!(
+        program.res_type,
+        tuple!(
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type()),
+            Arc::new(Color::to_type())
+        )
+    );
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(
+        res,
+        tup!(n!("Red", None), n!("Green", None), n!("Blue", None));
+        ignore span);
+}
+
+#[tokio::test]
+async fn test_enum_named_fields() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     enum Foo {
         One { a: u64, b: String },
@@ -394,10 +540,24 @@ fn test_enum_named_fields() {
 
     compare(value1, &expected_type, &expected_encoding1);
     compare(value2, &expected_type, &expected_encoding2);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(builder, r#"One { a = (21 * 2), b = 'Hello' }"#).unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding1; ignore span);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(builder, r#"Two { c = true, d = (5.0 / 2.0) }"#).unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding2; ignore span);
 }
 
-#[test]
-fn test_enum_unnamed_fields() {
+#[tokio::test]
+async fn test_enum_unnamed_fields() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     enum Foo {
         One(u64, String),
@@ -416,6 +576,20 @@ fn test_enum_unnamed_fields() {
 
     compare(value1, &expected_type, &expected_encoding1);
     compare(value2, &expected_type, &expected_encoding2);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(builder, r#"One (21 * 2) 'Hello'"#).unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding1; ignore span);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(builder, r#"Two true (5.0 / 2.0) (100 - 1)"#).unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding2; ignore span);
 }
 
 #[test]
