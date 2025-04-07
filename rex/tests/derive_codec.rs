@@ -1,7 +1,7 @@
 use rex::ast::{assert_expr_eq, b, d, f, n, s, tup, u};
 use rex::engine::codec::{Decode, Encode};
 use rex::lexer::span::Span;
-use rex::type_system::types::{ToType, Type, ADT};
+use rex::type_system::types::{ToType, Type};
 use rex::type_system::{adt, adt_variant, bool, float, string, uint};
 use rex::Rex;
 
@@ -184,31 +184,4 @@ fn derive_codec_struct_unnamed_fields() {
     assert_expr_eq!(expr, n!("Foo", Some(tup!(u!(42), s!("Hello")))));
     let decoded = Foo::try_decode(&n!("Foo", Some(tup!(u!(42), s!("Hello"))))).unwrap();
     assert_eq!(decoded, Foo(42, "Hello".to_string()));
-}
-
-#[test]
-fn derive_codec_struct_unit() {
-    #[derive(Rex, Clone, Debug, PartialEq)]
-    struct Foo;
-
-    assert_eq!(
-        Foo::to_type(),
-        Type::ADT(ADT {
-            name: "Foo".to_string(),
-            docs: None,
-            variants: vec![]
-        })
-    );
-
-    let foo = Foo;
-    let expr = foo.try_encode(Span::default()).unwrap();
-    assert_expr_eq!(expr, n!("Foo", None));
-
-    let decoded = Foo::try_decode(&n!("Foo", None)).unwrap();
-    assert_eq!(decoded, Foo);
-
-    let foo = Foo;
-    let encoded = foo.clone().try_encode(Span::default()).unwrap();
-    let decoded = Foo::try_decode(&encoded).unwrap();
-    assert_eq!(foo, decoded);
 }

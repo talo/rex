@@ -24,7 +24,17 @@ pub fn json_to_expr(json: &Value, want: &Arc<Type>) -> Result<Expr, EngineError>
         // (Type::Var(_), _) => unimplemented!(),
         // (Type::ForAll(_, _, _), _) => unimplemented!(),
         (Type::ADT(adt), _) => {
-            if adt.variants.len() == 1 {
+            if adt.variants.len() == 0 {
+                match json {
+                    Value::Null => Ok(Expr::Named(
+                        Id::new(),
+                        Span::default(),
+                        adt.name.clone(),
+                        None,
+                    )),
+                    _ => Err(type_error(json, want)),
+                }
+            } else if adt.variants.len() == 1 {
                 if let Some(variant_t) = &adt.variants[0].t {
                     Ok(Expr::Named(
                         Id::new(),
@@ -188,7 +198,9 @@ pub fn expr_to_json(expr: &Expr, want: &Arc<Type>) -> Result<Value, EngineError>
         // (Type::Var(_), _) => unimplemented!(),
         // (Type::ForAll(_, _, _), _) => unimplemented!(),
         (Type::ADT(adt), _) => {
-            if adt.variants.len() == 1 {
+            if adt.variants.len() == 0 {
+                return Ok(Value::Null);
+            } else if adt.variants.len() == 1 {
                 match expr {
                     Expr::Named(_, _, n, Some(inner_expr)) if n == &adt.variants[0].name => {
                         if let Some(inner) = &adt.variants[0].t {

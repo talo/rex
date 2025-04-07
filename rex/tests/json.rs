@@ -5,7 +5,7 @@ use rex::{
     engine::codec::{Decode, Encode},
     json::{expr_to_json, json_to_expr},
     lexer::span::Span,
-    type_system::types::{ToType, Type},
+    type_system::types::{ToType, Type, ADT},
     Rex,
 };
 use serde::{Deserialize, Serialize};
@@ -35,6 +35,22 @@ fn test_struct() {
     let expected_encoding = n!("Foo", Some(d!(a = u!(42), b = s!("Hello"),)));
 
     compare(value, &expected_type, &expected_encoding);
+}
+
+#[test]
+fn test_struct_unit() {
+    #[derive(Rex, Serialize, Deserialize, Clone, Debug, PartialEq)]
+    struct Foo;
+
+    let expected_type = Arc::new(Type::ADT(ADT {
+        name: "Foo".to_string(),
+        docs: None,
+        variants: vec![],
+    }));
+
+    let expected_encoding = n!("Foo", None);
+
+    compare(Foo, &expected_type, &expected_encoding);
 }
 
 #[test]
