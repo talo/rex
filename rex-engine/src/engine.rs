@@ -661,50 +661,7 @@ where
                     }),
                 );
 
-                for (entry_key, entry_type) in entries.iter() {
-                    let entry_key2 = entry_key.clone();
-                    let accessor_fun_type =
-                        Arc::new(Type::Arrow(adt_type.clone(), entry_type.clone()));
-                    let base_name1 = base_name.clone();
-
-                    let full_name = format!("{}_{}", base_name, entry_key);
-                    self.register_fn_core_with_name(
-                        &full_name,
-                        accessor_fun_type,
-                        Box::new(move |_, args: &Vec<Expr>| {
-                            let entry_key2 = entry_key2.clone();
-                            let adt_name = base_name1.clone();
-                            Box::pin(async move {
-                                match &args[0] {
-                                    Expr::Named(_, _, n, Some(inner)) if n == &adt_name => {
-                                        match &**inner {
-                                            Expr::Dict(_, _, entries) => {
-                                                match entries.get(&entry_key2) {
-                                                    Some(v) => Ok(v.clone()),
-                                                    None => Err(Error::Custom {
-                                                        error: format!(
-                                                            "Missing entry {:?}",
-                                                            entry_key2
-                                                        ),
-                                                        trace: Default::default(),
-                                                    }),
-                                                }
-                                            }
-                                            _ => Err(Error::Custom {
-                                                error: "Expected a dict".to_string(),
-                                                trace: Default::default(),
-                                            }),
-                                        }
-                                    }
-                                    _ => Err(Error::Custom {
-                                        error: "Expected a Named".to_string(),
-                                        trace: Default::default(),
-                                    }),
-                                }
-                            })
-                        }),
-                    );
-                }
+                self.register_accessors(adt_type, &variant_name, &constructor_name, entries);
             }
             _ => {
                 if let Some(t) = variant_type {
@@ -725,6 +682,15 @@ where
                             })
                         }),
                     );
+
+                    if let Type::Dict(entries) = &**t {
+                        self.register_accessors(
+                            adt_type,
+                            &variant_name,
+                            &constructor_name,
+                            entries,
+                        );
+                    }
                 } else {
                     self.register_fn_core_with_name(
                         &constructor_name,
@@ -738,6 +704,52 @@ where
                     );
                 }
             }
+        }
+    }
+
+    fn register_accessors(
+        &mut self,
+        adt_type: &Arc<Type>,
+        variant_name: &str,
+        _constructor_name: &str,
+        entries: &BTreeMap<String, Arc<Type>>,
+    ) {
+        for (entry_key, entry_type) in entries.iter() {
+            let entry_key2 = entry_key.clone();
+            let accessor_fun_type = Arc::new(Type::Arrow(adt_type.clone(), entry_type.clone()));
+            let variant_name = variant_name.to_string();
+
+            self.register_fn_core_with_name(
+                &entry_key.clone(),
+                accessor_fun_type,
+                Box::new(move |_, args: &Vec<Expr>| {
+                    let entry_key2 = entry_key2.clone();
+                    let variant_name = variant_name.clone();
+                    Box::pin(async move {
+                        match &args[0] {
+                            Expr::Named(_, _, n, Some(inner)) if n == &variant_name => {
+                                match &**inner {
+                                    Expr::Dict(_, _, entries) => match entries.get(&entry_key2) {
+                                        Some(v) => Ok(v.clone()),
+                                        None => Err(Error::Custom {
+                                            error: format!("Missing entry {:?}", entry_key2),
+                                            trace: Default::default(),
+                                        }),
+                                    },
+                                    _ => Err(Error::Custom {
+                                        error: "Expected a dict".to_string(),
+                                        trace: Default::default(),
+                                    }),
+                                }
+                            }
+                            _ => Err(Error::Custom {
+                                error: "Expected a Named".to_string(),
+                                trace: Default::default(),
+                            }),
+                        }
+                    })
+                }),
+            );
         }
     }
 

@@ -49,6 +49,22 @@ async fn test_struct() {
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding; ignore span);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let program = Program::compile(
+        builder,
+        r#"
+        let value = Foo { a = 42, b = "Hello" }
+        in (a value, b value)
+    "#,
+    )
+    .unwrap();
+    println!("program.res_type = {}", program.res_type);
+    assert_eq!(program.res_type, tuple!(uint!(), string!()));
+    let res = program.run(()).await.unwrap();
+    println!("res = {}", res);
+    assert_expr_eq!(res, tup!(u!(42), s!("Hello")); ignore span);
 }
 
 #[tokio::test]

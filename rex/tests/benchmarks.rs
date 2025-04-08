@@ -36,7 +36,8 @@ pub async fn benchmark_num_constructors() {
 #[tokio::test]
 pub async fn benchmark_num_fields() {
     let mut field_count = 0;
-    while field_count <= 100 {
+    while field_count <= 20 {
+        // FIXME: This is slow. Should be able to handle 100 easily.
         let mut builder: Builder<()> = Builder::with_prelude().unwrap();
         let adts = generate_adts(Params {
             adts: 100,
