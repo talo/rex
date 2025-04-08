@@ -15,7 +15,7 @@ pub async fn benchmark_num_constructors() {
             fields: 0,
         });
         for adt in adts.iter() {
-            builder.register_adt(adt, None, None);
+            builder.register_adt(adt, None, None).unwrap();
         }
         let t1 = Utc::now();
         let program = Program::compile(builder, "0").unwrap();
@@ -45,7 +45,7 @@ pub async fn benchmark_num_fields() {
             fields: field_count,
         });
         for adt in adts.iter() {
-            builder.register_adt(adt, None, None);
+            builder.register_adt(adt, None, None).unwrap();
         }
         let t1 = Utc::now();
         let program = Program::compile(builder, "0").unwrap();
@@ -72,7 +72,7 @@ async fn benchmark_simple() {
         fields: 2,
     });
     for adt in adts.iter() {
-        builder.register_adt(adt, None, None);
+        builder.register_adt(adt, None, None).unwrap();
     }
     for adt in adts.iter() {
         println!("{}", adt);

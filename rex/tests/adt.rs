@@ -44,14 +44,18 @@ async fn test_struct() {
     compare(value, &expected_type, &expected_encoding);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"Foo { a = 42, b = "Hello" }"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding; ignore span);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(
         builder,
         r#"
@@ -83,7 +87,9 @@ async fn test_struct_unit() {
     compare(Foo, &expected_type, &expected_encoding);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"Foo"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
@@ -114,7 +120,9 @@ async fn test_struct_single_unnamed_field() {
     compare(value, &expected_type, &expected_encoding);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"Foo "Hello" }"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
@@ -136,7 +144,9 @@ async fn test_struct_unnamed_fields() {
     compare(value, &expected_type, &expected_encoding);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"Foo 42 "Hello" }"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
@@ -255,7 +265,9 @@ async fn test_field_vec() {
     compare(value, &expected_type, &expected_encoding);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(
         builder,
         r#"
@@ -302,7 +314,9 @@ async fn test_field_tuple() {
     compare(value, &expected_type, &expected_encoding);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(
         builder,
         r#"
@@ -353,7 +367,9 @@ async fn test_field_optional() {
     compare(value, &expected_type, &expected_encoding);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(
         builder,
         r#"
@@ -405,7 +421,9 @@ async fn test_field_result() {
     compare(value, &expected_type, &expected_encoding);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(
         builder,
         r#"
@@ -490,7 +508,9 @@ async fn test_field_uuid() {
     compare(value, &expected_type, &expected_encoding);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(
         builder,
         r#"
@@ -528,7 +548,9 @@ async fn test_enum_unit() {
     compare(Color::Blue, &expected_type, &expected_encoding3);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Color::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Color::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"(Color::Red, Color::Green, Color::Blue)"#).unwrap();
     assert_eq!(
         program.res_type,
@@ -568,7 +590,9 @@ async fn test_enum_unit_int() {
     compare(Color::Blue, &expected_type, &expected_encoding3);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Color::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Color::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"(Color::Red, Color::Green, Color::Blue)"#).unwrap();
     assert_eq!(
         program.res_type,
@@ -613,14 +637,18 @@ async fn test_enum_named_fields() {
     compare(value2, &expected_type, &expected_encoding2);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"Foo::One { a = (21 * 2), b = 'Hello' }"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding1; ignore span);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"Foo::Two { c = true, d = (5.0 / 2.0) }"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
@@ -649,14 +677,18 @@ async fn test_enum_unnamed_fields() {
     compare(value2, &expected_type, &expected_encoding2);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"Foo::One (21 * 2) 'Hello'"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding1; ignore span);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"Foo::Two true (5.0 / 2.0) (100 - 1)"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
@@ -686,7 +718,9 @@ async fn test_enum_rename() {
     compare(Color::Blue, &expected_type, &expected_encoding3);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Color::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Color::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(builder, r#"(Color::Red, Color::Green, Color::blOO)"#).unwrap();
     assert_eq!(
         program.res_type,
@@ -735,7 +769,9 @@ async fn test_enum_mixed() {
     compare(value3, &expected_type, &expected_encoding3);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(
         builder,
         r#"

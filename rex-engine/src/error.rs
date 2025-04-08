@@ -1,7 +1,7 @@
 use rex_ast::expr::{Expr, Var};
 use rex_lexer::span::Span;
 use rex_parser::error::ParserErr;
-use rex_type_system::types::Type;
+use rex_type_system::types::{Type, ADT};
 use serde_json::Value;
 use std::{collections::VecDeque, sync::Arc};
 
@@ -35,6 +35,12 @@ pub enum Error {
     },
     #[error("{0}")]
     RegexCompilationError(#[from] regex::Error),
+    #[error("Different ADTs found with same name {name:?}: new {new}, existing {existing}")]
+    ADTNameConflict {
+        name: String,
+        new: ADT,
+        existing: ADT,
+    },
     #[error("{error}")]
     Custom {
         error: String,

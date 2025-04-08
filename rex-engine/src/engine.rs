@@ -1,6 +1,6 @@
 use rex_type_system::{
     constraint::{Constraint, ConstraintSystem},
-    types::{ToType, Type, TypeEnv},
+    types::{ToType, Type, TypeEnv, ADT},
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -156,6 +156,7 @@ where
     pub fconstraints: HashMap<String, Constraint>,
     pub ftable: Ftable<State>,
     pub ftenv: TypeEnv,
+    pub adts: BTreeMap<String, ADT>,
 }
 
 impl<State> Builder<State>
@@ -167,6 +168,7 @@ where
             ftable: Ftable::new(),
             fconstraints: Default::default(),
             ftenv: Default::default(),
+            adts: Default::default(),
         };
 
         this.register_fn1("swap", |_ctx: &Context<_>, (x, y): (A, B)| Ok((y, x)));
@@ -546,12 +548,27 @@ where
         adt_type: &Arc<Type>,
         prefix: Option<&str>,
         defaults: Option<&BTreeMap<String, FtableFn<State>>>,
-    ) {
+    ) -> Result<(), Error> {
         let Type::ADT(adt) = &**adt_type else {
             panic!("register_adt) called with non-ADT type: {}", adt_type);
         };
 
         let full_adt_name = make_full_name(prefix, &adt.name);
+        if let Some(existing) = self.adts.get(&full_adt_name) {
+            if existing == adt {
+                // An identical ADT already exists; allow this
+                return Ok(());
+            } else {
+                // A different ADT with the same name is already registered
+                return Err(Error::ADTNameConflict {
+                    name: full_adt_name.clone(),
+                    new: adt.clone(),
+                    existing: existing.clone(),
+                });
+            }
+        }
+        self.adts.insert(full_adt_name.clone(), adt.clone());
+
         if adt.variants.len() != 1 && defaults.is_some() {
             panic!(
                 "register_adt) called with defaults and multiple variants {}",
@@ -581,6 +598,8 @@ where
                 );
             }
         }
+
+        Ok(())
     }
 
     pub fn register_adt_variant(

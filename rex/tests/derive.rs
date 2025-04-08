@@ -310,7 +310,9 @@ async fn adt_curry() {
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_adt(&Arc::new(Shape::to_type()), None, None);
+    builder
+        .register_adt(&Arc::new(Shape::to_type()), None, None)
+        .unwrap();
     let program = Program::compile(
         builder,
         r#"let partial = Shape::Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#,
