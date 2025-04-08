@@ -84,8 +84,8 @@ async fn benchmark_simple() {
         builder,
         r#"
         let
-            a0 = ADT0_Variant0 { field0 = 3, field1 = 4 },
-            a1 = ADT0_Variant1 { field0 = 5, field1 = 6 }
+            a0 = ADT0::Variant0 { field0 = 3, field1 = 4 },
+            a1 = ADT0::Variant1 { field0 = 5, field1 = 6 }
         in
             [a0, a1]
         "#,
@@ -123,7 +123,7 @@ fn generate_adts(mut params: Params) -> Vec<Arc<Type>> {
         };
         for variant_no in 0..params.variants {
             let variant_name = if params.variants > 1 {
-                format!("ADT{}_Variant{}", adt_no, variant_no)
+                format!("Variant{}", variant_no)
             } else {
                 format!("ADT{}", adt_no)
             };

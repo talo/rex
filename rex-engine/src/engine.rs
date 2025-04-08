@@ -551,6 +551,7 @@ where
             panic!("register_adt) called with non-ADT type: {}", adt_type);
         };
 
+        let full_adt_name = make_full_name(prefix, &adt.name);
         if adt.variants.len() != 1 && defaults.is_some() {
             panic!(
                 "register_adt) called with defaults and multiple variants {}",
@@ -559,10 +560,25 @@ where
         }
 
         if adt.variants.len() == 0 {
-            self.register_adt_variant(adt_type, &adt.name, &None, prefix, defaults);
+            self.register_adt_variant(adt_type, &adt.name, &None, &full_adt_name, defaults);
+        } else if adt.variants.len() == 1 && adt.variants[0].name == adt.name {
+            self.register_adt_variant(
+                adt_type,
+                &adt.name,
+                &adt.variants[0].t,
+                &full_adt_name,
+                defaults,
+            );
         } else {
             for variant in &adt.variants {
-                self.register_adt_variant(adt_type, &variant.name, &variant.t, prefix, defaults);
+                let constructor_name = make_full_name(Some(&full_adt_name), &variant.name);
+                self.register_adt_variant(
+                    adt_type,
+                    &variant.name,
+                    &variant.t,
+                    &constructor_name,
+                    defaults,
+                );
             }
         }
     }
@@ -572,14 +588,10 @@ where
         adt_type: &Arc<Type>,
         variant_name: &str,
         variant_type: &Option<Arc<Type>>,
-        prefix: Option<&str>,
+        constructor_name: &str,
         defaults: Option<&BTreeMap<String, FtableFn<State>>>,
     ) {
         let base_name = variant_name.to_string();
-        let constructor_name = match prefix {
-            Some(prefix) => format!("{}{}", prefix, variant_name),
-            None => variant_name.to_string(),
-        };
 
         // TODO: Avoid cloning args in the functions. This applies more generally across
         // the evaluation code. We should either pass owned Expr values to the functions
@@ -768,5 +780,12 @@ where
             constraint_system.add_global_constraint(constraint.clone());
         }
         (constraint_system, self.ftable, self.ftenv)
+    }
+}
+
+fn make_full_name(prefix: Option<&str>, name: &str) -> String {
+    match prefix {
+        Some(prefix) => format!("{}::{}", prefix, name),
+        None => name.to_string(),
     }
 }

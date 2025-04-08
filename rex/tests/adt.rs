@@ -529,7 +529,7 @@ async fn test_enum_unit() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Arc::new(Color::to_type()), None, None);
-    let program = Program::compile(builder, r#"(Red, Green, Blue)"#).unwrap();
+    let program = Program::compile(builder, r#"(Color::Red, Color::Green, Color::Blue)"#).unwrap();
     assert_eq!(
         program.res_type,
         tuple!(
@@ -569,7 +569,7 @@ async fn test_enum_unit_int() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Arc::new(Color::to_type()), None, None);
-    let program = Program::compile(builder, r#"(Red, Green, Blue)"#).unwrap();
+    let program = Program::compile(builder, r#"(Color::Red, Color::Green, Color::Blue)"#).unwrap();
     assert_eq!(
         program.res_type,
         tuple!(
@@ -614,14 +614,14 @@ async fn test_enum_named_fields() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Arc::new(Foo::to_type()), None, None);
-    let program = Program::compile(builder, r#"One { a = (21 * 2), b = 'Hello' }"#).unwrap();
+    let program = Program::compile(builder, r#"Foo::One { a = (21 * 2), b = 'Hello' }"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding1; ignore span);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Arc::new(Foo::to_type()), None, None);
-    let program = Program::compile(builder, r#"Two { c = true, d = (5.0 / 2.0) }"#).unwrap();
+    let program = Program::compile(builder, r#"Foo::Two { c = true, d = (5.0 / 2.0) }"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding2; ignore span);
@@ -650,14 +650,14 @@ async fn test_enum_unnamed_fields() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Arc::new(Foo::to_type()), None, None);
-    let program = Program::compile(builder, r#"One (21 * 2) 'Hello'"#).unwrap();
+    let program = Program::compile(builder, r#"Foo::One (21 * 2) 'Hello'"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding1; ignore span);
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Arc::new(Foo::to_type()), None, None);
-    let program = Program::compile(builder, r#"Two true (5.0 / 2.0) (100 - 1)"#).unwrap();
+    let program = Program::compile(builder, r#"Foo::Two true (5.0 / 2.0) (100 - 1)"#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding2; ignore span);
@@ -687,7 +687,7 @@ async fn test_enum_rename() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register_adt(&Arc::new(Color::to_type()), None, None);
-    let program = Program::compile(builder, r#"(Red, Green, blOO)"#).unwrap();
+    let program = Program::compile(builder, r#"(Color::Red, Color::Green, Color::blOO)"#).unwrap();
     assert_eq!(
         program.res_type,
         tuple!(
@@ -740,9 +740,9 @@ async fn test_enum_mixed() {
         builder,
         r#"
         [
-            One,
-            Two { a = 42, b = "Hello" },
-            Three true (5.0 / 2.0) (100 - 1)
+            Foo::One,
+            Foo::Two { a = 42, b = "Hello" },
+            Foo::Three true (5.0 / 2.0) (100 - 1)
         ]
         "#,
     )

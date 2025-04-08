@@ -313,7 +313,7 @@ async fn adt_curry() {
     builder.register_adt(&Arc::new(Shape::to_type()), None, None);
     let program = Program::compile(
         builder,
-        r#"let partial = Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#,
+        r#"let partial = Shape::Rectangle (2.0 * 3.0) in (partial (3.0 * 4.0), partial (2.0 * 4.0))"#,
     )
     .unwrap();
     assert_eq!(
