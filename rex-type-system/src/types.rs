@@ -60,65 +60,23 @@ impl Type {
     }
 
     pub fn resolve_vars(&self, assignments: &HashMap<String, Arc<Type>>) -> Arc<Type> {
-        match self {
-            Type::UnresolvedVar(x) => {
+        self.transform(|t| {
+            if let Type::UnresolvedVar(x) = t {
                 if let Some(t) = assignments.get(x) {
-                    t.clone()
-                } else {
-                    Arc::new(Type::UnresolvedVar(x.clone()))
+                    return Some(t.clone());
                 }
             }
-            Type::Var(v) => Arc::new(Type::Var(v.clone())),
-            Type::ForAll(id, t, ids) => Arc::new(Type::ForAll(
-                id.clone(),
-                t.resolve_vars(assignments),
-                ids.clone(),
-            )),
-            Type::ADT(adt) => Arc::new(Type::ADT(ADT {
-                name: adt.name.clone(),
-                variants: adt
-                    .variants
-                    .iter()
-                    .map(|variant| ADTVariant {
-                        name: variant.name.clone(),
-                        t: variant.t.as_ref().map(|t| t.resolve_vars(assignments)),
-                        docs: variant.docs.clone(),
-                        t_docs: variant.t_docs.clone(),
-                    })
-                    .collect(),
-                docs: adt.docs.clone(),
-            })),
-            Type::Arrow(a, b) => Arc::new(Type::Arrow(
-                a.resolve_vars(assignments),
-                b.resolve_vars(assignments),
-            )),
-            Type::Result(a, b) => Arc::new(Type::Result(
-                a.resolve_vars(assignments),
-                b.resolve_vars(assignments),
-            )),
-            Type::Option(t) => Arc::new(Type::Option(t.resolve_vars(assignments))),
-            Type::Promise(t) => Arc::new(Type::Promise(t.resolve_vars(assignments))),
-            Type::List(t) => Arc::new(Type::List(t.resolve_vars(assignments))),
-            Type::Dict(xs) => Arc::new(Type::Dict(BTreeMap::from_iter(
-                xs.iter()
-                    .map(|(k, v)| (k.clone(), v.resolve_vars(assignments))),
-            ))),
-            Type::Tuple(xs) => Arc::new(Type::Tuple(
-                xs.iter().map(|x| x.resolve_vars(assignments)).collect(),
-            )),
-            Type::Bool => Arc::new(Type::Bool),
-            Type::Uint => Arc::new(Type::Uint),
-            Type::Int => Arc::new(Type::Int),
-            Type::Float => Arc::new(Type::Float),
-            Type::String => Arc::new(Type::String),
-            Type::Uuid => Arc::new(Type::Uuid),
-            Type::DateTime => Arc::new(Type::DateTime),
-        }
+            None
+        })
     }
 
     pub fn unresolved_vars(&self) -> HashSet<String> {
         let mut set = HashSet::new();
-        self.unresolved_vars_accum(&mut set);
+        self.for_each(|t| {
+            if let Type::UnresolvedVar(x) = t {
+                set.insert(x.clone());
+            }
+        });
         set
     }
 
@@ -219,48 +177,70 @@ impl Type {
         }
     }
 
-    fn unresolved_vars_accum(&self, set: &mut HashSet<String>) {
+    pub fn for_each<F>(&self, mut f: F) -> Arc<Type>
+    where
+        F: FnMut(&Type),
+    {
+        self.transform(|t| {
+            f(t);
+            None
+        })
+    }
+
+    pub fn transform<F>(&self, mut f: F) -> Arc<Type>
+    where
+        F: FnMut(&Type) -> Option<Arc<Type>>,
+    {
+        self.transform_ref(&mut f)
+    }
+
+    // Separate function to avoid "reached the recursion limit while instantiating" errors
+    fn transform_ref<F>(&self, f: &mut F) -> Arc<Type>
+    where
+        F: FnMut(&Type) -> Option<Arc<Type>>,
+    {
+        if let Some(repl) = f(self) {
+            return repl;
+        }
+
         match self {
-            Type::UnresolvedVar(x) => {
-                set.insert(x.clone());
+            Type::UnresolvedVar(x) => Arc::new(Type::UnresolvedVar(x.clone())),
+            Type::Var(v) => Arc::new(Type::Var(v.clone())),
+            Type::ForAll(id, t, ids) => {
+                Arc::new(Type::ForAll(id.clone(), t.transform_ref(f), ids.clone()))
             }
-            Type::Var(_) => {}
-            Type::ForAll(_, t, _) => t.unresolved_vars_accum(set),
-            Type::ADT(adt) => {
-                for variant in &adt.variants {
-                    if let Some(t) = &variant.t {
-                        t.unresolved_vars_accum(set);
-                    }
-                }
-            }
-            Type::Arrow(a, b) => {
-                a.unresolved_vars_accum(set);
-                b.unresolved_vars_accum(set);
-            }
-            Type::Result(a, b) => {
-                a.unresolved_vars_accum(set);
-                b.unresolved_vars_accum(set);
-            }
-            Type::Option(t) => t.unresolved_vars_accum(set),
-            Type::Promise(t) => t.unresolved_vars_accum(set),
-            Type::List(t) => t.unresolved_vars_accum(set),
-            Type::Dict(xs) => {
-                for (_, v) in xs {
-                    v.unresolved_vars_accum(set);
-                }
-            }
+            Type::ADT(adt) => Arc::new(Type::ADT(ADT {
+                name: adt.name.clone(),
+                variants: adt
+                    .variants
+                    .iter()
+                    .map(|variant| ADTVariant {
+                        name: variant.name.clone(),
+                        t: variant.t.as_ref().map(|t| t.transform_ref(f)),
+                        docs: variant.docs.clone(),
+                        t_docs: variant.t_docs.clone(),
+                    })
+                    .collect(),
+                docs: adt.docs.clone(),
+            })),
+            Type::Arrow(a, b) => Arc::new(Type::Arrow(a.transform_ref(f), b.transform_ref(f))),
+            Type::Result(a, b) => Arc::new(Type::Result(a.transform_ref(f), b.transform_ref(f))),
+            Type::Option(t) => Arc::new(Type::Option(t.transform_ref(f))),
+            Type::Promise(t) => Arc::new(Type::Promise(t.transform_ref(f))),
+            Type::List(t) => Arc::new(Type::List(t.transform_ref(f))),
+            Type::Dict(xs) => Arc::new(Type::Dict(BTreeMap::from_iter(
+                xs.iter().map(|(k, v)| (k.clone(), v.transform_ref(f))),
+            ))),
             Type::Tuple(xs) => {
-                for x in xs {
-                    x.unresolved_vars_accum(set);
-                }
+                Arc::new(Type::Tuple(xs.iter().map(|x| x.transform_ref(f)).collect()))
             }
-            Type::Bool => {}
-            Type::Uint => {}
-            Type::Int => {}
-            Type::Float => {}
-            Type::String => {}
-            Type::Uuid => {}
-            Type::DateTime => {}
+            Type::Bool => Arc::new(Type::Bool),
+            Type::Uint => Arc::new(Type::Uint),
+            Type::Int => Arc::new(Type::Int),
+            Type::Float => Arc::new(Type::Float),
+            Type::String => Arc::new(Type::String),
+            Type::Uuid => Arc::new(Type::Uuid),
+            Type::DateTime => Arc::new(Type::DateTime),
         }
     }
 }
