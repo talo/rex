@@ -1,4 +1,8 @@
-use std::{borrow::Borrow, collections::BTreeMap, sync::Arc};
+use std::{
+    borrow::Borrow,
+    collections::BTreeMap,
+    sync::{Arc, RwLock},
+};
 
 use futures::future;
 use rex_ast::{
@@ -10,7 +14,6 @@ use rex_type_system::{
     types::{ExprTypeEnv, Type},
     unify::{self, Subst},
 };
-use tokio::sync::RwLock;
 
 use crate::{error::Error, ftable::Ftable};
 
@@ -136,14 +139,14 @@ pub async fn eval_var<State>(ctx: &Context<State>, var: &Var) -> Result<Expr, Er
 where
     State: Clone + Send + Sync + 'static,
 {
-    let var_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
+    let var_type = unify::apply_subst(ctx.env.read().unwrap().get(&var.id).unwrap(), &ctx.subst);
 
     if let Some(expr) = ctx.scope.get(&var.name) {
         let mut new_expr = expr.clone();
         *new_expr.id_mut() = Id::new();
         ctx.env
             .write()
-            .await
+            .unwrap()
             .insert(*new_expr.id(), var_type.clone());
 
         let new_expr = if let Expr::Bool(..)
@@ -172,7 +175,7 @@ where
     if let Some((f, f_type)) = f {
         if f_type.num_params() == 0 {
             let res = f(ctx, &vec![]).await?;
-            ctx.env.write().await.insert(*res.id(), var_type.clone());
+            ctx.env.write().unwrap().insert(*res.id(), var_type.clone());
             return Ok(res);
         }
 
@@ -204,11 +207,11 @@ where
     State: Clone + Send + Sync + 'static,
 {
     let f_type = unify::apply_subst(
-        ctx.env.read().await.get(f.borrow().id()).unwrap(),
+        ctx.env.read().unwrap().get(f.borrow().id()).unwrap(),
         &ctx.subst,
     );
     let x_type = unify::apply_subst(
-        ctx.env.read().await.get(x.borrow().id()).unwrap(),
+        ctx.env.read().unwrap().get(x.borrow().id()).unwrap(),
         &ctx.subst,
     );
     let (_, b_type) = match &*f_type {
@@ -232,7 +235,7 @@ where
                     _ => {
                         let mut x = x.clone();
                         *x.id_mut() = Id::new();
-                        ctx.env.write().await.insert(*x.id(), x_type.clone());
+                        ctx.env.write().unwrap().insert(*x.id(), x_type.clone());
 
                         // NOTE(loong): functions in the ftable having explicit
                         // ids would probably be very helpful. Right now,
@@ -254,18 +257,18 @@ where
 
                     let mut g = g.clone();
                     *g.id_mut() = new_g_id;
-                    ctx.env.write().await.insert(new_g_id, f_type.clone());
+                    ctx.env.write().unwrap().insert(new_g_id, f_type.clone());
 
                     let mut y = y.clone();
                     *y.id_mut() = new_y_id;
-                    ctx.env.write().await.insert(new_y_id, x_type.clone());
+                    ctx.env.write().unwrap().insert(new_y_id, x_type.clone());
 
                     Expr::App(new_body_id, span.clone(), g, y)
                 }
                 body => body,
             };
             *body.id_mut() = new_body_id;
-            ctx.env.write().await.insert(new_body_id, b_type.clone());
+            ctx.env.write().unwrap().insert(new_body_id, b_type.clone());
 
             let mut ctx: Context<State> = ctx.clone();
             ctx.scope.insert_mut(param.name, x);
@@ -276,7 +279,8 @@ where
             eval(&ctx, &body).await?
         }
         Expr::Curry(_id, span, var, mut args) => {
-            let f_type = unify::apply_subst(ctx.env.read().await.get(&var.id).unwrap(), &ctx.subst);
+            let f_type =
+                unify::apply_subst(ctx.env.read().unwrap().get(&var.id).unwrap(), &ctx.subst);
 
             // FIXME(loong): to fix the `test_f_passthrough` test it is pretty
             // clear to me that we need to differentiate between functions that
@@ -300,10 +304,13 @@ where
                 for arg in &args {
                     args_fmt.push(format!(
                         "({})",
-                        unify::apply_subst(ctx.env.read().await.get(arg.id()).unwrap(), &ctx.subst,)
+                        unify::apply_subst(
+                            ctx.env.read().unwrap().get(arg.id()).unwrap(),
+                            &ctx.subst,
+                        )
                     ));
                     arg_types.push(unify::apply_subst(
-                        ctx.env.read().await.get(arg.id()).unwrap(),
+                        ctx.env.read().unwrap().get(arg.id()).unwrap(),
                         &ctx.subst,
                     ));
                 }
@@ -327,7 +334,7 @@ where
         _ => unimplemented!(),
     };
 
-    ctx.env.write().await.insert(*res.id(), b_type);
+    ctx.env.write().unwrap().insert(*res.id(), b_type);
 
     Ok(res)
 }

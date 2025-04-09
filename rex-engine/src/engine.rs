@@ -440,7 +440,7 @@ where
                             let x = Expr::Tuple(x_id, Span::default(), vec![]);
                             ctx.env
                                 .write()
-                                .await
+                                .unwrap()
                                 .insert(x_id, Arc::new(<()>::to_type()));
                             let res = apply(ctx, &f, &x).await?;
                             Ok(Option::<A>::try_decode(&res)?)
@@ -460,7 +460,7 @@ where
                             let x = Expr::Tuple(x_id, Span::default(), vec![]);
                             ctx.env
                                 .write()
-                                .await
+                                .unwrap()
                                 .insert(x_id, Arc::new(<()>::to_type()));
                             let res = apply(ctx, &f, &x).await?;
                             Ok(A(res))
@@ -521,7 +521,7 @@ where
                         // no type recorded for it. See test_map_range() for an example.
                         ctx.env
                             .write()
-                            .await
+                            .unwrap()
                             .insert(*expr.id(), Arc::new(Type::Uint));
                         items.push(expr);
                     }

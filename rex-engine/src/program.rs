@@ -13,8 +13,7 @@ use rex_type_system::{
     types::{ExprTypeEnv, Type},
     unify,
 };
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 pub struct Program<State>
 where
