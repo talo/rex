@@ -1370,4 +1370,13 @@ pub mod test {
             };
             ignore span);
     }
+
+    #[tokio::test]
+    async fn test_map_range() {
+        let (res, res_type) = parse_infer_and_eval(r#"map (λx → 2 * x) (range 0 4)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res,l!{u!(0), u!(2), u!(4), u!(6)}; ignore span);
+    }
 }
