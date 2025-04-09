@@ -443,7 +443,6 @@ where
                                 .await
                                 .insert(x_id, Arc::new(<()>::to_type()));
                             let res = apply(ctx, &f, &x).await?;
-                            ctx.env.write().await.remove(&x_id);
                             Ok(Option::<A>::try_decode(&res)?)
                         }
                     }
@@ -464,7 +463,6 @@ where
                                 .await
                                 .insert(x_id, Arc::new(<()>::to_type()));
                             let res = apply(ctx, &f, &x).await?;
-                            ctx.env.write().await.remove(&x_id);
                             Ok(A(res))
                         }
                     }
