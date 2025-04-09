@@ -29,6 +29,19 @@ where
     pub state: State,
 }
 
+impl<State> Context<State>
+where
+    State: Clone + Sync + 'static,
+{
+    pub fn get_type(&self, id: &Id) -> Arc<Type> {
+        unify::apply_subst(self.env.read().unwrap().get(id).unwrap(), &self.subst)
+    }
+
+    pub fn set_type(&self, id: Id, t: Arc<Type>) {
+        self.env.write().unwrap().insert(id, t);
+    }
+}
+
 #[async_recursion::async_recursion]
 pub async fn eval<State>(ctx: &Context<State>, expr: &Expr) -> Result<Expr, Error>
 where
@@ -139,15 +152,12 @@ pub async fn eval_var<State>(ctx: &Context<State>, var: &Var) -> Result<Expr, Er
 where
     State: Clone + Send + Sync + 'static,
 {
-    let var_type = unify::apply_subst(ctx.env.read().unwrap().get(&var.id).unwrap(), &ctx.subst);
+    let var_type = ctx.get_type(&var.id);
 
     if let Some(expr) = ctx.scope.get(&var.name) {
         let mut new_expr = expr.clone();
         *new_expr.id_mut() = Id::new();
-        ctx.env
-            .write()
-            .unwrap()
-            .insert(*new_expr.id(), var_type.clone());
+        ctx.set_type(*new_expr.id(), var_type.clone());
 
         let new_expr = if let Expr::Bool(..)
         | Expr::Uint(..)
@@ -175,7 +185,7 @@ where
     if let Some((f, f_type)) = f {
         if f_type.num_params() == 0 {
             let res = f(ctx, &vec![]).await?;
-            ctx.env.write().unwrap().insert(*res.id(), var_type.clone());
+            ctx.set_type(*res.id(), var_type.clone());
             return Ok(res);
         }
 
@@ -206,14 +216,8 @@ pub async fn apply<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let f_type = unify::apply_subst(
-        ctx.env.read().unwrap().get(f.borrow().id()).unwrap(),
-        &ctx.subst,
-    );
-    let x_type = unify::apply_subst(
-        ctx.env.read().unwrap().get(x.borrow().id()).unwrap(),
-        &ctx.subst,
-    );
+    let f_type = ctx.get_type(f.borrow().id());
+    let x_type = ctx.get_type(x.borrow().id());
     let (_, b_type) = match &*f_type {
         Type::Arrow(a, b) => (a.clone(), b.clone()),
         _ => panic!("Function application on non-function type"),
@@ -235,7 +239,7 @@ where
                     _ => {
                         let mut x = x.clone();
                         *x.id_mut() = Id::new();
-                        ctx.env.write().unwrap().insert(*x.id(), x_type.clone());
+                        ctx.set_type(*x.id(), x_type.clone());
 
                         // NOTE(loong): functions in the ftable having explicit
                         // ids would probably be very helpful. Right now,
@@ -257,18 +261,18 @@ where
 
                     let mut g = g.clone();
                     *g.id_mut() = new_g_id;
-                    ctx.env.write().unwrap().insert(new_g_id, f_type.clone());
+                    ctx.set_type(new_g_id, f_type.clone());
 
                     let mut y = y.clone();
                     *y.id_mut() = new_y_id;
-                    ctx.env.write().unwrap().insert(new_y_id, x_type.clone());
+                    ctx.set_type(new_y_id, x_type.clone());
 
                     Expr::App(new_body_id, span.clone(), g, y)
                 }
                 body => body,
             };
             *body.id_mut() = new_body_id;
-            ctx.env.write().unwrap().insert(new_body_id, b_type.clone());
+            ctx.set_type(new_body_id, b_type.clone());
 
             let mut ctx: Context<State> = ctx.clone();
             ctx.scope.insert_mut(param.name, x);
@@ -279,8 +283,7 @@ where
             eval(&ctx, &body).await?
         }
         Expr::Curry(_id, span, var, mut args) => {
-            let f_type =
-                unify::apply_subst(ctx.env.read().unwrap().get(&var.id).unwrap(), &ctx.subst);
+            let f_type = ctx.get_type(&var.id);
 
             // FIXME(loong): to fix the `test_f_passthrough` test it is pretty
             // clear to me that we need to differentiate between functions that
@@ -299,20 +302,9 @@ where
             if f_type.num_params() < args.len() {
                 panic!("Too many arguments");
             } else if f_type.num_params() == args.len() {
-                let mut args_fmt = Vec::new();
                 let mut arg_types = Vec::new();
                 for arg in &args {
-                    args_fmt.push(format!(
-                        "({})",
-                        unify::apply_subst(
-                            ctx.env.read().unwrap().get(arg.id()).unwrap(),
-                            &ctx.subst,
-                        )
-                    ));
-                    arg_types.push(unify::apply_subst(
-                        ctx.env.read().unwrap().get(arg.id()).unwrap(),
-                        &ctx.subst,
-                    ));
+                    arg_types.push(ctx.get_type(arg.id()));
                 }
 
                 let f_type = Type::build_arrow(arg_types, b_type.clone());
@@ -334,7 +326,7 @@ where
         _ => unimplemented!(),
     };
 
-    ctx.env.write().unwrap().insert(*res.id(), b_type);
+    ctx.set_type(*res.id(), b_type);
 
     Ok(res)
 }

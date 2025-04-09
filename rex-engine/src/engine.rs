@@ -438,10 +438,7 @@ where
                         None => {
                             let x_id = Id::new();
                             let x = Expr::Tuple(x_id, Span::default(), vec![]);
-                            ctx.env
-                                .write()
-                                .unwrap()
-                                .insert(x_id, Arc::new(<()>::to_type()));
+                            ctx.set_type(x_id, Arc::new(<()>::to_type()));
                             let res = apply(ctx, &f, &x).await?;
                             Ok(Option::<A>::try_decode(&res)?)
                         }
@@ -458,10 +455,7 @@ where
                         None => {
                             let x_id = Id::new();
                             let x = Expr::Tuple(x_id, Span::default(), vec![]);
-                            ctx.env
-                                .write()
-                                .unwrap()
-                                .insert(x_id, Arc::new(<()>::to_type()));
+                            ctx.set_type(x_id, Arc::new(<()>::to_type()));
                             let res = apply(ctx, &f, &x).await?;
                             Ok(A(res))
                         }
@@ -519,10 +513,7 @@ where
                         // If the following line is missing, apply() will panic when an attempt
                         // is made to use one of the values in the list, because there will be
                         // no type recorded for it. See test_map_range() for an example.
-                        ctx.env
-                            .write()
-                            .unwrap()
-                            .insert(*expr.id(), Arc::new(Type::Uint));
+                        ctx.set_type(*expr.id(), Arc::new(Type::Uint));
                         items.push(expr);
                     }
 
