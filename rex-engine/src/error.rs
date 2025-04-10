@@ -1,4 +1,7 @@
-use rex_ast::expr::{Expr, Var};
+use rex_ast::{
+    expr::{Expr, Var},
+    id::Id,
+};
 use rex_lexer::span::Span;
 use rex_parser::error::ParserErr;
 use rex_type_system::types::{Type, ADT};
@@ -35,6 +38,8 @@ pub enum Error {
     },
     #[error("{0}")]
     RegexCompilationError(#[from] regex::Error),
+    #[error("Type of Expr {0} is unknown")]
+    ExprTypeUnknown(Id),
     #[error("Different ADTs found with same name {name:?}: new {new}, existing {existing}")]
     ADTNameConflict {
         name: String,

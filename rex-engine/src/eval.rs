@@ -33,8 +33,12 @@ impl<State> Context<State>
 where
     State: Clone + Sync + 'static,
 {
-    pub fn get_type(&self, id: &Id) -> Arc<Type> {
-        unify::apply_subst(self.env.read().unwrap().get(id).unwrap(), &self.subst)
+    pub fn get_type(&self, id: &Id) -> Result<Arc<Type>, Error> {
+        // This error should never actually happen in practice; this is a bug. Avoid packing
+        // though so it doesn't kill tengu.
+        let env = self.env.read().unwrap();
+        let t = env.get(id).ok_or_else(|| Error::ExprTypeUnknown(*id))?;
+        Ok(unify::apply_subst(t, &self.subst))
     }
 
     pub fn set_type(&self, id: Id, t: Arc<Type>) {
@@ -152,7 +156,7 @@ pub async fn eval_var<State>(ctx: &Context<State>, var: &Var) -> Result<Expr, Er
 where
     State: Clone + Send + Sync + 'static,
 {
-    let var_type = ctx.get_type(&var.id);
+    let var_type = ctx.get_type(&var.id)?;
 
     if let Some(expr) = ctx.scope.get(&var.name) {
         let mut new_expr = expr.clone();
@@ -216,8 +220,8 @@ pub async fn apply<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let f_type = ctx.get_type(f.borrow().id());
-    let x_type = ctx.get_type(x.borrow().id());
+    let f_type = ctx.get_type(f.borrow().id())?;
+    let x_type = ctx.get_type(x.borrow().id())?;
     let (_, b_type) = match &*f_type {
         Type::Arrow(a, b) => (a.clone(), b.clone()),
         _ => panic!("Function application on non-function type"),
@@ -283,7 +287,7 @@ where
             eval(&ctx, &body).await?
         }
         Expr::Curry(_id, span, var, mut args) => {
-            let f_type = ctx.get_type(&var.id);
+            let f_type = ctx.get_type(&var.id)?;
 
             // FIXME(loong): to fix the `test_f_passthrough` test it is pretty
             // clear to me that we need to differentiate between functions that
@@ -304,7 +308,7 @@ where
             } else if f_type.num_params() == args.len() {
                 let mut arg_types = Vec::new();
                 for arg in &args {
-                    arg_types.push(ctx.get_type(arg.id()));
+                    arg_types.push(ctx.get_type(arg.id())?);
                 }
 
                 let f_type = Type::build_arrow(arg_types, b_type.clone());
