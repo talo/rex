@@ -23,10 +23,10 @@ where
     State: Clone + Sync + 'static,
 {
     pub scope: Scope,
-    pub ftable: Ftable<State>,
-    pub subst: Subst,
+    pub ftable: Arc<Ftable<State>>,
+    pub subst: Arc<Subst>,
     pub env: Arc<RwLock<ExprTypeEnv>>,
-    pub state: State,
+    pub state: Arc<State>,
 }
 
 impl<State> Context<State>

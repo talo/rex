@@ -61,10 +61,10 @@ where
         eval(
             &Context {
                 scope: Scope::new_sync(),
-                ftable: self.ftable,
-                subst: self.subst,
+                ftable: Arc::new(self.ftable),
+                subst: Arc::new(self.subst),
                 env: Arc::new(RwLock::new(self.expr_type_env)),
-                state: state,
+                state: Arc::new(state),
             },
             &self.expr,
         )
