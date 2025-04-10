@@ -230,7 +230,7 @@ where
         this.register_fn2("pow", |_ctx: &Context<_>, x: f64, y: i32| Ok(x.powi(y)));
         this.register_fn2("pow", |_ctx: &Context<_>, x: f64, y: f64| Ok(x.powf(y)));
 
-        this.register_fn1("id", |_ctx: &Context<_>, x: A| Ok(x));
+        this.register_fn1("identity", |_ctx: &Context<_>, x: A| Ok(x));
 
         this.register_fn2("get", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
             Ok(xs[n as usize].clone())

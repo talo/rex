@@ -534,65 +534,69 @@ pub mod test {
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(20.080000000000002); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → x + x in f (id 6.9 + id 3.14)"#)
-            .await
-            .unwrap();
-        assert_eq!(res_type, float!());
-        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
-
-        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → x + x in f (id (6.9 + 3.14))"#)
-            .await
-            .unwrap();
-        assert_eq!(res_type, float!());
-        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
-
-        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → x + x in id (f (6.9 + 3.14))"#)
-            .await
-            .unwrap();
-        assert_eq!(res_type, float!());
-        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
-
         let (res, res_type) =
-            parse_infer_and_eval(r#"let f = λx → (id x + id x) in f (6.9 + 3.14)"#)
+            parse_infer_and_eval(r#"let f = λx → x + x in f (identity 6.9 + identity 3.14)"#)
                 .await
                 .unwrap();
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(20.080000000000002); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"let f = λx → id (x + x) in f (6.9 + 3.14)"#)
-            .await
-            .unwrap();
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = λx → x + x in f (identity (6.9 + 3.14))"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = λx → x + x in identity (f (6.9 + 3.14))"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = λx → (identity x + identity x) in f (6.9 + 3.14)"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(20.080000000000002); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"let f = λx → identity (x + x) in f (6.9 + 3.14)"#)
+                .await
+                .unwrap();
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(20.080000000000002); ignore span);
     }
 
     #[tokio::test]
     async fn test_let_id_in() {
-        let (res, res_type) = parse_infer_and_eval(r#"let f = id in id 420"#)
+        let (res, res_type) = parse_infer_and_eval(r#"let f = identity in identity 420"#)
             .await
             .unwrap();
         assert_eq!(res_type, uint!());
         assert_expr_eq!(res, u!(420); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"let f = id in id 6.9"#)
+        let (res, res_type) = parse_infer_and_eval(r#"let f = identity in identity 6.9"#)
             .await
             .unwrap();
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(6.9); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"let f = id in id 69"#)
+        let (res, res_type) = parse_infer_and_eval(r#"let f = identity in identity 69"#)
             .await
             .unwrap();
         assert_eq!(res_type, uint!());
         assert_expr_eq!(res, u!(69); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"let f = id in id 3.14"#)
+        let (res, res_type) = parse_infer_and_eval(r#"let f = identity in identity 3.14"#)
             .await
             .unwrap();
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(3.14); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"let f = id in (f 6.9) + (f 3.14)"#)
+        let (res, res_type) = parse_infer_and_eval(r#"let f = identity in (f 6.9) + (f 3.14)"#)
             .await
             .unwrap();
         assert_eq!(res_type, float!());
@@ -617,7 +621,14 @@ pub mod test {
         assert_expr_eq!(res, tup!(f!(21.666), u!(80), i!(420), b!(true)); ignore span);
 
         let (res, res_type) = parse_infer_and_eval(
-            r#"((id 3.14) * (id 6.9), (id 20) * (id 4), (*) (id (int 4)) (id (int 105)), (id true) || (id false))"#,
+            r#"
+            (
+                (identity 3.14) * (identity 6.9),
+                (identity 20) * (identity 4),
+                (*) (identity (int 4)) (identity (int 105)),
+                (identity true) || (identity false)
+            )
+        "#,
         )
         .await
         .unwrap();
@@ -625,7 +636,13 @@ pub mod test {
         assert_expr_eq!(res, tup!(f!(21.666), u!(80), i!(420), b!(true)); ignore span);
 
         let (res, res_type) = parse_infer_and_eval(
-            r#"(id (3.14 * 6.9), id (20 * 4), id ((*) (int 4) (int 105)), id (true || false))"#,
+            r#"
+            (
+                identity (3.14 * 6.9),
+                identity (20 * 4),
+                identity ((*) (int 4) (int 105)),
+                identity (true || false)
+            )"#,
         )
         .await
         .unwrap();
@@ -633,7 +650,14 @@ pub mod test {
         assert_expr_eq!(res, tup!(f!(21.666), u!(80), i!(420), b!(true)); ignore span);
 
         let (res, res_type) = parse_infer_and_eval(
-            r#"(id ((id 3.14) * (id 6.9)), id ((id 20) * (id 4)), id ((*) (id (int 4)) (id (int 105))), id ((id true) || (id false)))"#,
+            r#"
+            (
+                identity ((identity 3.14) * (identity 6.9)),
+                identity ((identity 20) * (identity 4)),
+                identity ((*) (identity (int 4)) (identity (int 105))),
+                identity ((identity true) || (identity false))
+            )
+        "#,
         )
         .await
         .unwrap();
@@ -732,26 +756,31 @@ pub mod test {
 
     #[tokio::test]
     async fn test_f_passthrough() {
-        let (res, res_type) = parse_infer_and_eval(r#"(id (&&)) true true"#)
+        let (res, res_type) = parse_infer_and_eval(r#"(identity (&&)) true true"#)
             .await
             .unwrap();
         assert_eq!(res_type, bool!());
         assert_expr_eq!(res, b!(true); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"(id (+)) 69 420"#).await.unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"(identity (+)) 69 420"#)
+            .await
+            .unwrap();
         assert_eq!(res_type, uint!());
         assert_expr_eq!(res, u!(489); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"(id (+)) 6.9 42.0"#).await.unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"(identity (+)) 6.9 42.0"#)
+            .await
+            .unwrap();
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(48.9); ignore span);
     }
 
     #[tokio::test]
     async fn test_polymorphism() {
-        let (res, res_type) = parse_infer_and_eval(r#"id (id 6.9, id 420, id (-420))"#)
-            .await
-            .unwrap();
+        let (res, res_type) =
+            parse_infer_and_eval(r#"identity (identity 6.9, identity 420, identity (-420))"#)
+                .await
+                .unwrap();
         assert_eq!(res_type, tuple!(float!(), uint!(), int!()));
         assert_expr_eq!(res, tup!(f!(6.9), u!(420), i!(-420)); ignore span);
 
@@ -787,10 +816,11 @@ pub mod test {
 
     #[tokio::test]
     async fn test_let_parametric_polymorphism() {
-        let (res, res_type) =
-            parse_infer_and_eval(r#"let f = id in (f 6.9, f 420, f true, f "hello, world!")"#)
-                .await
-                .unwrap();
+        let (res, res_type) = parse_infer_and_eval(
+            r#"let f = identity in (f 6.9, f 420, f true, f "hello, world!")"#,
+        )
+        .await
+        .unwrap();
         assert_eq!(res_type, tuple!(float!(), uint!(), bool!(), string!()),);
         assert_expr_eq!(
             res,
@@ -812,7 +842,7 @@ pub mod test {
     // #[tokio::test]
     async fn _test_parametric_overloaded_let_polymorphism() {
         let (res, res_type) =
-            parse_infer_and_eval(r#"let f = λx → id (x + x) in (f 6.9, f 420, f (-314))"#)
+            parse_infer_and_eval(r#"let f = λx → identity (x + x) in (f 6.9, f 420, f (-314))"#)
                 .await
                 .unwrap();
         assert_eq!(res_type, tuple!(float!(), uint!(), int!()));
@@ -1116,7 +1146,7 @@ pub mod test {
         assert_eq!(res_type, list!(float!()));
         assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"map id [3.14, 6.9, 42.0, 1.0]"#)
+        let (res, res_type) = parse_infer_and_eval(r#"map identity [3.14, 6.9, 42.0, 1.0]"#)
             .await
             .unwrap();
         assert_eq!(res_type, list!(float!()));
@@ -1129,7 +1159,7 @@ pub mod test {
         assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
 
         let (res, res_type) =
-            parse_infer_and_eval(r#"map (let f = id in f) [3.14, 6.9, 42.0, 1.0]"#)
+            parse_infer_and_eval(r#"map (let f = identity in f) [3.14, 6.9, 42.0, 1.0]"#)
                 .await
                 .unwrap();
         assert_eq!(res_type, list!(float!()));
@@ -1145,24 +1175,25 @@ pub mod test {
         // FIXME(loong): this test is not passing.
         // ```rex
         // let (res, res_type) =
-        //     parse_infer_and_eval(r#"map (let f = (λx → id (-x)) in f) [3.14, 6.9, 42.0, 1.0]"#)
+        //     parse_infer_and_eval(r#"map (let f = (λx → identity (-x)) in f) [3.14, 6.9, 42.0, 1.0]"#)
         //         .await
         //         .unwrap();
         // assert_eq!(res_type, list!(float!()));
         // assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
         // ```
 
-        let (res, res_type) =
-            parse_infer_and_eval(r#"map (let f = (λx → - (id x)) in f) [3.14, 6.9, 42.0, 1.0]"#)
-                .await
-                .unwrap();
+        let (res, res_type) = parse_infer_and_eval(
+            r#"map (let f = (λx → - (identity x)) in f) [3.14, 6.9, 42.0, 1.0]"#,
+        )
+        .await
+        .unwrap();
         assert_eq!(res_type, list!(float!()));
         assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
 
         // FIXME(loong): this test is not passing.
         // ```rex
         // let (res, res_type) = parse_infer_and_eval(
-        //     r#"map (let f = (λx → id (-(id x))) in f) [3.14, 6.9, 42.0, 1.0]"#,
+        //     r#"map (let f = (λx → identity (-(identity x))) in f) [3.14, 6.9, 42.0, 1.0]"#,
         // )
         // .await
         // .unwrap();
@@ -1172,7 +1203,7 @@ pub mod test {
 
         // FIXME(loong): this test is not passing.
         // ```rex
-        // let (res, res_type) = parse_infer_and_eval(r#"map (id (λx → -x)) [3.14, 6.9, 42.0, 1.0]"#)
+        // let (res, res_type) = parse_infer_and_eval(r#"map (identity (λx → -x)) [3.14, 6.9, 42.0, 1.0]"#)
         //     .await
         //     .unwrap();
         // assert_eq!(res_type, list!(float!()));
@@ -1252,18 +1283,18 @@ pub mod test {
             r#"
                 map
                     (let
-                        g = λx → 2.0 * (id x) - x
+                        g = λx → 2.0 * (identity x) - x
                     in
                         g)
                     (let
-                        f = λx → -(id x),
+                        f = λx → -(identity x),
                         h = map f (map f [-1, -2, -3, -4])
                     in
                         map
                             f
                             (map
-                                (λx → f (id x))
-                                [3.28 - 0.14, id 6.9, (λx → x) 42.0, f (f 1.0)]))
+                                (λx → f (identity x))
+                                [3.28 - 0.14, identity 6.9, (λx → x) 42.0, f (f 1.0)]))
                 "#,
         )
         .await
@@ -1292,7 +1323,7 @@ pub mod test {
 
     #[tokio::test]
     async fn test_lambda_let_in_var() -> Result<(), String> {
-        let (res, res_type) = parse_infer_and_eval(r#"(λx → let y = id x in y + y) 6.9"#)
+        let (res, res_type) = parse_infer_and_eval(r#"(λx → let y = identity x in y + y) 6.9"#)
             .await
             .unwrap();
         assert_eq!(res_type, float!());
@@ -1313,7 +1344,7 @@ pub mod test {
                     v = take 2 zs,
                     f = (λx →
                         let
-                            a = (id x)
+                            a = (identity x)
                         in
                             a + a
                     ),
