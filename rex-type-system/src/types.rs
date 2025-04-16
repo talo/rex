@@ -5,12 +5,10 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use rex_ast::id::Id;
+use rex_ast::{expr::Expr, id::Id};
 use uuid::Uuid;
 
 pub type TypeEnv = HashMap<String, Arc<Type>>;
-
-pub type ExprTypeEnv = HashMap<Id, Arc<Type>>;
 
 #[derive(Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -45,13 +43,6 @@ impl Type {
             .fold(ret, |acc, t| Arc::new(Type::Arrow(t, acc)))
     }
 
-    pub fn num_params(&self) -> usize {
-        match self {
-            Type::Arrow(_, b) => 1 + b.num_params(),
-            _ => 0,
-        }
-    }
-
     pub fn evaluated_type(&self) -> &Type {
         match self {
             Type::Arrow(_, b) => b.evaluated_type(),
@@ -60,20 +51,117 @@ impl Type {
     }
 
     pub fn resolve_vars(&self, assignments: &HashMap<String, Arc<Type>>) -> Arc<Type> {
-        match self {
-            Type::UnresolvedVar(x) => {
+        self.transform(|t| {
+            if let Type::UnresolvedVar(x) = t {
                 if let Some(t) = assignments.get(x) {
-                    t.clone()
-                } else {
-                    Arc::new(Type::UnresolvedVar(x.clone()))
+                    return Some(t.clone());
                 }
             }
+            None
+        })
+    }
+
+    pub fn unresolved_vars(&self) -> HashSet<String> {
+        let mut set = HashSet::new();
+        self.for_each(|t| {
+            if let Type::UnresolvedVar(x) = t {
+                set.insert(x.clone());
+            }
+        });
+        set
+    }
+
+    fn maybe_compatible(&self, other: &Expr) -> bool {
+        // This function is conservative; we only we return false if we're certain
+        // there's no match.
+        if matches!(other, Expr::Var(..)) {
+            return true; // could refer to anything
+        }
+
+        match self {
+            Type::UnresolvedVar(_) => true,
+            Type::Var(_) => true,
+            Type::ForAll(_, _, _) => true,
+            Type::ADT(adt) => match other {
+                Expr::Named(_, n, _) => {
+                    for variant in adt.variants.iter() {
+                        if *n == variant.name {
+                            return true;
+                        }
+                    }
+                    false
+                }
+                _ => false,
+            },
+            Type::Arrow(_, _) => true,
+            Type::Result(_, _) => match other {
+                Expr::Named(_, n, _) => n == "Ok" || n == "Err",
+                _ => false,
+            },
+            Type::Option(_) => match other {
+                Expr::Named(_, n, _) => n == "Some" || n == "None",
+                _ => false,
+            },
+            Type::Promise(_) => matches!(other, Expr::Promise(..)),
+            Type::List(t) => match other {
+                Expr::List(_, es) => es.iter().all(|e| t.maybe_compatible(e)),
+                _ => false,
+            },
+            Type::Dict(_) => {
+                true // TODO
+            }
+            Type::Tuple(types) => match other {
+                Expr::Tuple(_, exprs) => {
+                    types.len() == exprs.len()
+                        && types
+                            .iter()
+                            .zip(exprs.iter())
+                            .all(|(t, e)| t.maybe_compatible(e))
+                }
+                _ => false,
+            },
+            Type::Bool => matches!(other, Expr::Bool(..)),
+            Type::Uint => matches!(other, Expr::Uint(..)),
+            Type::Int => matches!(other, Expr::Int(..)),
+            Type::Float => matches!(other, Expr::Float(..)),
+            Type::String => matches!(other, Expr::String(..)),
+            Type::Uuid => matches!(other, Expr::Uuid(..)),
+            Type::DateTime => matches!(other, Expr::DateTime(..)),
+        }
+    }
+
+    pub fn for_each<F>(&self, mut f: F) -> Arc<Type>
+    where
+        F: FnMut(&Type),
+    {
+        self.transform(|t| {
+            f(t);
+            None
+        })
+    }
+
+    pub fn transform<F>(&self, mut f: F) -> Arc<Type>
+    where
+        F: FnMut(&Type) -> Option<Arc<Type>>,
+    {
+        self.transform_ref(&mut f)
+    }
+
+    // Separate function to avoid "reached the recursion limit while instantiating" errors
+    fn transform_ref<F>(&self, f: &mut F) -> Arc<Type>
+    where
+        F: FnMut(&Type) -> Option<Arc<Type>>,
+    {
+        if let Some(repl) = f(self) {
+            return repl;
+        }
+
+        match self {
+            Type::UnresolvedVar(x) => Arc::new(Type::UnresolvedVar(x.clone())),
             Type::Var(v) => Arc::new(Type::Var(v.clone())),
-            Type::ForAll(id, t, ids) => Arc::new(Type::ForAll(
-                id.clone(),
-                t.resolve_vars(assignments),
-                ids.clone(),
-            )),
+            Type::ForAll(id, t, ids) => {
+                Arc::new(Type::ForAll(id.clone(), t.transform_ref(f), ids.clone()))
+            }
             Type::ADT(adt) => Arc::new(Type::ADT(ADT {
                 name: adt.name.clone(),
                 variants: adt
@@ -81,31 +169,24 @@ impl Type {
                     .iter()
                     .map(|variant| ADTVariant {
                         name: variant.name.clone(),
-                        t: variant.t.as_ref().map(|t| t.resolve_vars(assignments)),
+                        t: variant.t.as_ref().map(|t| t.transform_ref(f)),
                         docs: variant.docs.clone(),
                         t_docs: variant.t_docs.clone(),
                     })
                     .collect(),
                 docs: adt.docs.clone(),
             })),
-            Type::Arrow(a, b) => Arc::new(Type::Arrow(
-                a.resolve_vars(assignments),
-                b.resolve_vars(assignments),
-            )),
-            Type::Result(a, b) => Arc::new(Type::Result(
-                a.resolve_vars(assignments),
-                b.resolve_vars(assignments),
-            )),
-            Type::Option(t) => Arc::new(Type::Option(t.resolve_vars(assignments))),
-            Type::Promise(t) => Arc::new(Type::Promise(t.resolve_vars(assignments))),
-            Type::List(t) => Arc::new(Type::List(t.resolve_vars(assignments))),
+            Type::Arrow(a, b) => Arc::new(Type::Arrow(a.transform_ref(f), b.transform_ref(f))),
+            Type::Result(a, b) => Arc::new(Type::Result(a.transform_ref(f), b.transform_ref(f))),
+            Type::Option(t) => Arc::new(Type::Option(t.transform_ref(f))),
+            Type::Promise(t) => Arc::new(Type::Promise(t.transform_ref(f))),
+            Type::List(t) => Arc::new(Type::List(t.transform_ref(f))),
             Type::Dict(xs) => Arc::new(Type::Dict(BTreeMap::from_iter(
-                xs.iter()
-                    .map(|(k, v)| (k.clone(), v.resolve_vars(assignments))),
+                xs.iter().map(|(k, v)| (k.clone(), v.transform_ref(f))),
             ))),
-            Type::Tuple(xs) => Arc::new(Type::Tuple(
-                xs.iter().map(|x| x.resolve_vars(assignments)).collect(),
-            )),
+            Type::Tuple(xs) => {
+                Arc::new(Type::Tuple(xs.iter().map(|x| x.transform_ref(f)).collect()))
+            }
             Type::Bool => Arc::new(Type::Bool),
             Type::Uint => Arc::new(Type::Uint),
             Type::Int => Arc::new(Type::Int),
@@ -113,154 +194,6 @@ impl Type {
             Type::String => Arc::new(Type::String),
             Type::Uuid => Arc::new(Type::Uuid),
             Type::DateTime => Arc::new(Type::DateTime),
-        }
-    }
-
-    pub fn unresolved_vars(&self) -> HashSet<String> {
-        let mut set = HashSet::new();
-        self.unresolved_vars_accum(&mut set);
-        set
-    }
-
-    pub fn maybe_compatible(&self, other: &Type) -> Result<(), String> {
-        match (self, other) {
-            (Self::Bool, Self::Bool) => Ok(()),
-            (Self::Uint, Self::Uint) => Ok(()),
-            (Self::Int, Self::Int) => Ok(()),
-            (Self::Float, Self::Float) => Ok(()),
-            (Self::String, Self::String) => Ok(()),
-            (Self::Uuid, Self::Uuid) => Ok(()),
-            (Self::DateTime, Self::DateTime) => Ok(()),
-
-            (Self::Arrow(a1, b1), Self::Arrow(a2, b2)) => {
-                a1.maybe_compatible(a2)?;
-                b1.maybe_compatible(b2)
-            }
-            (Self::Result(t1, e1), Self::Result(t2, e2)) => {
-                t1.maybe_compatible(t2)?;
-                e1.maybe_compatible(e2)
-            }
-            (Self::Option(t1), Self::Option(t2)) => t1.maybe_compatible(t2),
-            (Self::Promise(t1), Self::Promise(t2)) => t1.maybe_compatible(t2),
-            (Self::List(t1), Self::List(t2)) => t1.maybe_compatible(t2),
-            (Self::Dict(d1), Self::Dict(d2)) => {
-                for (k, v1) in d1 {
-                    if let Some(v2) = d2.get(k) {
-                        v1.maybe_compatible(v2)?;
-                    } else {
-                        return Err(format!("Incompatible types: {} and {}", self, other));
-                    }
-                }
-                Ok(())
-            }
-            (Self::Tuple(e1), Self::Tuple(e2)) => {
-                if e1.len() != e2.len() {
-                    return Err(format!("Incompatible types: {} and {}", self, other));
-                }
-                for (t1, t2) in e1.iter().zip(e2) {
-                    t1.maybe_compatible(t2)?;
-                }
-                Ok(())
-            }
-
-            (Self::ADT(adt1), Self::ADT(adt2)) => {
-                if adt1.name != adt2.name {
-                    return Err(format!("Incompatible types: {} and {}", self, other));
-                }
-                if adt1.variants.len() != adt2.variants.len() {
-                    return Err(format!("Incompatible types: {} and {}", self, other));
-                }
-                for (v1, v2) in adt1.variants.iter().zip(&adt2.variants) {
-                    if v1.name != v2.name {
-                        return Err(format!("Incompatible types: {} and {}", self, other));
-                    }
-                    if let (Some(t1), Some(t2)) = (&v1.t, &v2.t) {
-                        t1.maybe_compatible(t2)?;
-                    }
-                }
-                Ok(())
-            }
-
-            // NOTE(loong): I am not sure this is actually correct. My thinking
-            // is that we don't have to validate inconsistencies in type
-            // assigments for the various type variables, because this should
-            // have been handled during type inference. Type compatibility
-            // checking should only be used for looking up functions during
-            // execution. For example, `a -> a` and `int -> string` are
-            // compatible because we have said that a type variable is always
-            // compatible with any other type (without considering constraints).
-            //
-            // We can think about "type compatibility" as a necessary but not
-            // sufficient condition for type correctness. This check could be
-            // used before full type inference to catch any quick and obvious
-            // errors. And then again, after type inference, to disambiguate
-            // overloaded functions in the ftable.
-            //
-            // This is needed because the ftable will store a function like `map
-            // : (a -> b) -> [a] -> [b]` but during actual execution this will
-            // be executed like something concrete `map : (int -> string) ->
-            // [int] -> [string]`.
-            //
-            // NOTE(loong): We do not support overloaded parametric
-            // polymorphism.
-            //
-            // TODO(loong): We should not allow unresolved type variables at
-            // this point. Type variable resolution should have already
-            // happened, and unresolved type variables should be compatible with
-            // nothing.
-            (Self::UnresolvedVar(_), _) => Ok(()),
-            (Self::Var(_), _) => Ok(()),
-            (Self::ForAll(_, t, _), _) => t.maybe_compatible(other),
-            (_, Self::UnresolvedVar(_)) => Ok(()),
-            (_, Self::Var(_)) => Ok(()),
-            (_, Self::ForAll(_, t, _)) => t.maybe_compatible(other),
-
-            _ => Err(format!("Incompatible types: {} and {}", self, other)),
-        }
-    }
-
-    fn unresolved_vars_accum(&self, set: &mut HashSet<String>) {
-        match self {
-            Type::UnresolvedVar(x) => {
-                set.insert(x.clone());
-            }
-            Type::Var(_) => {}
-            Type::ForAll(_, t, _) => t.unresolved_vars_accum(set),
-            Type::ADT(adt) => {
-                for variant in &adt.variants {
-                    if let Some(t) = &variant.t {
-                        t.unresolved_vars_accum(set);
-                    }
-                }
-            }
-            Type::Arrow(a, b) => {
-                a.unresolved_vars_accum(set);
-                b.unresolved_vars_accum(set);
-            }
-            Type::Result(a, b) => {
-                a.unresolved_vars_accum(set);
-                b.unresolved_vars_accum(set);
-            }
-            Type::Option(t) => t.unresolved_vars_accum(set),
-            Type::Promise(t) => t.unresolved_vars_accum(set),
-            Type::List(t) => t.unresolved_vars_accum(set),
-            Type::Dict(xs) => {
-                for (_, v) in xs {
-                    v.unresolved_vars_accum(set);
-                }
-            }
-            Type::Tuple(xs) => {
-                for x in xs {
-                    x.unresolved_vars_accum(set);
-                }
-            }
-            Type::Bool => {}
-            Type::Uint => {}
-            Type::Int => {}
-            Type::Float => {}
-            Type::String => {}
-            Type::Uuid => {}
-            Type::DateTime => {}
         }
     }
 }
@@ -358,6 +291,41 @@ impl Display for Type {
             }
             Type::ADT(x) => x.fmt(f),
         }
+    }
+}
+
+pub trait Dispatch: Display {
+    fn num_params(&self) -> usize;
+    fn maybe_accepts_args(&self, args: &[Expr]) -> bool;
+}
+
+impl Dispatch for Type {
+    fn num_params(&self) -> usize {
+        match self {
+            Type::Arrow(_, b) => 1 + b.num_params(),
+            _ => 0,
+        }
+    }
+
+    fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
+        match self {
+            Type::Arrow(a, b) => {
+                args.len() >= 1 && a.maybe_compatible(&args[0]) && b.maybe_accepts_args(&args[1..])
+            }
+            _ => args.len() == 0,
+        }
+    }
+}
+
+impl Dispatch for Arc<Type> {
+    fn num_params(&self) -> usize {
+        let t: &Type = &**self;
+        t.num_params()
+    }
+
+    fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
+        let t: &Type = &**self;
+        t.maybe_accepts_args(args)
     }
 }
 
@@ -773,5 +741,36 @@ where
             Arc::new(T6::to_type()),
             Arc::new(T7::to_type()),
         ])
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+    use crate::{bool, float, string, uint};
+    use rex_ast::{b, f, s, u};
+
+    #[test]
+    fn test_dispatch() {
+        // uint → string → float → bool
+        let t = Type::build_arrow(vec![uint!(), string!(), float!()], bool!());
+
+        // Correct number and types of arguments
+        assert!(t.maybe_accepts_args(&[u!(4), s!("Hello"), f!(2.5)]));
+
+        // Too few arguments
+        assert!(!t.maybe_accepts_args(&[u!(4), s!("Hello")]));
+
+        // Too many arguments
+        assert!(!t.maybe_accepts_args(&[u!(4), s!("Hello"), f!(2.5), b!(true)]));
+
+        // First argument doesn't match
+        assert!(!t.maybe_accepts_args(&[f!(4.0), s!("Hello"), f!(2.5)]));
+
+        // Second argument doesn't match
+        assert!(!t.maybe_accepts_args(&[u!(4), b!(true), f!(2.5)]));
+
+        // Third argument doesn't match
+        assert!(!t.maybe_accepts_args(&[u!(4), s!("Hello"), u!(2)]));
     }
 }

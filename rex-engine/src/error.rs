@@ -1,13 +1,16 @@
-use rex_ast::expr::{Expr, Var};
+use rex_ast::{
+    expr::{Expr, Var},
+    id::Id,
+};
 use rex_lexer::span::Span;
 use rex_parser::error::ParserErr;
-use rex_type_system::types::Type;
+use rex_type_system::types::{Type, ADT};
 use serde_json::Value;
 use std::{collections::VecDeque, sync::Arc};
 
 // TODO(loong): re-implement traces so that developers can get meaningful
 // errors when something goes wrong.
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Error {
     #[error("unexpected token {0}")]
     UnexpectedToken(Span),
@@ -35,6 +38,20 @@ pub enum Error {
     },
     #[error("{0}")]
     RegexCompilationError(#[from] regex::Error),
+    #[error("Type of Expr {0} is unknown")]
+    ExprTypeUnknown(Id),
+    #[error("Different ADTs found with same name {name:?}: new {new}, existing {existing}")]
+    ADTNameConflict {
+        name: String,
+        new: ADT,
+        existing: ADT,
+    },
+    #[error("Overloaded function {name:?} has {new} params; existing has {existing}")]
+    OverloadParamCountMismatch {
+        name: String,
+        new: usize,
+        existing: usize,
+    },
     #[error("{error}")]
     Custom {
         error: String,

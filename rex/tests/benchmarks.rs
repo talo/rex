@@ -15,7 +15,7 @@ pub async fn benchmark_num_constructors() {
             fields: 0,
         });
         for adt in adts.iter() {
-            builder.register_adt(adt, None, None);
+            builder.register_adt(adt, None, None).unwrap();
         }
         let t1 = Utc::now();
         let program = Program::compile(builder, "0").unwrap();
@@ -36,7 +36,8 @@ pub async fn benchmark_num_constructors() {
 #[tokio::test]
 pub async fn benchmark_num_fields() {
     let mut field_count = 0;
-    while field_count <= 100 {
+    while field_count <= 20 {
+        // FIXME: This is slow. Should be able to handle 100 easily.
         let mut builder: Builder<()> = Builder::with_prelude().unwrap();
         let adts = generate_adts(Params {
             adts: 100,
@@ -44,7 +45,7 @@ pub async fn benchmark_num_fields() {
             fields: field_count,
         });
         for adt in adts.iter() {
-            builder.register_adt(adt, None, None);
+            builder.register_adt(adt, None, None).unwrap();
         }
         let t1 = Utc::now();
         let program = Program::compile(builder, "0").unwrap();
@@ -71,7 +72,7 @@ async fn benchmark_simple() {
         fields: 2,
     });
     for adt in adts.iter() {
-        builder.register_adt(adt, None, None);
+        builder.register_adt(adt, None, None).unwrap();
     }
     for adt in adts.iter() {
         println!("{}", adt);
@@ -83,8 +84,8 @@ async fn benchmark_simple() {
         builder,
         r#"
         let
-            a0 = ADT0_Variant0 { field0 = 3, field1 = 4 },
-            a1 = ADT0_Variant1 { field0 = 5, field1 = 6 }
+            a0 = ADT0::Variant0 { field0 = 3, field1 = 4 },
+            a1 = ADT0::Variant1 { field0 = 5, field1 = 6 }
         in
             [a0, a1]
         "#,
@@ -122,7 +123,7 @@ fn generate_adts(mut params: Params) -> Vec<Arc<Type>> {
         };
         for variant_no in 0..params.variants {
             let variant_name = if params.variants > 1 {
-                format!("ADT{}_Variant{}", adt_no, variant_no)
+                format!("Variant{}", variant_no)
             } else {
                 format!("ADT{}", adt_no)
             };

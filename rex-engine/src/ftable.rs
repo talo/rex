@@ -1,8 +1,16 @@
+#![allow(unused_variables)]
+#![allow(dead_code)]
+#![allow(unused_mut)]
+#![allow(unused_assignments)]
+#![allow(unused_imports)]
+#![allow(unused_macros)]
+#![allow(non_upper_case_globals)]
+
 use std::{collections::HashMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
-use rex_type_system::types::{ToType, Type};
+use rex_type_system::types::{Dispatch, ToType, Type};
 
 use crate::{
     codec::{Decode, Encode},
@@ -34,8 +42,9 @@ macro_rules! impl_register_fn {
             let t = Arc::new(<fn($($($param,)*)?) -> B as ToType>::to_type());
             let t_num_params = t.num_params();
 
-            self.0.entry(n.to_string()).or_default().push((
-                t,
+            self.add_fn(
+                n,
+                Box::new(t),
                 Box::new(move |ctx, args| {
                     let f = f.clone();
                     Box::pin(async move {
@@ -48,7 +57,7 @@ macro_rules! impl_register_fn {
                         Ok(r)
                     })
                 }),
-            ))
+            ).unwrap()
         }
     };
 }
@@ -72,8 +81,9 @@ macro_rules! impl_register_fn_async {
                 + Sync
                 + 'static,
         {
-            self.0.entry(n.to_string()).or_default().push((
-                Arc::new(<fn($($param,)*) -> B as ToType>::to_type()),
+            self.add_fn(
+                n,
+                Box::new(Arc::new(<fn($($param,)*) -> B as ToType>::to_type())),
                 Box::new(move |ctx, args| {
                     let f = f.clone();
                     Box::pin(async move {
@@ -87,7 +97,7 @@ macro_rules! impl_register_fn_async {
                         Ok(r)
                     })
                 }),
-            ))
+            ).unwrap()
         }
     };
 }
@@ -133,8 +143,15 @@ where
     }
 }
 
-#[derive(Clone)]
-pub struct Ftable<State>(pub HashMap<String, Vec<(Arc<Type>, FtableFn<State>)>>)
+pub struct Entry<State>
+where
+    State: Clone + Sync + 'static,
+{
+    pub num_params: usize,
+    pub items: Vec<(Box<dyn Dispatch + Send + Sync>, FtableFn<State>)>,
+}
+
+pub struct Ftable<State>(pub HashMap<String, Entry<State>>)
 where
     State: Clone + Sync + 'static;
 
@@ -150,23 +167,36 @@ where
         self.0.contains_key(n)
     }
 
-    // NOTE(loong): We do not support overloaded parametric polymorphism.
-    pub fn lookup_fns(
-        &self,
-        n: &str,
-        t: &Type,
-    ) -> impl Iterator<Item = (&FtableFn<State>, &Arc<Type>)> {
-        self.0
-            .get(n)
-            .map(|v| v.iter())
-            .into_iter()
-            .flatten()
-            .filter_map(move |(ftype, f)| match ftype.maybe_compatible(t) {
-                Ok(()) => Some((f, ftype)),
-                Err(_e) => None,
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
+    pub fn add_fn(
+        &mut self,
+        n: impl ToString,
+        t: Box<dyn Dispatch + Send + Sync>,
+        f: FtableFn<State>,
+    ) -> Result<(), Error> {
+        let num_params = t.num_params();
+        let n = n.to_string();
+        match self.0.get_mut(&n) {
+            Some(entry) => {
+                if num_params != entry.num_params {
+                    return Err(Error::OverloadParamCountMismatch {
+                        name: n,
+                        new: num_params,
+                        existing: entry.num_params,
+                    });
+                }
+                entry.items.push((t, f));
+            }
+            None => {
+                self.0.insert(
+                    n,
+                    Entry {
+                        num_params,
+                        items: vec![(t, f)],
+                    },
+                );
+            }
+        }
+        Ok(())
     }
 
     impl_register_fn!(register_fn0);
@@ -191,11 +221,11 @@ where
         items.sort_by(|(n0, _), (n1, _)| n0.cmp(n1));
 
         for (name, entries) in items.iter() {
-            if entries.len() == 1 {
-                write!(f, "\n    {} :: {}", name, entries[0].0)?;
+            if entries.items.len() == 1 {
+                write!(f, "\n    {} :: {}", name, entries.items[0].0)?;
             } else {
                 write!(f, "\n    {} ::", name)?;
-                for entry in entries.iter() {
+                for entry in entries.items.iter() {
                     write!(f, "\n        {}", entry.0)?;
                 }
             }

@@ -311,7 +311,7 @@ impl Token {
             r#""(?P<DoubleString>(\\"|[^"])*)"|"#,
             r#"'(?P<SingleString>(\\'|[^'])*)'|"#,
             // Idents
-            r"(?P<Ident>[_a-zA-Z]([_a-zA-Z]|[0-9])*)|",
+            r"(?P<Ident>[_a-zA-Z]([:_a-zA-Z]|[0-9])*)|",
             // Unexpected
             r"(.)",
         ))

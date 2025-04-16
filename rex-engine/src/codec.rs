@@ -5,7 +5,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use rex_ast::{expr::Expr, id::Id};
+use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
 use rex_type_system::types::{ToType, Type};
 use uuid::Uuid;
@@ -21,97 +21,97 @@ where
 
 impl Encode for bool {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Bool(Id::new(), span, self))
+        Ok(Expr::Bool(span, self))
     }
 }
 
 impl Encode for u8 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Uint(Id::new(), span, self as u64))
+        Ok(Expr::Uint(span, self as u64))
     }
 }
 
 impl Encode for u16 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Uint(Id::new(), span, self as u64))
+        Ok(Expr::Uint(span, self as u64))
     }
 }
 
 impl Encode for u32 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Uint(Id::new(), span, self as u64))
+        Ok(Expr::Uint(span, self as u64))
     }
 }
 
 impl Encode for u64 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Uint(Id::new(), span, self))
+        Ok(Expr::Uint(span, self))
     }
 }
 
 impl Encode for i8 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Int(Id::new(), span, self as i64))
+        Ok(Expr::Int(span, self as i64))
     }
 }
 
 impl Encode for i16 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Int(Id::new(), span, self as i64))
+        Ok(Expr::Int(span, self as i64))
     }
 }
 
 impl Encode for i32 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Int(Id::new(), span, self as i64))
+        Ok(Expr::Int(span, self as i64))
     }
 }
 
 impl Encode for i64 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Int(Id::new(), span, self))
+        Ok(Expr::Int(span, self))
     }
 }
 
 impl Encode for f32 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Float(Id::new(), span, self as f64))
+        Ok(Expr::Float(span, self as f64))
     }
 }
 
 impl Encode for f64 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Float(Id::new(), span, self))
+        Ok(Expr::Float(span, self))
     }
 }
 
 impl Encode for &str {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::String(Id::new(), span, self.to_string()))
+        Ok(Expr::String(span, self.to_string()))
     }
 }
 
 impl Encode for String {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::String(Id::new(), span, self))
+        Ok(Expr::String(span, self))
     }
 }
 
 impl Encode for Uuid {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Uuid(Id::new(), span, self))
+        Ok(Expr::Uuid(span, self))
     }
 }
 
 impl Encode for DateTime<Utc> {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::DateTime(Id::new(), span, self))
+        Ok(Expr::DateTime(span, self))
     }
 }
 
 impl Encode for () {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Tuple(Id::new(), span, vec![]))
+        Ok(Expr::Tuple(span, vec![]))
     }
 }
 
@@ -120,7 +120,7 @@ where
     T0: Encode,
 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
-        Ok(Expr::Tuple(Id::new(), span, vec![self.0.try_encode(span)?]))
+        Ok(Expr::Tuple(span, vec![self.0.try_encode(span)?]))
     }
 }
 
@@ -131,7 +131,6 @@ where
 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
         Ok(Expr::Tuple(
-            Id::new(),
             span,
             vec![self.0.try_encode(span)?, self.1.try_encode(span)?],
         ))
@@ -146,7 +145,6 @@ where
 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
         Ok(Expr::Tuple(
-            Id::new(),
             span,
             vec![
                 self.0.try_encode(span)?,
@@ -166,7 +164,6 @@ where
 {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
         Ok(Expr::Tuple(
-            Id::new(),
             span,
             vec![
                 self.0.try_encode(span)?,
@@ -187,7 +184,7 @@ where
         for x in self {
             ys.push(x.try_encode(span)?);
         }
-        Ok(Expr::List(Id::new(), span, ys))
+        Ok(Expr::List(span, ys))
     }
 }
 
@@ -199,13 +196,11 @@ where
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
         match self {
             Ok(x) => Ok(Expr::Named(
-                Id::new(),
                 span,
                 "Ok".to_string(),
                 Some(Box::new(x.try_encode(span)?)),
             )),
             Err(x) => Ok(Expr::Named(
-                Id::new(),
                 span,
                 "Err".to_string(),
                 Some(Box::new(x.try_encode(span)?)),
@@ -221,12 +216,11 @@ where
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
         match self {
             Some(x) => Ok(Expr::Named(
-                Id::new(),
                 span,
                 "Some".to_string(),
                 Some(Box::new(x.try_encode(span)?)),
             )),
-            None => Ok(Expr::Named(Id::new(), span, "None".to_string(), None)),
+            None => Ok(Expr::Named(span, "None".to_string(), None)),
         }
     }
 }
@@ -241,7 +235,7 @@ where
 impl Decode for bool {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Bool(_, _, x) => Ok(*x as bool),
+            Expr::Bool(_, x) => Ok(*x as bool),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
@@ -253,7 +247,7 @@ impl Decode for bool {
 impl Decode for u8 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Uint(_, _, x) => Ok(*x as u8),
+            Expr::Uint(_, x) => Ok(*x as u8),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
@@ -265,7 +259,7 @@ impl Decode for u8 {
 impl Decode for u16 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Uint(_, _, x) => Ok(*x as u16),
+            Expr::Uint(_, x) => Ok(*x as u16),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
@@ -277,7 +271,7 @@ impl Decode for u16 {
 impl Decode for u32 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Uint(_, _, x) => Ok(*x as u32),
+            Expr::Uint(_, x) => Ok(*x as u32),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
@@ -288,7 +282,7 @@ impl Decode for u32 {
 impl Decode for u64 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Uint(_, _, x) => Ok(*x),
+            Expr::Uint(_, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
@@ -300,7 +294,7 @@ impl Decode for u64 {
 impl Decode for u128 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Uint(_, _, x) => Ok(*x as u128),
+            Expr::Uint(_, x) => Ok(*x as u128),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
@@ -312,7 +306,7 @@ impl Decode for u128 {
 impl Decode for i8 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Int(_, _, x) => Ok(*x as i8),
+            Expr::Int(_, x) => Ok(*x as i8),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
@@ -324,7 +318,7 @@ impl Decode for i8 {
 impl Decode for i16 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Int(_, _, x) => Ok(*x as i16),
+            Expr::Int(_, x) => Ok(*x as i16),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
@@ -336,7 +330,7 @@ impl Decode for i16 {
 impl Decode for i32 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Int(_, _, x) => Ok(*x as i32),
+            Expr::Int(_, x) => Ok(*x as i32),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
@@ -348,7 +342,7 @@ impl Decode for i32 {
 impl Decode for i64 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Int(_, _, x) => Ok(*x),
+            Expr::Int(_, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
@@ -360,7 +354,7 @@ impl Decode for i64 {
 impl Decode for i128 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Int(_, _, x) => Ok(*x as i128),
+            Expr::Int(_, x) => Ok(*x as i128),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
@@ -372,7 +366,7 @@ impl Decode for i128 {
 impl Decode for f32 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Float(_, _, x) => Ok(*x as f32),
+            Expr::Float(_, x) => Ok(*x as f32),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Float),
                 got: v.clone(),
@@ -384,7 +378,7 @@ impl Decode for f32 {
 impl Decode for f64 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Float(_, _, x) => Ok(*x),
+            Expr::Float(_, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Float),
                 got: v.clone(),
@@ -396,7 +390,7 @@ impl Decode for f64 {
 impl Decode for String {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::String(_, _, x) => Ok(x.clone()),
+            Expr::String(_, x) => Ok(x.clone()),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
@@ -408,7 +402,7 @@ impl Decode for String {
 impl Decode for Uuid {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Uuid(_, _, u) => Ok(u.clone()),
+            Expr::Uuid(_, u) => Ok(u.clone()),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
@@ -420,7 +414,7 @@ impl Decode for Uuid {
 impl Decode for DateTime<Utc> {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::DateTime(_, _, dt) => Ok(dt.clone()),
+            Expr::DateTime(_, dt) => Ok(dt.clone()),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
@@ -432,7 +426,7 @@ impl Decode for DateTime<Utc> {
 impl Decode for () {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) if xs.len() == 0 => Ok(()),
+            Expr::Tuple(_span, xs) if xs.len() == 0 => Ok(()),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
@@ -447,7 +441,7 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) if xs.len() == 1 => Ok((T0::try_decode(&xs[0])?,)),
+            Expr::Tuple(_span, xs) if xs.len() == 1 => Ok((T0::try_decode(&xs[0])?,)),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
@@ -463,7 +457,7 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) if xs.len() == 2 => {
+            Expr::Tuple(_span, xs) if xs.len() == 2 => {
                 Ok((T0::try_decode(&xs[0])?, T1::try_decode(&xs[1])?))
             }
             _ => Err(Error::ExpectedTypeGotValue {
@@ -482,7 +476,7 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) if xs.len() == 3 => Ok((
+            Expr::Tuple(_span, xs) if xs.len() == 3 => Ok((
                 T0::try_decode(&xs[0])?,
                 T1::try_decode(&xs[1])?,
                 T2::try_decode(&xs[2])?,
@@ -504,7 +498,7 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_id, _span, xs) if xs.len() == 4 => Ok((
+            Expr::Tuple(_span, xs) if xs.len() == 4 => Ok((
                 T0::try_decode(&xs[0])?,
                 T1::try_decode(&xs[1])?,
                 T2::try_decode(&xs[2])?,
@@ -524,7 +518,7 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::List(_id, _span, xs) => {
+            Expr::List(_span, xs) => {
                 let mut ys = Vec::with_capacity(xs.len());
                 for x in xs {
                     ys.push(T::try_decode(x)?);
@@ -546,8 +540,8 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Named(_id, _span, name, Some(x)) if name == "Ok" => Ok(Ok(T::try_decode(x)?)),
-            Expr::Named(_id, _span, name, Some(x)) if name == "Err" => Ok(Err(E::try_decode(x)?)),
+            Expr::Named(_span, name, Some(x)) if name == "Ok" => Ok(Ok(T::try_decode(x)?)),
+            Expr::Named(_span, name, Some(x)) if name == "Err" => Ok(Err(E::try_decode(x)?)),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Result(Arc::new(T::to_type()), Arc::new(E::to_type()))),
                 got: v.clone(),
@@ -562,8 +556,8 @@ where
 {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Named(_id, _span, name, Some(x)) if name == "Some" => Ok(Some(T::try_decode(x)?)),
-            Expr::Named(_id, _span, name, None) if name == "None" => Ok(None),
+            Expr::Named(_span, name, Some(x)) if name == "Some" => Ok(Some(T::try_decode(x)?)),
+            Expr::Named(_span, name, None) if name == "None" => Ok(None),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Option(Arc::new(T::to_type()))),
                 got: v.clone(),
