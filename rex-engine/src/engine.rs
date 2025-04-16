@@ -523,7 +523,8 @@ where
                     Ok(list_expr)
                 })
             }),
-        );
+        )
+        .unwrap();
 
         Ok(this)
     }
@@ -563,18 +564,20 @@ where
                             }
                         })
                     }),
-                );
+                )
+                .unwrap();
             }
         }
     }
 
-    pub fn register_fn_core_with_name(&mut self, name: &str, t: Arc<Type>, f: FtableFn<State>) {
+    pub fn register_fn_core_with_name(
+        &mut self,
+        name: &str,
+        t: Arc<Type>,
+        f: FtableFn<State>,
+    ) -> Result<(), Error> {
         register_fn_core(self, name, t.clone());
-        self.ftable
-            .0
-            .entry(name.to_string())
-            .or_default()
-            .push((t, f));
+        self.ftable.add_fn(name, t, f)
     }
 
     pub fn register_adt(
@@ -611,7 +614,7 @@ where
         }
 
         if adt.variants.len() == 0 {
-            self.register_adt_variant(adt_type, &adt.name, &None, &full_adt_name, defaults);
+            self.register_adt_variant(adt_type, &adt.name, &None, &full_adt_name, defaults)?;
         } else if adt.variants.len() == 1 && adt.variants[0].name == adt.name {
             self.register_adt_variant(
                 adt_type,
@@ -619,7 +622,7 @@ where
                 &adt.variants[0].t,
                 &full_adt_name,
                 defaults,
-            );
+            )?;
         } else {
             for variant in &adt.variants {
                 let constructor_name = make_full_name(Some(&full_adt_name), &variant.name);
@@ -629,7 +632,7 @@ where
                     &variant.t,
                     &constructor_name,
                     defaults,
-                );
+                )?;
             }
         }
 
@@ -643,7 +646,7 @@ where
         variant_type: &Option<Arc<Type>>,
         constructor_name: &str,
         defaults: Option<&BTreeMap<String, FtableFn<State>>>,
-    ) {
+    ) -> Result<(), Error> {
         let base_name = variant_name.to_string();
 
         // TODO: Avoid cloning args in the functions. This applies more generally across
@@ -684,7 +687,7 @@ where
                             ))
                         })
                     }),
-                );
+                )
             }
             (Some(Type::Dict(entries)), Some(defaults)) => {
                 let mut entries_without_defaults: BTreeMap<String, Arc<Type>> = BTreeMap::new();
@@ -724,9 +727,10 @@ where
                             ))
                         })
                     }),
-                );
+                )?;
 
-                self.register_accessors(adt_type, &variant_name, &constructor_name, entries);
+                self.register_accessors(adt_type, &variant_name, &constructor_name, entries)?;
+                Ok(())
             }
             _ => {
                 if let Some(t) = variant_type {
@@ -746,7 +750,7 @@ where
                                 ))
                             })
                         }),
-                    );
+                    )?;
 
                     if let Type::Dict(entries) = &**t {
                         self.register_accessors(
@@ -754,8 +758,9 @@ where
                             &variant_name,
                             &constructor_name,
                             entries,
-                        );
+                        )?;
                     }
+                    Ok(())
                 } else {
                     self.register_fn_core_with_name(
                         &constructor_name,
@@ -766,7 +771,7 @@ where
                                 Ok(Expr::Named(Id::new(), Span::default(), base_name, None))
                             })
                         }),
-                    );
+                    )
                 }
             }
         }
@@ -778,7 +783,7 @@ where
         variant_name: &str,
         _constructor_name: &str,
         entries: &BTreeMap<String, Arc<Type>>,
-    ) {
+    ) -> Result<(), Error> {
         for (entry_key, entry_type) in entries.iter() {
             let entry_key2 = entry_key.clone();
             let accessor_fun_type = Arc::new(Type::Arrow(adt_type.clone(), entry_type.clone()));
@@ -814,8 +819,9 @@ where
                         }
                     })
                 }),
-            );
+            )?;
         }
+        Ok(())
     }
 
     impl_register_fn!(register_fn0);

@@ -1,5 +1,13 @@
-use rex_ast::{assert_expr_eq, f, n, tup};
-use rex_engine::{engine::Builder, program::Program};
+#![allow(unused_variables)]
+#![allow(dead_code)]
+#![allow(unused_mut)]
+#![allow(unused_assignments)]
+#![allow(unused_imports)]
+#![allow(unused_macros)]
+#![allow(non_upper_case_globals)]
+
+use rex_ast::{assert_expr_eq, b, f, n, s, tup, u};
+use rex_engine::{engine::Builder, error::Error, program::Program};
 use rex_proc_macro::Rex;
 use rex_type_system::{
     adt, tuple,

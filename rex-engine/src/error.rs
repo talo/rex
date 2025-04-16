@@ -10,7 +10,7 @@ use std::{collections::VecDeque, sync::Arc};
 
 // TODO(loong): re-implement traces so that developers can get meaningful
 // errors when something goes wrong.
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Error {
     #[error("unexpected token {0}")]
     UnexpectedToken(Span),
@@ -45,6 +45,12 @@ pub enum Error {
         name: String,
         new: ADT,
         existing: ADT,
+    },
+    #[error("Overloaded function {name:?} has {new} params; existing has {existing}")]
+    OverloadParamCountMismatch {
+        name: String,
+        new: usize,
+        existing: usize,
     },
     #[error("{error}")]
     Custom {

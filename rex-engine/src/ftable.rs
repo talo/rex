@@ -34,7 +34,8 @@ macro_rules! impl_register_fn {
             let t = Arc::new(<fn($($($param,)*)?) -> B as ToType>::to_type());
             let t_num_params = t.num_params();
 
-            self.0.entry(n.to_string()).or_default().push((
+            self.add_fn(
+                n,
                 t,
                 Box::new(move |ctx, args| {
                     let f = f.clone();
@@ -48,7 +49,7 @@ macro_rules! impl_register_fn {
                         Ok(r)
                     })
                 }),
-            ))
+            ).unwrap()
         }
     };
 }
@@ -72,7 +73,8 @@ macro_rules! impl_register_fn_async {
                 + Sync
                 + 'static,
         {
-            self.0.entry(n.to_string()).or_default().push((
+            self.add_fn(
+                n,
                 Arc::new(<fn($($param,)*) -> B as ToType>::to_type()),
                 Box::new(move |ctx, args| {
                     let f = f.clone();
@@ -87,7 +89,7 @@ macro_rules! impl_register_fn_async {
                         Ok(r)
                     })
                 }),
-            ))
+            ).unwrap()
         }
     };
 }
@@ -133,8 +135,15 @@ where
     }
 }
 
-#[derive(Clone)]
-pub struct Ftable<State>(pub HashMap<String, Vec<(Arc<Type>, FtableFn<State>)>>)
+pub struct Entry<State>
+where
+    State: Clone + Sync + 'static,
+{
+    pub num_params: usize,
+    pub items: Vec<(Arc<Type>, FtableFn<State>)>,
+}
+
+pub struct Ftable<State>(pub HashMap<String, Entry<State>>)
 where
     State: Clone + Sync + 'static;
 
@@ -150,6 +159,38 @@ where
         self.0.contains_key(n)
     }
 
+    pub fn add_fn(
+        &mut self,
+        n: impl ToString,
+        t: Arc<Type>,
+        f: FtableFn<State>,
+    ) -> Result<(), Error> {
+        let num_params = t.num_params();
+        let n = n.to_string();
+        match self.0.get_mut(&n) {
+            Some(entry) => {
+                if num_params != entry.num_params {
+                    return Err(Error::OverloadParamCountMismatch {
+                        name: n,
+                        new: num_params,
+                        existing: entry.num_params,
+                    });
+                }
+                entry.items.push((t, f));
+            }
+            None => {
+                self.0.insert(
+                    n,
+                    Entry {
+                        num_params,
+                        items: vec![(t, f)],
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+
     // NOTE(loong): We do not support overloaded parametric polymorphism.
     pub fn lookup_fns(
         &self,
@@ -158,7 +199,7 @@ where
     ) -> impl Iterator<Item = (&FtableFn<State>, &Arc<Type>)> {
         self.0
             .get(n)
-            .map(|v| v.iter())
+            .map(|v| v.items.iter())
             .into_iter()
             .flatten()
             .filter_map(move |(ftype, f)| match ftype.maybe_compatible(t) {
@@ -191,11 +232,11 @@ where
         items.sort_by(|(n0, _), (n1, _)| n0.cmp(n1));
 
         for (name, entries) in items.iter() {
-            if entries.len() == 1 {
-                write!(f, "\n    {} :: {}", name, entries[0].0)?;
+            if entries.items.len() == 1 {
+                write!(f, "\n    {} :: {}", name, entries.items[0].0)?;
             } else {
                 write!(f, "\n    {} ::", name)?;
-                for entry in entries.iter() {
+                for entry in entries.items.iter() {
                     write!(f, "\n        {}", entry.0)?;
                 }
             }
