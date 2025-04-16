@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use rex::{
-    ast::{assert_expr_eq, b, d, expr::Expr, f, i, id::Id, l, n, s, tup, u},
+    ast::{assert_expr_eq, b, d, expr::Expr, f, i, l, n, s, tup, u},
     engine::{
         codec::{Decode, Encode},
         engine::Builder,
@@ -464,7 +464,6 @@ fn test_field_datetime() {
         Some(d!(
             a = s!("Hello"),
             b = Expr::DateTime(
-                Id::new(),
                 Span::default(),
                 DateTime::parse_from_rfc3339("2014-11-28T21:00:09+09:00")
                     .unwrap()
@@ -498,7 +497,6 @@ async fn test_field_uuid() {
         Some(d!(
             a = s!("Hello"),
             b = Expr::Uuid(
-                Id::new(),
                 Span::default(),
                 uuid!("f5d62567-7a45-4637-bbfb-252f4162574f")
             )

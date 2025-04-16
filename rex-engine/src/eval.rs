@@ -1,10 +1,7 @@
 use std::{borrow::Borrow, collections::BTreeMap, sync::Arc};
 
 use futures::future;
-use rex_ast::{
-    expr::{Expr, Scope, Var},
-    id::Id,
-};
+use rex_ast::expr::{Expr, Scope, Var};
 use rex_lexer::span::Span;
 
 use crate::{error::Error, ftable::Ftable};
@@ -34,30 +31,20 @@ where
         | Expr::DateTime(..)
         | Expr::Named(..)
         | Expr::Promise(..) => Ok(expr.clone()),
-        Expr::Tuple(id, span, tuple) => eval_tuple(ctx, id, span, tuple).await,
-        Expr::List(id, span, list) => eval_list(ctx, id, span, list).await,
-        Expr::Dict(id, span, dict) => eval_dict(ctx, id, span, dict).await,
+        Expr::Tuple(span, tuple) => eval_tuple(ctx, span, tuple).await,
+        Expr::List(span, list) => eval_list(ctx, span, list).await,
+        Expr::Dict(span, dict) => eval_dict(ctx, span, dict).await,
         Expr::Var(var) => eval_var(ctx, var).await,
-        Expr::App(id, span, f, x) => eval_app(ctx, id, span, f, x).await,
-        Expr::Lam(id, span, scope, param, body) => {
-            eval_lam(ctx, id, span, scope, param, body).await
-        }
-        Expr::Let(id, span, var, def, body) => eval_let(ctx, id, span, var, def, body).await,
-        Expr::Ite(id, span, cond, then, r#else) => {
-            eval_ite(ctx, id, span, cond, then, r#else).await
-        }
-        Expr::Curry(id, span, f, args) => Ok(Expr::Curry(
-            id.clone(),
-            span.clone(),
-            f.clone(),
-            args.clone(),
-        )),
+        Expr::App(span, f, x) => eval_app(ctx, span, f, x).await,
+        Expr::Lam(span, scope, param, body) => eval_lam(ctx, span, scope, param, body).await,
+        Expr::Let(span, var, def, body) => eval_let(ctx, span, var, def, body).await,
+        Expr::Ite(span, cond, then, r#else) => eval_ite(ctx, span, cond, then, r#else).await,
+        Expr::Curry(span, f, args) => Ok(Expr::Curry(span.clone(), f.clone(), args.clone())),
     }
 }
 
 pub async fn eval_tuple<State>(
     ctx: &Context<State>,
-    id: &Id,
     span: &Span,
     tuple: &Vec<Expr>,
 ) -> Result<Expr, Error>
@@ -69,7 +56,6 @@ where
         result.push(eval(ctx, v));
     }
     Ok(Expr::Tuple(
-        id.clone(),
         span.clone(),
         future::join_all(result)
             .await
@@ -80,7 +66,6 @@ where
 
 pub async fn eval_list<State>(
     ctx: &Context<State>,
-    id: &Id,
     span: &Span,
     list: &Vec<Expr>,
 ) -> Result<Expr, Error>
@@ -92,7 +77,6 @@ where
         result.push(eval(ctx, v));
     }
     Ok(Expr::List(
-        id.clone(),
         span.clone(),
         future::join_all(result)
             .await
@@ -103,7 +87,6 @@ where
 
 pub async fn eval_dict<State>(
     ctx: &Context<State>,
-    id: &Id,
     span: &Span,
     dict: &BTreeMap<String, Expr>,
 ) -> Result<Expr, Error>
@@ -121,7 +104,7 @@ where
     for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
         result.insert(k.clone(), v?);
     }
-    Ok(Expr::Dict(id.clone(), span.clone(), result))
+    Ok(Expr::Dict(span.clone(), result))
 }
 
 #[async_recursion::async_recursion]
@@ -142,12 +125,7 @@ where
                     return Ok(res);
                 }
 
-                return Ok(Expr::Curry(
-                    Id::new(),
-                    Span::default(),
-                    var.clone(),
-                    Vec::new(),
-                ));
+                return Ok(Expr::Curry(Span::default(), var.clone(), Vec::new()));
             }
 
             Err(Error::VarNotFound { var: var.clone() })
@@ -157,7 +135,6 @@ where
 
 pub async fn eval_app<State>(
     ctx: &Context<State>,
-    _id: &Id,
     _span: &Span,
     f: &Expr,
     x: &Expr,
@@ -180,7 +157,7 @@ where
     let x = eval(ctx, x.borrow()).await?;
 
     let res = match f.borrow() {
-        Expr::Lam(_id, _span, scope, param, body) => {
+        Expr::Lam(_span, scope, param, body) => {
             let mut ctx: Context<State> = ctx.clone();
             ctx.scope.insert_mut(param.name.clone(), x);
             for (k, v) in scope.iter() {
@@ -189,7 +166,7 @@ where
 
             eval(&ctx, &body).await?
         }
-        Expr::Curry(_id, span, var, args) => {
+        Expr::Curry(span, var, args) => {
             let mut args = args.clone();
             let entry = ctx
                 .ftable
@@ -227,7 +204,7 @@ where
                 f(ctx, &args).await?
             } else {
                 // TODO(loong): fix the span.
-                Expr::Curry(Id::new(), span.clone(), var.clone(), args)
+                Expr::Curry(span.clone(), var.clone(), args)
             }
         }
         _ => {
@@ -243,7 +220,6 @@ where
 
 pub async fn eval_lam<State>(
     ctx: &Context<State>,
-    id: &Id,
     span: &Span,
     scope: &Scope,
     param: &Var,
@@ -257,7 +233,6 @@ where
         scope.insert_mut(entry.0.clone(), entry.1.clone());
     }
     Ok(Expr::Lam(
-        id.clone(),
         span.clone(),
         scope,
         param.clone(),
@@ -267,7 +242,6 @@ where
 
 pub async fn eval_let<State>(
     ctx: &Context<State>,
-    _id: &Id,
     _span: &Span,
     var: &Var,
     def: &Expr,
@@ -284,7 +258,6 @@ where
 
 pub async fn eval_ite<State>(
     ctx: &Context<State>,
-    _id: &Id,
     _span: &Span,
     cond: &Expr,
     then: &Expr,
@@ -295,8 +268,8 @@ where
 {
     let cond = eval(ctx, cond).await?;
     match cond {
-        Expr::Bool(_, _, true) => eval(ctx, then).await,
-        Expr::Bool(_, _, false) => eval(ctx, r#else).await,
+        Expr::Bool(_, true) => eval(ctx, then).await,
+        Expr::Bool(_, false) => eval(ctx, r#else).await,
         _ => unimplemented!(),
     }
 }

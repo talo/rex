@@ -8,11 +8,7 @@ use rex_lexer::LexicalError;
 use rex_lexer::Token;
 use rex_parser::Parser;
 use rex_type_system::unify::Subst;
-use rex_type_system::{
-    constraint::generate_constraints,
-    types::{ExprTypeEnv, Type},
-    unify,
-};
+use rex_type_system::{constraint::generate_constraints, types::Type, unify};
 use std::sync::Arc;
 
 pub struct Program<State>
@@ -22,7 +18,6 @@ where
     pub ftable: Ftable<State>,
     pub res_type: Arc<Type>,
     pub expr: Expr,
-    pub expr_type_env: ExprTypeEnv,
     pub subst: Subst,
 }
 
@@ -41,8 +36,7 @@ where
 
         let (mut constraint_system, ftable, type_env) = builder.build();
 
-        let mut expr_type_env = ExprTypeEnv::new();
-        let ty = generate_constraints(&expr, &type_env, &mut expr_type_env, &mut constraint_system)
+        let ty = generate_constraints(&expr, &type_env, &mut constraint_system)
             .map_err(|e| Error::TypeInference(e))?;
         let subst =
             unify::unify_constraints(&constraint_system).map_err(|e| Error::TypeInference(e))?;
@@ -52,7 +46,6 @@ where
             ftable,
             res_type,
             expr,
-            expr_type_env,
             subst,
         })
     }

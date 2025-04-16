@@ -1,9 +1,6 @@
 use std::{collections::VecDeque, vec};
 
-use rex_ast::{
-    expr::{Expr, Scope, Var},
-    id::Id,
-};
+use rex_ast::expr::{Expr, Scope, Var};
 use rex_lexer::{
     span::{Position, Span, Spanned},
     Token, Tokens,
@@ -164,21 +161,14 @@ impl Parser {
             rhs_expr
         };
 
-        let id_op = Id::new();
-        let id_op_lhs = Id::new();
-        let id_op_lhs_rhs = Id::new();
-
         let inner_span = Span::from_begin_end(lhs_expr_span.begin, operator_span.end);
         let outer_span = Span::from_begin_end(lhs_expr_span.begin, rhs_expr_span.end);
 
         self.parse_binary_expr(Expr::App(
-            id_op_lhs_rhs,
             outer_span,
             Box::new(Expr::App(
-                id_op_lhs,
                 inner_span,
-                Box::new(Expr::Var(Var::with_id(
-                    id_op,
+                Box::new(Expr::Var(Var::with_span(
                     *operator_span,
                     operator.to_string(),
                 ))),
@@ -242,7 +232,6 @@ impl Parser {
         while let Some(call_arg_expr) = call_arg_exprs.pop_front() {
             let call_arg_expr_span_end = call_arg_expr.span().end;
             call_base_expr = Expr::App(
-                Id::new(),
                 Span::from_begin_end(call_base_expr_span.begin, call_arg_expr_span_end),
                 Box::new(call_base_expr),
                 Box::new(call_arg_expr),
@@ -277,7 +266,6 @@ impl Parser {
                 self.next_token();
                 // Empty tuple
                 return Ok(Expr::Tuple(
-                    Id::new(),
                     Span::from_begin_end(span_begin.begin, span.end),
                     vec![],
                 ));
@@ -383,7 +371,6 @@ impl Parser {
                 Some(Token::ParenR(end_span)) => {
                     self.next_token();
                     return Ok(Expr::Tuple(
-                        Id::new(),
                         Span::from_begin_end(span_begin.begin, end_span.end),
                         items,
                     ));
@@ -455,7 +442,6 @@ impl Parser {
                 ));
 
                 return Ok(Expr::List(
-                    Id::new(),
                     Span::from_begin_end(span_begin, Position::new(0, 0)),
                     exprs,
                 ));
@@ -463,7 +449,6 @@ impl Parser {
             _ => {
                 self.errors.push("expected `]`".into());
                 return Ok(Expr::List(
-                    Id::new(),
                     Span::from_begin_end(span_begin, Position::new(0, 0)),
                     exprs,
                 ));
@@ -471,7 +456,6 @@ impl Parser {
         };
 
         Ok(Expr::List(
-            Id::new(),
             Span::from_begin_end(span_begin, span_end),
             exprs,
         ))
@@ -556,7 +540,6 @@ impl Parser {
                 ));
 
                 return Ok(Expr::Dict(
-                    Id::new(),
                     Span::from_begin_end(span_begin, Position::new(0, 0)),
                     kvs.into_iter().collect(),
                 ));
@@ -564,7 +547,6 @@ impl Parser {
             _ => {
                 self.errors.push("expected `}}`".into());
                 return Ok(Expr::Dict(
-                    Id::new(),
                     Span::from_begin_end(span_begin, Position::new(0, 0)),
                     kvs.into_iter().collect(),
                 ));
@@ -572,7 +554,6 @@ impl Parser {
         };
 
         Ok(Expr::Dict(
-            Id::new(),
             Span::from_begin_end(span_begin, span_end),
             kvs.into_iter().collect(),
         ))
@@ -604,11 +585,9 @@ impl Parser {
         let expr_span_end = expr.span().end;
 
         // Return the negative expression.
-        let id_neg = Id::new();
         Ok(Expr::App(
-            Id::new(),
             Span::from_begin_end(span_token.begin, expr_span_end),
-            Box::new(Expr::Var(Var::with_id(id_neg, span_token, "negate"))),
+            Box::new(Expr::Var(Var::with_span(span_token, "negate"))),
             Box::new(expr),
         ))
     }
@@ -642,7 +621,7 @@ impl Parser {
             match token {
                 Some(Token::Ident(param, span, ..)) => {
                     self.next_token();
-                    params.push_back((Id::new(), span, param));
+                    params.push_back((span, param));
                 }
                 _ => break,
             }
@@ -671,12 +650,11 @@ impl Parser {
         // Parse the body
         let mut body = self.parse_expr()?;
         let mut body_span_end = body.span().end;
-        while let Some((param_id, param_span, param)) = params.pop_back() {
+        while let Some((param_span, param)) = params.pop_back() {
             body = Expr::Lam(
-                Id::new(),
                 Span::from_begin_end(param_span.begin, body_span_end),
                 Scope::new_sync(),
-                Var::with_id(param_id, param_span, param),
+                Var::with_span(param_span, param),
                 Box::new(body),
             );
             body_span_end = body.span().end;
@@ -717,7 +695,7 @@ impl Parser {
             let var = match token {
                 Some(Token::Ident(val, span, ..)) => {
                     self.next_token();
-                    (Id::new(), span, val)
+                    (span, val)
                 }
                 _ => break,
             };
@@ -786,11 +764,10 @@ impl Parser {
         // Parse the body
         let mut body = self.parse_expr()?;
         let mut body_span_end = body.span().end;
-        while let Some(((var_id, var_span, var), def)) = decls.pop_back() {
+        while let Some(((var_span, var), def)) = decls.pop_back() {
             body = Expr::Let(
-                Id::new(),
                 Span::from_begin_end(var_span.begin, body_span_end),
-                Var::with_id(var_id, var_span, var),
+                Var::with_span(var_span, var),
                 Box::new(def),
                 Box::new(body),
             )
@@ -877,7 +854,6 @@ impl Parser {
         let else_span_end = r#else.span().end;
 
         Ok(Expr::Ite(
-            Id::new(),
             Span::from_begin_end(span_begin, else_span_end),
             Box::new(cond),
             Box::new(then),
@@ -890,7 +866,7 @@ impl Parser {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Bool(val, span, ..)) => Ok(Expr::Bool(Id::new(), span, val)),
+            Some(Token::Bool(val, span, ..)) => Ok(Expr::Bool(span, val)),
             Some(token) => {
                 self.errors.push(ParserErr::new(
                     *token.span(),
@@ -910,7 +886,7 @@ impl Parser {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Float(val, span, ..)) => Ok(Expr::Float(Id::new(), span, val)),
+            Some(Token::Float(val, span, ..)) => Ok(Expr::Float(span, val)),
             Some(token) => {
                 self.errors.push(ParserErr::new(
                     *token.span(),
@@ -930,7 +906,7 @@ impl Parser {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Int(val, span, ..)) => Ok(Expr::Uint(Id::new(), span, val)),
+            Some(Token::Int(val, span, ..)) => Ok(Expr::Uint(span, val)),
             Some(token) => {
                 self.errors.push(ParserErr::new(
                     *token.span(),
@@ -950,7 +926,7 @@ impl Parser {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::String(val, span, ..)) => Ok(Expr::String(Id::new(), span, val)),
+            Some(Token::String(val, span, ..)) => Ok(Expr::String(span, val)),
             Some(token) => {
                 self.errors.push(ParserErr::new(
                     *token.span(),

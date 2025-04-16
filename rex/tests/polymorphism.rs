@@ -1,4 +1,4 @@
-use rex_ast::{assert_expr_eq, b, d, expr::Expr, f, id::Id, l, n, s, tup, u};
+use rex_ast::{assert_expr_eq, b, d, expr::Expr, f, l, n, s, tup, u};
 use rex_engine::{engine::Builder, error::Error, program::Program};
 use rex_lexer::span::Span;
 use rex_proc_macro::Rex;
@@ -15,9 +15,7 @@ async fn test_function_overload_param_count_mismatch() {
     let res = builder.register_fn_core_with_name(
         "map",
         Type::build_arrow(vec![uint!(), uint!(), uint!()], uint!()),
-        Box::new(move |_ctx, _args| {
-            Box::pin(async move { Ok(Expr::Uint(Id::new(), Span::default(), 0)) })
-        }),
+        Box::new(move |_ctx, _args| Box::pin(async move { Ok(Expr::Uint(Span::default(), 0)) })),
     );
 
     assert_eq!(

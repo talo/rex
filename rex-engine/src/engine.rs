@@ -435,8 +435,7 @@ where
                     match x {
                         Some(x) => Ok(Some(x)),
                         None => {
-                            let x_id = Id::new();
-                            let x = Expr::Tuple(x_id, Span::default(), vec![]);
+                            let x = Expr::Tuple(Span::default(), vec![]);
                             let res = apply(ctx, &f, &x).await?;
                             Ok(Option::<A>::try_decode(&res)?)
                         }
@@ -451,8 +450,7 @@ where
                     match x {
                         Some(x) => Ok(x),
                         None => {
-                            let x_id = Id::new();
-                            let x = Expr::Tuple(x_id, Span::default(), vec![]);
+                            let x = Expr::Tuple(Span::default(), vec![]);
                             let res = apply(ctx, &f, &x).await?;
                             Ok(A(res))
                         }
@@ -494,11 +492,11 @@ where
             ),
             Box::new(move |_ctx, args| {
                 Box::pin(async move {
-                    let Some(Expr::Uint(_, _, start)) = args.get(0) else {
+                    let Some(Expr::Uint(_, start)) = args.get(0) else {
                         return Err(Error::MissingArgument { argument: 0 });
                     };
 
-                    let Some(Expr::Uint(_, _, end)) = args.get(1) else {
+                    let Some(Expr::Uint(_, end)) = args.get(1) else {
                         return Err(Error::MissingArgument { argument: 1 });
                     };
                     let start = *start;
@@ -506,13 +504,13 @@ where
 
                     let mut items: Vec<Expr> = Vec::new();
                     for i in start..end {
-                        let expr = Expr::Uint(Id::new(), Span::default(), i);
+                        let expr = Expr::Uint(Span::default(), i);
                         items.push(expr);
                     }
 
                     // We can get by without recording the type of the resulting list, since
                     // this is done at the end of apply()
-                    let list_expr = Expr::List(Id::new(), Span::default(), items);
+                    let list_expr = Expr::List(Span::default(), items);
                     Ok(list_expr)
                 })
             }),
@@ -546,7 +544,7 @@ where
                         let tuple_type = tuple_type.clone();
                         Box::pin(async move {
                             match args.get(0) {
-                                Some(Expr::Tuple(_, _, elems)) if elems.len() == tuple_len => {
+                                Some(Expr::Tuple(_, elems)) if elems.len() == tuple_len => {
                                     Ok(elems[tuple_index].clone())
                                 }
                                 Some(arg) => Err(Error::ExpectedTypeGotValue {
@@ -669,14 +667,9 @@ where
                         let base_name = base_name.clone();
                         Box::pin(async move {
                             Ok(Expr::Named(
-                                Id::new(),
                                 Span::default(),
                                 base_name,
-                                Some(Box::new(Expr::Tuple(
-                                    Id::new(),
-                                    Span::default(),
-                                    args.clone(),
-                                ))),
+                                Some(Box::new(Expr::Tuple(Span::default(), args.clone()))),
                             ))
                         })
                     }),
@@ -703,21 +696,16 @@ where
                         Box::pin(async move {
                             let mut val = args[0].clone();
 
-                            if let Expr::Dict(_, span, entries) = &val {
+                            if let Expr::Dict(span, entries) = &val {
                                 let mut new_entries: BTreeMap<String, Expr> = entries.clone();
                                 for (k, vf) in defaults.iter() {
                                     let v = vf(ctx, &vec![]).await?;
                                     new_entries.insert(k.clone(), v);
                                 }
-                                val = Expr::Dict(Id::new(), *span, new_entries);
+                                val = Expr::Dict(*span, new_entries);
                             }
 
-                            Ok(Expr::Named(
-                                Id::new(),
-                                Span::default(),
-                                base_name,
-                                Some(Box::new(val)),
-                            ))
+                            Ok(Expr::Named(Span::default(), base_name, Some(Box::new(val))))
                         })
                     }),
                 )?;
@@ -735,12 +723,7 @@ where
                             let base_name = base_name.clone();
                             Box::pin(async move {
                                 let val = args[0].clone();
-                                Ok(Expr::Named(
-                                    Id::new(),
-                                    Span::default(),
-                                    base_name,
-                                    Some(Box::new(val)),
-                                ))
+                                Ok(Expr::Named(Span::default(), base_name, Some(Box::new(val))))
                             })
                         }),
                     )?;
@@ -755,9 +738,9 @@ where
                         adt_type.clone(),
                         Box::new(move |_, _| {
                             let base_name = base_name.clone();
-                            Box::pin(async move {
-                                Ok(Expr::Named(Id::new(), Span::default(), base_name, None))
-                            })
+                            Box::pin(
+                                async move { Ok(Expr::Named(Span::default(), base_name, None)) },
+                            )
                         }),
                     )
                 }
@@ -839,8 +822,8 @@ where
         let entry_key = entry_key.clone();
         Box::pin(async move {
             match &args[0] {
-                Expr::Named(_, _, _, Some(inner)) => match &**inner {
-                    Expr::Dict(_, _, entries) => match entries.get(&entry_key) {
+                Expr::Named(_, _, Some(inner)) => match &**inner {
+                    Expr::Dict(_, entries) => match entries.get(&entry_key) {
                         Some(v) => Ok(v.clone()),
                         None => Err(Error::Custom {
                             error: format!("Missing entry {:?}", entry_key),

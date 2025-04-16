@@ -323,11 +323,9 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                     )
                 });
                 quote!(Ok(::rex::ast::expr::Expr::Named(
-                    ::rex::ast::id::Id::new(),
                     ::rex::lexer::span::Span::default(),
                     stringify!(#name).to_string(),
                     Some(Box::new(::rex::ast::expr::Expr::Dict(
-                        ::rex::ast::id::Id::new(),
                         ::rex::lexer::span::Span::default(),
                         ::std::collections::BTreeMap::from_iter(vec![#(#items,)*].into_iter())
                     )))
@@ -335,7 +333,6 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
             }
             Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
                 quote!(Ok(::rex::ast::expr::Expr::Named(
-                    ::rex::ast::id::Id::new(),
                     ::rex::lexer::span::Span::default(),
                     stringify!(#name).to_string(),
                     Some(Box::new(::rex::engine::codec::Encode::try_encode(
@@ -349,11 +346,9 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                     quote!(::rex::engine::codec::Encode::try_encode(self.#identifier, span)?)
                 });
                 quote!(Ok(::rex::ast::expr::Expr::Named(
-                    ::rex::ast::id::Id::new(),
                     ::rex::lexer::span::Span::default(),
                     stringify!(#name).to_string(),
                     Some(Box::new(::rex::ast::expr::Expr::Tuple(
-                        ::rex::ast::id::Id::new(),
                         ::rex::lexer::span::Span::default(),
                         vec![#(#items,)*]
                     )))
@@ -361,7 +356,6 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
             }
             Fields::Unit => {
                 quote!(Ok(::rex::ast::expr::Expr::Named(
-                    ::rex::ast::id::Id::new(),
                     ::rex::lexer::span::Span::default(),
                     stringify!(#name).to_string(),
                     None
@@ -388,11 +382,9 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                         quote!(
                             Self::#variant_ident { #(#field_idents,)* } => {
                                 Ok(::rex::ast::expr::Expr::Named(
-                                    ::rex::ast::id::Id::new(),
                                     ::rex::lexer::span::Span::default(),
                                     String::from(#variant_name),
                                     Some(Box::new(::rex::ast::expr::Expr::Dict(
-                                        ::rex::ast::id::Id::new(),
                                         ::rex::lexer::span::Span::default(),
                                         ::std::collections::BTreeMap::from_iter(vec![
                                             #(#field_exprs,)*
@@ -410,7 +402,6 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                         quote!(
                             Self::#variant_ident ( #field_ident ) =>
                                 Ok(::rex::ast::expr::Expr::Named(
-                                    ::rex::ast::id::Id::new(),
                                     ::rex::lexer::span::Span::default(),
                                     String::from(#variant_name),
                                     Some(Box::new(#field_expr))
@@ -430,11 +421,9 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                         quote!(
                             Self::#variant_ident ( #(#field_idents,)* ) =>
                                 Ok(::rex::ast::expr::Expr::Named(
-                                    ::rex::ast::id::Id::new(),
                                     ::rex::lexer::span::Span::default(),
                                     String::from(#variant_name),
                                     Some(Box::new(::rex::ast::expr::Expr::Tuple(
-                                        ::rex::ast::id::Id::new(),
                                         ::rex::lexer::span::Span::default(),
                                         vec![#(#field_exprs,)*]
                                     )))
@@ -445,7 +434,6 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                         quote!(
                             Self::#variant_ident =>
                                 Ok(::rex::ast::expr::Expr::Named(
-                                    ::rex::ast::id::Id::new(),
                                     ::rex::lexer::span::Span::default(),
                                     String::from(#variant_name),
                                     None
@@ -500,9 +488,9 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                 });
                 quote!(
                     match v {
-                        ::rex::ast::expr::Expr::Named(_, _, n, Some(inner)) if n == stringify!(#name) => {
+                        ::rex::ast::expr::Expr::Named(_, n, Some(inner)) if n == stringify!(#name) => {
                             match &**inner {
-                                ::rex::ast::expr::Expr::Dict(_, _, entries) => {
+                                ::rex::ast::expr::Expr::Dict(_, entries) => {
                                     Ok(#name {
                                         #(#fields,)*
                                     })
@@ -527,7 +515,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
             Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
                 quote!(
                     match v {
-                        ::rex::ast::expr::Expr::Named(_, _, n, Some(inner)) if n == stringify!(#name) => {
+                        ::rex::ast::expr::Expr::Named(_, n, Some(inner)) if n == stringify!(#name) => {
                             Ok(#name (::rex::engine::codec::Decode::try_decode(&**inner)?))
                         },
                         _ => {
@@ -546,9 +534,9 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
 
                 quote!(
                     match v {
-                        ::rex::ast::expr::Expr::Named(_, _, n, Some(inner)) if n == stringify!(#name) => {
+                        ::rex::ast::expr::Expr::Named(_, n, Some(inner)) if n == stringify!(#name) => {
                             match &**inner {
-                                ::rex::ast::expr::Expr::Tuple(_, _, items) if items.len() == #items_len => {
+                                ::rex::ast::expr::Expr::Tuple(_, items) if items.len() == #items_len => {
                                     Ok(#name (
                                         #(#fields,)*
                                     ))
@@ -573,7 +561,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
             Fields::Unit => {
                 quote!(
                     match v {
-                        ::rex::ast::expr::Expr::Named(_, _, n, None) if n == stringify!(#name) => {
+                        ::rex::ast::expr::Expr::Named(_, n, None) if n == stringify!(#name) => {
                             Ok(#name)
                         }
                         _ => {
@@ -606,10 +594,10 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                         });
 
                         quote!(
-                            ::rex::ast::expr::Expr::Named(_, _, n, Some(inner))
+                            ::rex::ast::expr::Expr::Named(_, n, Some(inner))
                             if n == #variant_name => {
                                 match &**inner {
-                                    ::rex::ast::expr::Expr::Dict(_, _, entries) => {
+                                    ::rex::ast::expr::Expr::Dict(_, entries) => {
                                         Ok(Self::#variant_ident { #(#fields,)* })
                                     }
                                     _ => {
@@ -624,7 +612,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                     }
                     Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
                         quote!(
-                            ::rex::ast::expr::Expr::Named(_, _, n, Some(inner))
+                            ::rex::ast::expr::Expr::Named(_, n, Some(inner))
                             if n == #variant_name => {
                                 Ok(Self::#variant_ident (
                                     ::rex::engine::codec::Decode::try_decode(&**inner)?
@@ -639,10 +627,10 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                         );
 
                         quote!(
-                            ::rex::ast::expr::Expr::Named(_, _, n, Some(inner))
+                            ::rex::ast::expr::Expr::Named(_, n, Some(inner))
                             if n == #variant_name => {
                                 match &**inner {
-                                    ::rex::ast::expr::Expr::Tuple(_, _, items)
+                                    ::rex::ast::expr::Expr::Tuple(_, items)
                                     if items.len() == #items_len => {
                                         Ok(Self::#variant_ident (
                                             #(#fields,)*
@@ -660,7 +648,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                     }
                     Fields::Unit => {
                         quote!(
-                            ::rex::ast::expr::Expr::Named(_, _, n, None)
+                            ::rex::ast::expr::Expr::Named(_, n, None)
                             if n == #variant_name => {
                                 Ok(Self::#variant_ident)
                             }

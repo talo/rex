@@ -10,8 +10,6 @@ use uuid::Uuid;
 
 pub type TypeEnv = HashMap<String, Arc<Type>>;
 
-pub type ExprTypeEnv = HashMap<Id, Arc<Type>>;
-
 #[derive(Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Type {
@@ -85,7 +83,7 @@ impl Type {
             Type::Var(_) => true,
             Type::ForAll(_, _, _) => true,
             Type::ADT(adt) => match other {
-                Expr::Named(_, _, n, _) => {
+                Expr::Named(_, n, _) => {
                     for variant in adt.variants.iter() {
                         if *n == variant.name {
                             return true;
@@ -97,23 +95,23 @@ impl Type {
             },
             Type::Arrow(_, _) => true,
             Type::Result(_, _) => match other {
-                Expr::Named(_, _, n, _) => n == "Ok" || n == "Err",
+                Expr::Named(_, n, _) => n == "Ok" || n == "Err",
                 _ => false,
             },
             Type::Option(_) => match other {
-                Expr::Named(_, _, n, _) => n == "Some" || n == "None",
+                Expr::Named(_, n, _) => n == "Some" || n == "None",
                 _ => false,
             },
             Type::Promise(_) => matches!(other, Expr::Promise(..)),
             Type::List(t) => match other {
-                Expr::List(_, _, es) => es.iter().all(|e| t.maybe_compatible(e)),
+                Expr::List(_, es) => es.iter().all(|e| t.maybe_compatible(e)),
                 _ => false,
             },
             Type::Dict(_) => {
                 true // TODO
             }
             Type::Tuple(types) => match other {
-                Expr::Tuple(_, _, exprs) => {
+                Expr::Tuple(_, exprs) => {
                     types.len() == exprs.len()
                         && types
                             .iter()
