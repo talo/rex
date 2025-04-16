@@ -1,8 +1,16 @@
+#![allow(unused_variables)]
+#![allow(dead_code)]
+#![allow(unused_mut)]
+#![allow(unused_assignments)]
+#![allow(unused_imports)]
+#![allow(unused_macros)]
+#![allow(non_upper_case_globals)]
+
 use std::{collections::HashMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
-use rex_type_system::types::{ToType, Type};
+use rex_type_system::types::{Dispatch, ToType, Type};
 
 use crate::{
     codec::{Decode, Encode},
@@ -36,7 +44,7 @@ macro_rules! impl_register_fn {
 
             self.add_fn(
                 n,
-                t,
+                Box::new(t),
                 Box::new(move |ctx, args| {
                     let f = f.clone();
                     Box::pin(async move {
@@ -75,7 +83,7 @@ macro_rules! impl_register_fn_async {
         {
             self.add_fn(
                 n,
-                Arc::new(<fn($($param,)*) -> B as ToType>::to_type()),
+                Box::new(Arc::new(<fn($($param,)*) -> B as ToType>::to_type())),
                 Box::new(move |ctx, args| {
                     let f = f.clone();
                     Box::pin(async move {
@@ -140,7 +148,7 @@ where
     State: Clone + Sync + 'static,
 {
     pub num_params: usize,
-    pub items: Vec<(Arc<Type>, FtableFn<State>)>,
+    pub items: Vec<(Box<dyn Dispatch + Send + Sync>, FtableFn<State>)>,
 }
 
 pub struct Ftable<State>(pub HashMap<String, Entry<State>>)
@@ -162,7 +170,7 @@ where
     pub fn add_fn(
         &mut self,
         n: impl ToString,
-        t: Arc<Type>,
+        t: Box<dyn Dispatch + Send + Sync>,
         f: FtableFn<State>,
     ) -> Result<(), Error> {
         let num_params = t.num_params();
@@ -189,25 +197,6 @@ where
             }
         }
         Ok(())
-    }
-
-    // NOTE(loong): We do not support overloaded parametric polymorphism.
-    pub fn lookup_fns(
-        &self,
-        n: &str,
-        t: &Type,
-    ) -> impl Iterator<Item = (&FtableFn<State>, &Arc<Type>)> {
-        self.0
-            .get(n)
-            .map(|v| v.items.iter())
-            .into_iter()
-            .flatten()
-            .filter_map(move |(ftype, f)| match ftype.maybe_compatible(t) {
-                Ok(()) => Some((f, ftype)),
-                Err(_e) => None,
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
     }
 
     impl_register_fn!(register_fn0);

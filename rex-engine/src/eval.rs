@@ -1,8 +1,4 @@
-use std::{
-    borrow::Borrow,
-    collections::BTreeMap,
-    sync::{Arc, RwLock},
-};
+use std::{borrow::Borrow, collections::BTreeMap, sync::Arc};
 
 use futures::future;
 use rex_ast::{
@@ -10,10 +6,6 @@ use rex_ast::{
     id::Id,
 };
 use rex_lexer::span::Span;
-use rex_type_system::{
-    types::{ExprTypeEnv, Type},
-    unify::{self, Subst},
-};
 
 use crate::{error::Error, ftable::Ftable};
 
@@ -24,26 +16,7 @@ where
 {
     pub scope: Scope,
     pub ftable: Arc<Ftable<State>>,
-    pub subst: Arc<Subst>,
-    pub env: Arc<RwLock<ExprTypeEnv>>,
     pub state: Arc<State>,
-}
-
-impl<State> Context<State>
-where
-    State: Clone + Sync + 'static,
-{
-    pub fn get_type(&self, id: &Id) -> Result<Arc<Type>, Error> {
-        // This error should never actually happen in practice; this is a bug. Avoid packing
-        // though so it doesn't kill tengu.
-        let env = self.env.read().unwrap();
-        let t = env.get(id).ok_or_else(|| Error::ExprTypeUnknown(*id))?;
-        Ok(unify::apply_subst(t, &self.subst))
-    }
-
-    pub fn set_type(&self, id: Id, t: Arc<Type>) {
-        self.env.write().unwrap().insert(id, t);
-    }
 }
 
 #[async_recursion::async_recursion]
@@ -156,47 +129,30 @@ pub async fn eval_var<State>(ctx: &Context<State>, var: &Var) -> Result<Expr, Er
 where
     State: Clone + Send + Sync + 'static,
 {
-    let var_type = ctx.get_type(&var.id)?;
+    match ctx.scope.get(&var.name) {
+        Some(expr) => Ok(expr.clone()),
+        None => {
+            if let Some(entry) = ctx.ftable.0.get(&var.name) {
+                if entry.num_params == 0 {
+                    if entry.items.len() != 1 {
+                        panic!("Multiple functions: {}", var.name);
+                    }
+                    let f = &entry.items[0].1;
+                    let res = f(ctx, &vec![]).await?;
+                    return Ok(res);
+                }
 
-    if let Some(expr) = ctx.scope.get(&var.name) {
-        let mut new_expr = expr.clone();
-        *new_expr.id_mut() = Id::new();
-        ctx.set_type(*new_expr.id(), var_type.clone());
+                return Ok(Expr::Curry(
+                    Id::new(),
+                    Span::default(),
+                    var.clone(),
+                    Vec::new(),
+                ));
+            }
 
-        let new_expr = if let Expr::Bool(..)
-        | Expr::Uint(..)
-        | Expr::Int(..)
-        | Expr::Float(..)
-        | Expr::String(..) = new_expr
-        {
-            // We have arrived at a concrete value
-            new_expr.clone()
-        } else {
-            // We have not arrived at a concrete value
-            eval(ctx, &new_expr).await?
-        };
-
-        return Ok(new_expr.clone());
-    }
-
-    let var = match ctx.scope.get(&var.name) {
-        None => var,
-        Some(Expr::Var(var)) => return eval_var(ctx, var).await,
-        Some(non_var_expr) => return eval(ctx, non_var_expr).await, // Ok(non_var_expr.clone()),
-    };
-
-    let f = ctx.ftable.lookup_fns(&var.name, &*var_type).next();
-    if let Some((f, f_type)) = f {
-        if f_type.num_params() == 0 {
-            let res = f(ctx, &vec![]).await?;
-            ctx.set_type(*res.id(), var_type.clone());
-            return Ok(res);
+            Err(Error::VarNotFound { var: var.clone() })
         }
-
-        return Ok(Expr::Var(var.clone()));
     }
-
-    Err(Error::VarNotFound { var: var.clone() })
 }
 
 pub async fn eval_app<State>(
@@ -220,117 +176,67 @@ pub async fn apply<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    let f_type = ctx.get_type(f.borrow().id())?;
-    let x_type = ctx.get_type(x.borrow().id())?;
-    let (_, b_type) = match &*f_type {
-        Type::Arrow(a, b) => (a.clone(), b.clone()),
-        _ => panic!("Function application on non-function type"),
-    };
-
     let f = eval(ctx, f.borrow()).await?;
     let x = eval(ctx, x.borrow()).await?;
 
-    let res = match f {
-        Expr::Var(var) => {
-            // TODO(loong): we should be checking if more than one function is
-            // found. This is an ambiguity error.
-            let f = ctx.ftable.lookup_fns(&var.name, &*f_type).next();
-            if let Some((f, _ftype)) = f {
-                match f_type.num_params() {
-                    0 => panic!("Function application on non-function type"),
-                    1 => f(ctx, &vec![x]).await?,
-                    // TODO(loong): fix the span.
-                    _ => {
-                        let mut x = x.clone();
-                        *x.id_mut() = Id::new();
-                        ctx.set_type(*x.id(), x_type.clone());
-
-                        // NOTE(loong): functions in the ftable having explicit
-                        // ids would probably be very helpful. Right now,
-                        // relying on the var that pointed to the function in
-                        // the ftable makes things a little hard to understand.
-                        Expr::Curry(Id::new(), var.span, var, vec![x])
-                    }
-                }
-            } else {
-                panic!("Function not found: {}:{}", var.name, f_type)
-            }
-        }
+    let res = match f.borrow() {
         Expr::Lam(_id, _span, scope, param, body) => {
-            let new_body_id = Id::new();
-            let mut body = match *body {
-                Expr::App(_, span, g, y) => {
-                    let new_g_id = Id::new();
-                    let new_y_id = Id::new();
-
-                    let mut g = g.clone();
-                    *g.id_mut() = new_g_id;
-                    ctx.set_type(new_g_id, f_type.clone());
-
-                    let mut y = y.clone();
-                    *y.id_mut() = new_y_id;
-                    ctx.set_type(new_y_id, x_type.clone());
-
-                    Expr::App(new_body_id, span.clone(), g, y)
-                }
-                body => body,
-            };
-            *body.id_mut() = new_body_id;
-            ctx.set_type(new_body_id, b_type.clone());
-
             let mut ctx: Context<State> = ctx.clone();
-            ctx.scope.insert_mut(param.name, x);
+            ctx.scope.insert_mut(param.name.clone(), x);
             for (k, v) in scope.iter() {
                 ctx.scope.insert_mut(k.clone(), v.clone());
             }
 
             eval(&ctx, &body).await?
         }
-        Expr::Curry(_id, span, var, mut args) => {
-            let f_type = ctx.get_type(&var.id)?;
+        Expr::Curry(_id, span, var, args) => {
+            let mut args = args.clone();
+            let entry = ctx
+                .ftable
+                .0
+                .get(&var.name)
+                .ok_or_else(|| Error::VarNotFound { var: var.clone() })?;
 
-            // FIXME(loong): to fix the `test_f_passthrough` test it is pretty
-            // clear to me that we need to differentiate between functions that
-            // return functions, and functions that take in multiple arguments.
-            // This is *only* different for curried functions. The issue with
-            // `test_f_passthrough` is that because `id (&&)` returns `bool ->
-            // bool -> bool` this logic will not call `id` until all the bool
-            // arguments are also pushed (because the type of `id` is known to
-            // be the type of `&&`) but the actual implementation of `id`
-            // ignores the `bool` arguments and they are therefore lost.
-            //
-            // The solution is to alter the way a curried function is actually
-            // called by the `ftable` and it loops until all arguments are
-            // consumed.
             args.push(x.clone());
-            if f_type.num_params() < args.len() {
+            if entry.num_params < args.len() {
                 panic!("Too many arguments");
-            } else if f_type.num_params() == args.len() {
-                let mut arg_types = Vec::new();
-                for arg in &args {
-                    arg_types.push(ctx.get_type(arg.id())?);
+            } else if entry.num_params == args.len() {
+                let mut candidates: Vec<&super::ftable::FtableFn<State>> = Vec::new();
+                for (f_type, f) in entry.items.iter() {
+                    if f_type.maybe_accepts_args(&args) {
+                        candidates.push(f);
+                    }
                 }
 
-                let f_type = Type::build_arrow(arg_types, b_type.clone());
-
-                // TODO(loong): we should be checking if more than one function is
-                // found. This is an ambiguity error.
-                let f = ctx.ftable.lookup_fns(&var.name, &*f_type).next();
-
-                if let Some((f, _)) = f {
-                    f(ctx, &args).await?
-                } else {
-                    panic!("Function not found: {}:{}", var.name, f_type)
+                if candidates.len() == 0 {
+                    return Err(Error::Custom {
+                        error: format!("0 candidates for function {}", var.name),
+                        trace: Default::default(),
+                    });
                 }
+
+                if candidates.len() > 1 {
+                    return Err(Error::Custom {
+                        error: format!("{} candidates for function {}", candidates.len(), var.name),
+                        trace: Default::default(),
+                    });
+                }
+
+                let f = candidates[0];
+
+                f(ctx, &args).await?
             } else {
                 // TODO(loong): fix the span.
-                Expr::Curry(Id::new(), span, var, args)
+                Expr::Curry(Id::new(), span.clone(), var.clone(), args)
             }
         }
-        _ => unimplemented!(),
+        _ => {
+            return Err(Error::Custom {
+                error: format!("Function application on non-function type: {}", f),
+                trace: Default::default(),
+            })
+        }
     };
-
-    ctx.set_type(*res.id(), b_type);
 
     Ok(res)
 }
@@ -370,13 +276,9 @@ pub async fn eval_let<State>(
 where
     State: Clone + Send + Sync + 'static,
 {
-    // let def = eval(ctx, def).await?;
     let mut ctx = ctx.clone();
-    // NOTE(loong): this is lazy evaluation. We do not compute the definition of
-    // the binding. This is important because it means we do not have to know
-    // all the types until the binding is actually used, and that's where we
-    // will actually have the types available.
-    ctx.scope = ctx.scope.insert(var.name.clone(), def.clone());
+    let value = eval(&ctx, def).await?;
+    ctx.scope = ctx.scope.insert(var.name.clone(), value);
     eval(&ctx, body).await
 }
 
@@ -784,12 +686,6 @@ pub mod test {
         assert_eq!(res_type, tuple!(float!(), uint!(), int!()));
         assert_expr_eq!(res, tup!(f!(6.9), u!(420), i!(-420)); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"(6.9 + zero, 420 + zero, (-420) + zero)"#)
-            .await
-            .unwrap();
-        assert_eq!(res_type, tuple!(float!(), uint!(), int!()));
-        assert_expr_eq!(res, tup!(f!(6.9), u!(420), i!(-420)); ignore span);
-
         let (res, res_type) =
             parse_infer_and_eval(r#"swap (swap (6.9, 420), swap (true, "hello, world!"))"#)
                 .await
@@ -862,19 +758,6 @@ pub mod test {
             .unwrap();
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(-6.9); ignore span);
-
-        let (res, res_type) = parse_infer_and_eval(r#"let x = zero in (420 + x)"#)
-            .await
-            .unwrap();
-        assert_eq!(res_type, uint!());
-        assert_expr_eq!(res, u!(420); ignore span);
-
-        // FIXME(loong): this test is failing.
-        let (res, res_type) = parse_infer_and_eval(r#"let x = zero in (6.9 + x)"#)
-            .await
-            .unwrap();
-        assert_eq!(res_type, float!());
-        assert_expr_eq!(res, f!(6.9); ignore span);
 
         let (res, res_type) = parse_infer_and_eval(r#"let f = (+) in f 69 420"#)
             .await
@@ -1201,14 +1084,25 @@ pub mod test {
         // assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
         // ```
 
-        // FIXME(loong): this test is not passing.
-        // ```rex
-        // let (res, res_type) = parse_infer_and_eval(r#"map (identity (λx → -x)) [3.14, 6.9, 42.0, 1.0]"#)
-        //     .await
-        //     .unwrap();
-        // assert_eq!(res_type, list!(float!()));
-        // assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
-        // ```
+        let (res, res_type) =
+            parse_infer_and_eval(r#"map (identity (λx → -x)) [3.14, 6.9, 42.0, 1.0]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(float!()));
+        assert_expr_eq!(res, l!(f!(-3.14), f!(-6.9), f!(-42.0), f!(-1.0)); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"map (let f = (λx → - (identity x)) in f) [3.14]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, list!(float!()));
+        assert_expr_eq!(res, l!(f!(-3.14)); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"let n = (λx → - x) in (n 4, n 4.2)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, tuple!(int!(), float!()));
+        assert_expr_eq!(res, tup!(i!(-4), f!(-4.2)); ignore span);
     }
 
     #[tokio::test]

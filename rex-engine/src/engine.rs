@@ -1,9 +1,10 @@
 use rex_type_system::{
     constraint::{Constraint, ConstraintSystem},
-    types::{ToType, Type, TypeEnv, ADT},
+    types::{Dispatch, ToType, Type, TypeEnv, ADT},
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    fmt,
     future::Future,
     pin::Pin,
     str::FromStr,
@@ -157,6 +158,7 @@ where
     pub ftable: Ftable<State>,
     pub ftenv: TypeEnv,
     pub adts: BTreeMap<String, ADT>,
+    pub accessors: HashSet<String>,
 }
 
 impl<State> Builder<State>
@@ -169,13 +171,10 @@ where
             fconstraints: Default::default(),
             ftenv: Default::default(),
             adts: Default::default(),
+            accessors: Default::default(),
         };
 
         this.register_fn1("swap", |_ctx: &Context<_>, (x, y): (A, B)| Ok((y, x)));
-
-        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0u64));
-        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0i64));
-        this.register_fn0("zero", |_ctx: &Context<_>| Ok(0f64));
 
         this.register_fn1("uint", |_ctx: &Context<_>, x: i64| Ok(x as u64));
         this.register_fn1("uint", |_ctx: &Context<_>, x: f64| Ok(x as u64));
@@ -438,7 +437,6 @@ where
                         None => {
                             let x_id = Id::new();
                             let x = Expr::Tuple(x_id, Span::default(), vec![]);
-                            ctx.set_type(x_id, Arc::new(<()>::to_type()));
                             let res = apply(ctx, &f, &x).await?;
                             Ok(Option::<A>::try_decode(&res)?)
                         }
@@ -455,7 +453,6 @@ where
                         None => {
                             let x_id = Id::new();
                             let x = Expr::Tuple(x_id, Span::default(), vec![]);
-                            ctx.set_type(x_id, Arc::new(<()>::to_type()));
                             let res = apply(ctx, &f, &x).await?;
                             Ok(A(res))
                         }
@@ -495,7 +492,7 @@ where
                 vec![Arc::new(Type::Uint), Arc::new(Type::Uint)],
                 Arc::new(Type::List(Arc::new(Type::Uint))),
             ),
-            Box::new(move |ctx, args| {
+            Box::new(move |_ctx, args| {
                 Box::pin(async move {
                     let Some(Expr::Uint(_, _, start)) = args.get(0) else {
                         return Err(Error::MissingArgument { argument: 0 });
@@ -510,10 +507,6 @@ where
                     let mut items: Vec<Expr> = Vec::new();
                     for i in start..end {
                         let expr = Expr::Uint(Id::new(), Span::default(), i);
-                        // If the following line is missing, apply() will panic when an attempt
-                        // is made to use one of the values in the list, because there will be
-                        // no type recorded for it. See test_map_range() for an example.
-                        ctx.set_type(*expr.id(), Arc::new(Type::Uint));
                         items.push(expr);
                     }
 
@@ -577,7 +570,7 @@ where
         f: FtableFn<State>,
     ) -> Result<(), Error> {
         register_fn_core(self, name, t.clone());
-        self.ftable.add_fn(name, t, f)
+        self.ftable.add_fn(name, Box::new(t), f)
     }
 
     pub fn register_adt(
@@ -729,7 +722,7 @@ where
                     }),
                 )?;
 
-                self.register_accessors(adt_type, &variant_name, &constructor_name, entries)?;
+                self.register_accessors(adt_type, entries)?;
                 Ok(())
             }
             _ => {
@@ -753,12 +746,7 @@ where
                     )?;
 
                     if let Type::Dict(entries) = &**t {
-                        self.register_accessors(
-                            adt_type,
-                            &variant_name,
-                            &constructor_name,
-                            entries,
-                        )?;
+                        self.register_accessors(adt_type, entries)?;
                     }
                     Ok(())
                 } else {
@@ -780,46 +768,21 @@ where
     fn register_accessors(
         &mut self,
         adt_type: &Arc<Type>,
-        variant_name: &str,
-        _constructor_name: &str,
         entries: &BTreeMap<String, Arc<Type>>,
     ) -> Result<(), Error> {
         for (entry_key, entry_type) in entries.iter() {
-            let entry_key2 = entry_key.clone();
-            let accessor_fun_type = Arc::new(Type::Arrow(adt_type.clone(), entry_type.clone()));
-            let variant_name = variant_name.to_string();
+            let this_accessor_fun_type =
+                Arc::new(Type::Arrow(adt_type.clone(), entry_type.clone()));
 
-            self.register_fn_core_with_name(
-                &entry_key.clone(),
-                accessor_fun_type,
-                Box::new(move |_, args: &Vec<Expr>| {
-                    let entry_key2 = entry_key2.clone();
-                    let variant_name = variant_name.clone();
-                    Box::pin(async move {
-                        match &args[0] {
-                            Expr::Named(_, _, n, Some(inner)) if n == &variant_name => {
-                                match &**inner {
-                                    Expr::Dict(_, _, entries) => match entries.get(&entry_key2) {
-                                        Some(v) => Ok(v.clone()),
-                                        None => Err(Error::Custom {
-                                            error: format!("Missing entry {:?}", entry_key2),
-                                            trace: Default::default(),
-                                        }),
-                                    },
-                                    _ => Err(Error::Custom {
-                                        error: "Expected a dict".to_string(),
-                                        trace: Default::default(),
-                                    }),
-                                }
-                            }
-                            _ => Err(Error::Custom {
-                                error: "Expected a Named".to_string(),
-                                trace: Default::default(),
-                            }),
-                        }
-                    })
-                }),
-            )?;
+            // Register the type
+            register_fn_core(self, entry_key, this_accessor_fun_type.clone());
+
+            // Register the implementation, if one does not already exist
+            if !self.accessors.contains(entry_key) {
+                self.accessors.insert(entry_key.to_string());
+                self.ftable
+                    .add_fn(entry_key, Box::new(Accessor), make_accessor_fn(entry_key))?;
+            }
         }
         Ok(())
     }
@@ -842,9 +805,58 @@ where
     }
 }
 
+struct Accessor;
+
+impl fmt::Display for Accessor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        "Accessor".fmt(f)
+    }
+}
+
+impl Dispatch for Accessor {
+    fn num_params(&self) -> usize {
+        1
+    }
+
+    fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
+        args.len() == 1 && matches!(args[0], Expr::Named(..))
+    }
+}
+
 fn make_full_name(prefix: Option<&str>, name: &str) -> String {
     match prefix {
         Some(prefix) => format!("{}::{}", prefix, name),
         None => name.to_string(),
     }
+}
+
+fn make_accessor_fn<State>(entry_key: &str) -> FtableFn<State>
+where
+    State: Clone + Sync + 'static,
+{
+    let entry_key = entry_key.to_string();
+    Box::new(move |_, args: &Vec<Expr>| {
+        let entry_key = entry_key.clone();
+        Box::pin(async move {
+            match &args[0] {
+                Expr::Named(_, _, _, Some(inner)) => match &**inner {
+                    Expr::Dict(_, _, entries) => match entries.get(&entry_key) {
+                        Some(v) => Ok(v.clone()),
+                        None => Err(Error::Custom {
+                            error: format!("Missing entry {:?}", entry_key),
+                            trace: Default::default(),
+                        }),
+                    },
+                    _ => Err(Error::Custom {
+                        error: "Expected a dict".to_string(),
+                        trace: Default::default(),
+                    }),
+                },
+                _ => Err(Error::Custom {
+                    error: "Expected a Named".to_string(),
+                    trace: Default::default(),
+                }),
+            }
+        })
+    })
 }

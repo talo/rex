@@ -13,7 +13,7 @@ use rex_type_system::{
     types::{ExprTypeEnv, Type},
     unify,
 };
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 pub struct Program<State>
 where
@@ -62,8 +62,6 @@ where
             &Context {
                 scope: Scope::new_sync(),
                 ftable: Arc::new(self.ftable),
-                subst: Arc::new(self.subst),
-                env: Arc::new(RwLock::new(self.expr_type_env)),
                 state: Arc::new(state),
             },
             &self.expr,

@@ -5,7 +5,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use rex_ast::id::Id;
+use rex_ast::{expr::Expr, id::Id};
 use uuid::Uuid;
 
 pub type TypeEnv = HashMap<String, Arc<Type>>;
@@ -45,13 +45,6 @@ impl Type {
             .fold(ret, |acc, t| Arc::new(Type::Arrow(t, acc)))
     }
 
-    pub fn num_params(&self) -> usize {
-        match self {
-            Type::Arrow(_, b) => 1 + b.num_params(),
-            _ => 0,
-        }
-    }
-
     pub fn evaluated_type(&self) -> &Type {
         match self {
             Type::Arrow(_, b) => b.evaluated_type(),
@@ -80,100 +73,62 @@ impl Type {
         set
     }
 
-    pub fn maybe_compatible(&self, other: &Type) -> Result<(), String> {
-        match (self, other) {
-            (Self::Bool, Self::Bool) => Ok(()),
-            (Self::Uint, Self::Uint) => Ok(()),
-            (Self::Int, Self::Int) => Ok(()),
-            (Self::Float, Self::Float) => Ok(()),
-            (Self::String, Self::String) => Ok(()),
-            (Self::Uuid, Self::Uuid) => Ok(()),
-            (Self::DateTime, Self::DateTime) => Ok(()),
+    fn maybe_compatible(&self, other: &Expr) -> bool {
+        // This function is conservative; we only we return false if we're certain
+        // there's no match.
+        if matches!(other, Expr::Var(..)) {
+            return true; // could refer to anything
+        }
 
-            (Self::Arrow(a1, b1), Self::Arrow(a2, b2)) => {
-                a1.maybe_compatible(a2)?;
-                b1.maybe_compatible(b2)
-            }
-            (Self::Result(t1, e1), Self::Result(t2, e2)) => {
-                t1.maybe_compatible(t2)?;
-                e1.maybe_compatible(e2)
-            }
-            (Self::Option(t1), Self::Option(t2)) => t1.maybe_compatible(t2),
-            (Self::Promise(t1), Self::Promise(t2)) => t1.maybe_compatible(t2),
-            (Self::List(t1), Self::List(t2)) => t1.maybe_compatible(t2),
-            (Self::Dict(d1), Self::Dict(d2)) => {
-                for (k, v1) in d1 {
-                    if let Some(v2) = d2.get(k) {
-                        v1.maybe_compatible(v2)?;
-                    } else {
-                        return Err(format!("Incompatible types: {} and {}", self, other));
+        match self {
+            Type::UnresolvedVar(_) => true,
+            Type::Var(_) => true,
+            Type::ForAll(_, _, _) => true,
+            Type::ADT(adt) => match other {
+                Expr::Named(_, _, n, _) => {
+                    for variant in adt.variants.iter() {
+                        if *n == variant.name {
+                            return true;
+                        }
                     }
+                    false
                 }
-                Ok(())
+                _ => false,
+            },
+            Type::Arrow(_, _) => true,
+            Type::Result(_, _) => match other {
+                Expr::Named(_, _, n, _) => n == "Ok" || n == "Err",
+                _ => false,
+            },
+            Type::Option(_) => match other {
+                Expr::Named(_, _, n, _) => n == "Some" || n == "None",
+                _ => false,
+            },
+            Type::Promise(_) => matches!(other, Expr::Promise(..)),
+            Type::List(t) => match other {
+                Expr::List(_, _, es) => es.iter().all(|e| t.maybe_compatible(e)),
+                _ => false,
+            },
+            Type::Dict(_) => {
+                true // TODO
             }
-            (Self::Tuple(e1), Self::Tuple(e2)) => {
-                if e1.len() != e2.len() {
-                    return Err(format!("Incompatible types: {} and {}", self, other));
+            Type::Tuple(types) => match other {
+                Expr::Tuple(_, _, exprs) => {
+                    types.len() == exprs.len()
+                        && types
+                            .iter()
+                            .zip(exprs.iter())
+                            .all(|(t, e)| t.maybe_compatible(e))
                 }
-                for (t1, t2) in e1.iter().zip(e2) {
-                    t1.maybe_compatible(t2)?;
-                }
-                Ok(())
-            }
-
-            (Self::ADT(adt1), Self::ADT(adt2)) => {
-                if adt1.name != adt2.name {
-                    return Err(format!("Incompatible types: {} and {}", self, other));
-                }
-                if adt1.variants.len() != adt2.variants.len() {
-                    return Err(format!("Incompatible types: {} and {}", self, other));
-                }
-                for (v1, v2) in adt1.variants.iter().zip(&adt2.variants) {
-                    if v1.name != v2.name {
-                        return Err(format!("Incompatible types: {} and {}", self, other));
-                    }
-                    if let (Some(t1), Some(t2)) = (&v1.t, &v2.t) {
-                        t1.maybe_compatible(t2)?;
-                    }
-                }
-                Ok(())
-            }
-
-            // NOTE(loong): I am not sure this is actually correct. My thinking
-            // is that we don't have to validate inconsistencies in type
-            // assigments for the various type variables, because this should
-            // have been handled during type inference. Type compatibility
-            // checking should only be used for looking up functions during
-            // execution. For example, `a -> a` and `int -> string` are
-            // compatible because we have said that a type variable is always
-            // compatible with any other type (without considering constraints).
-            //
-            // We can think about "type compatibility" as a necessary but not
-            // sufficient condition for type correctness. This check could be
-            // used before full type inference to catch any quick and obvious
-            // errors. And then again, after type inference, to disambiguate
-            // overloaded functions in the ftable.
-            //
-            // This is needed because the ftable will store a function like `map
-            // : (a -> b) -> [a] -> [b]` but during actual execution this will
-            // be executed like something concrete `map : (int -> string) ->
-            // [int] -> [string]`.
-            //
-            // NOTE(loong): We do not support overloaded parametric
-            // polymorphism.
-            //
-            // TODO(loong): We should not allow unresolved type variables at
-            // this point. Type variable resolution should have already
-            // happened, and unresolved type variables should be compatible with
-            // nothing.
-            (Self::UnresolvedVar(_), _) => Ok(()),
-            (Self::Var(_), _) => Ok(()),
-            (Self::ForAll(_, t, _), _) => t.maybe_compatible(other),
-            (_, Self::UnresolvedVar(_)) => Ok(()),
-            (_, Self::Var(_)) => Ok(()),
-            (_, Self::ForAll(_, t, _)) => t.maybe_compatible(other),
-
-            _ => Err(format!("Incompatible types: {} and {}", self, other)),
+                _ => false,
+            },
+            Type::Bool => matches!(other, Expr::Bool(..)),
+            Type::Uint => matches!(other, Expr::Uint(..)),
+            Type::Int => matches!(other, Expr::Int(..)),
+            Type::Float => matches!(other, Expr::Float(..)),
+            Type::String => matches!(other, Expr::String(..)),
+            Type::Uuid => matches!(other, Expr::Uuid(..)),
+            Type::DateTime => matches!(other, Expr::DateTime(..)),
         }
     }
 
@@ -338,6 +293,41 @@ impl Display for Type {
             }
             Type::ADT(x) => x.fmt(f),
         }
+    }
+}
+
+pub trait Dispatch: Display {
+    fn num_params(&self) -> usize;
+    fn maybe_accepts_args(&self, args: &[Expr]) -> bool;
+}
+
+impl Dispatch for Type {
+    fn num_params(&self) -> usize {
+        match self {
+            Type::Arrow(_, b) => 1 + b.num_params(),
+            _ => 0,
+        }
+    }
+
+    fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
+        match self {
+            Type::Arrow(a, b) => {
+                args.len() >= 1 && a.maybe_compatible(&args[0]) && b.maybe_accepts_args(&args[1..])
+            }
+            _ => args.len() == 0,
+        }
+    }
+}
+
+impl Dispatch for Arc<Type> {
+    fn num_params(&self) -> usize {
+        let t: &Type = &**self;
+        t.num_params()
+    }
+
+    fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
+        let t: &Type = &**self;
+        t.maybe_accepts_args(args)
     }
 }
 
@@ -753,5 +743,36 @@ where
             Arc::new(T6::to_type()),
             Arc::new(T7::to_type()),
         ])
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+    use crate::{bool, float, string, uint};
+    use rex_ast::{b, f, s, u};
+
+    #[test]
+    fn test_dispatch() {
+        // uint → string → float → bool
+        let t = Type::build_arrow(vec![uint!(), string!(), float!()], bool!());
+
+        // Correct number and types of arguments
+        assert!(t.maybe_accepts_args(&[u!(4), s!("Hello"), f!(2.5)]));
+
+        // Too few arguments
+        assert!(!t.maybe_accepts_args(&[u!(4), s!("Hello")]));
+
+        // Too many arguments
+        assert!(!t.maybe_accepts_args(&[u!(4), s!("Hello"), f!(2.5), b!(true)]));
+
+        // First argument doesn't match
+        assert!(!t.maybe_accepts_args(&[f!(4.0), s!("Hello"), f!(2.5)]));
+
+        // Second argument doesn't match
+        assert!(!t.maybe_accepts_args(&[u!(4), b!(true), f!(2.5)]));
+
+        // Third argument doesn't match
+        assert!(!t.maybe_accepts_args(&[u!(4), s!("Hello"), u!(2)]));
     }
 }
