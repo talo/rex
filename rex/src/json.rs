@@ -5,6 +5,48 @@ use crate::{
 use serde_json::{Map, Number, Value};
 use std::{collections::BTreeMap, sync::Arc};
 
+#[derive(Clone, Debug)]
+pub struct EnumPatch {
+    pub enum_name: String,
+    pub discriminant: i64,
+}
+
+/// Options for handling enums. Some enums are encoded as integers, while others are encoded as
+/// strings, and the types we get from Ouroboros don't provide enough information to know which
+/// kind of encoding to use. For this reason, we whitelist a set of ADT names which are to be
+/// represented in JSON as ints. This applies to both encoding and decoding.
+///
+/// Additionally, there are enum types in libqdx which do use int encoding, but the discriminant
+/// in the type information are missing or incorrect. This occurs due to a bug in the ouroboros
+/// `derive(TypeInfo)` macro which assumes that discriminants are a `u8`, and ignores any that are
+/// outside the range 0-255. If an enum specifies a negative value or one greater than 255, it
+/// will not have a discriminant. To correctly handle these types in such a way that the JSON
+/// serialization of Exprs is consistent with that of the serde JSON serialization methods, we
+/// allow callers to supply a list of "patches" which tell us what int discriminants to use for
+/// given names in a given in num. At the time of writing, I've only found one such case,
+/// `Stereochemistry::Down`, which has the discriminant `-1`.
+#[derive(Clone, Default, Debug)]
+pub struct JsonOptions {
+    pub int_enums: BTreeMap<String, Vec<EnumPatch>>,
+}
+
+impl JsonOptions {
+    /// Register the name of an ADT enum that should be encoded as integers, rather than strings.
+    /// This only has an effect for variants which do not have an associated type, and which have
+    /// a discriminator present.
+    pub fn add_int_enum(&mut self, name: &str) {
+        self.int_enums.insert(name.to_string(), vec![]);
+    }
+
+    /// Register the name of an ADT enum that should be encoded as integers, rather than strings.
+    /// This only has an effect for variants which do not have an associated type, and which have
+    /// a discriminator present. In addition, apply the substitutions in `patches` when deciding
+    /// what discriminator a given variant has.
+    pub fn add_int_enum_with_patches(&mut self, name: &str, patches: Vec<EnumPatch>) {
+        self.int_enums.insert(name.to_string(), patches);
+    }
+}
+
 /// Convert a JSON [`Value`] to an [`Expr`]
 ///
 /// The conversion is done in a manner that is compatible with [`serde_json`]. The resulting
@@ -16,7 +58,11 @@ use std::{collections::BTreeMap, sync::Arc};
 /// at runtime.
 ///
 /// [`Encode::try_encode`]: crate::engine::codec::Encode::try_encode
-pub fn json_to_expr(json: &Value, want: &Arc<Type>) -> Result<Expr, EngineError> {
+pub fn json_to_expr(
+    json: &Value,
+    want: &Arc<Type>,
+    opts: &JsonOptions,
+) -> Result<Expr, EngineError> {
     match (&**want, json) {
         // (Type::UnresolvedVar(_), _) => unimplemented!(),
         // (Type::Var(_), _) => unimplemented!(),
@@ -32,37 +78,57 @@ pub fn json_to_expr(json: &Value, want: &Arc<Type>) -> Result<Expr, EngineError>
                     Ok(Expr::Named(
                         Span::default(),
                         adt.variants[0].name.clone(),
-                        Some(Box::new(json_to_expr(json, variant_t)?)),
+                        Some(Box::new(json_to_expr(json, variant_t, opts)?)),
                     ))
                 } else {
                     Err(type_error(json, want))
                 }
             } else {
+                let is_int_enum = opts.int_enums.contains_key(&adt.name);
                 for variant in adt.variants.iter() {
-                    match &variant.t {
-                        Some(t) => match json {
-                            Value::Object(entries) if entries.len() == 1 => {
-                                if let Some(inner_json) = entries.get(&variant.name) {
-                                    let inner_rex = json_to_expr(inner_json, t)?;
-                                    return Ok(Expr::Named(
-                                        Span::default(),
-                                        variant.name.clone(),
-                                        Some(Box::new(inner_rex)),
-                                    ));
+                    if let (true, None, Some(discriminant)) =
+                        (is_int_enum, &variant.t, variant.discriminant)
+                    {
+                        match json {
+                            Value::Number(n) => {
+                                if let Some(n) = n.as_i64() {
+                                    if n == discriminant {
+                                        return Ok(Expr::Named(
+                                            Span::default(),
+                                            variant.name.clone(),
+                                            None,
+                                        ));
+                                    }
                                 }
                             }
                             _ => {}
-                        },
-                        None => match json {
-                            Value::String(s) if s == &variant.name => {
-                                return Ok(Expr::Named(
-                                    Span::default(),
-                                    variant.name.clone(),
-                                    None,
-                                ));
-                            }
-                            _ => {}
-                        },
+                        }
+                    } else {
+                        match &variant.t {
+                            Some(t) => match json {
+                                Value::Object(entries) if entries.len() == 1 => {
+                                    if let Some(inner_json) = entries.get(&variant.name) {
+                                        let inner_rex = json_to_expr(inner_json, t, opts)?;
+                                        return Ok(Expr::Named(
+                                            Span::default(),
+                                            variant.name.clone(),
+                                            Some(Box::new(inner_rex)),
+                                        ));
+                                    }
+                                }
+                                _ => {}
+                            },
+                            None => match json {
+                                Value::String(s) if s == &variant.name => {
+                                    return Ok(Expr::Named(
+                                        Span::default(),
+                                        variant.name.clone(),
+                                        None,
+                                    ));
+                                }
+                                _ => {}
+                            },
+                        }
                     }
                 }
                 Err(type_error(json, want))
@@ -71,14 +137,14 @@ pub fn json_to_expr(json: &Value, want: &Arc<Type>) -> Result<Expr, EngineError>
         // (Type::Arrow(_, _), _) => unimplemented!(),
         (Type::Result(ok_type, err_type), Value::Object(name_object)) if name_object.len() == 1 => {
             if let Some(ok_value) = name_object.get("Ok") {
-                let inner = json_to_expr(ok_value, ok_type)?;
+                let inner = json_to_expr(ok_value, ok_type, opts)?;
                 Ok(Expr::Named(
                     Span::default(),
                     "Ok".to_string(),
                     Some(Box::new(inner)),
                 ))
             } else if let Some(err_value) = name_object.get("Err") {
-                let inner = json_to_expr(err_value, err_type)?;
+                let inner = json_to_expr(err_value, err_type, opts)?;
                 Ok(Expr::Named(
                     Span::default(),
                     "Err".to_string(),
@@ -96,14 +162,14 @@ pub fn json_to_expr(json: &Value, want: &Arc<Type>) -> Result<Expr, EngineError>
                 return Ok(Expr::Named(
                     Span::default(),
                     "Some".to_string(),
-                    Some(Box::new(json_to_expr(json, inner)?)),
+                    Some(Box::new(json_to_expr(json, inner, opts)?)),
                 ));
             }
         },
         (Type::List(item_type), Value::Array(json_items)) => {
             let mut exprs: Vec<Expr> = Vec::new();
             for json_item in json_items {
-                exprs.push(json_to_expr(json_item, item_type)?);
+                exprs.push(json_to_expr(json_item, item_type, opts)?);
             }
             Ok(Expr::List(Span::default(), exprs))
         }
@@ -113,7 +179,7 @@ pub fn json_to_expr(json: &Value, want: &Arc<Type>) -> Result<Expr, EngineError>
             let mut expr_entries: BTreeMap<String, Expr> = BTreeMap::new();
             for (k, t) in type_entries.iter() {
                 let json_entry = json_entries.get(k).ok_or_else(|| type_error(json, want))?;
-                expr_entries.insert(k.clone(), json_to_expr(&json_entry, t)?);
+                expr_entries.insert(k.clone(), json_to_expr(&json_entry, t, opts)?);
             }
             Ok(Expr::Dict(Span::default(), expr_entries))
         }
@@ -122,7 +188,7 @@ pub fn json_to_expr(json: &Value, want: &Arc<Type>) -> Result<Expr, EngineError>
         {
             let mut exprs: Vec<Expr> = Vec::new();
             for i in 0..item_types.len() {
-                exprs.push(json_to_expr(&item_values[i], &item_types[i])?);
+                exprs.push(json_to_expr(&item_values[i], &item_types[i], opts)?);
             }
             Ok(Expr::Tuple(Span::default(), exprs))
         }
@@ -172,7 +238,11 @@ pub fn json_to_expr(json: &Value, want: &Arc<Type>) -> Result<Expr, EngineError>
 /// tengu, since the argument types are only known at runtime.
 ///
 /// [`Decode::try_decode`]: crate::engine::codec::Decode::try_decode
-pub fn expr_to_json(expr: &Expr, want: &Arc<Type>) -> Result<Value, EngineError> {
+pub fn expr_to_json(
+    expr: &Expr,
+    want: &Arc<Type>,
+    opts: &JsonOptions,
+) -> Result<Value, EngineError> {
     match (&**want, expr) {
         // (Type::UnresolvedVar(_), _) => unimplemented!(),
         // (Type::Var(_), _) => unimplemented!(),
@@ -184,7 +254,7 @@ pub fn expr_to_json(expr: &Expr, want: &Arc<Type>) -> Result<Value, EngineError>
                 match expr {
                     Expr::Named(_, n, Some(inner_expr)) if n == &adt.variants[0].name => {
                         if let Some(inner) = &adt.variants[0].t {
-                            expr_to_json(inner_expr, inner)
+                            expr_to_json(inner_expr, inner, opts)
                         } else {
                             todo!(
                                 "expr_to_json2 for ADT with single variant, no inner type: {:#?}",
@@ -199,12 +269,18 @@ pub fn expr_to_json(expr: &Expr, want: &Arc<Type>) -> Result<Value, EngineError>
                     Expr::Named(_, n, opt_inner) => {
                         for variant in adt.variants.iter() {
                             if n == &variant.name {
+                                if let Some(discriminant) = &variant.discriminant {
+                                    if variant.t.is_none() && opts.int_enums.contains_key(&adt.name)
+                                    {
+                                        return Ok(Value::Number((*discriminant).into()));
+                                    }
+                                }
                                 match (&variant.t, opt_inner) {
                                     (Some(variant_t), Some(inner)) => {
                                         let mut map: Map<String, Value> = Map::new();
                                         map.insert(
                                             variant.name.clone(),
-                                            expr_to_json(inner, variant_t)?,
+                                            expr_to_json(inner, variant_t, opts)?,
                                         );
                                         return Ok(Value::Object(map));
                                     }
@@ -225,25 +301,25 @@ pub fn expr_to_json(expr: &Expr, want: &Arc<Type>) -> Result<Value, EngineError>
             let mut map: Map<String, Value> = Map::new();
             match n.as_str() {
                 "Ok" => {
-                    map.insert("Ok".to_string(), expr_to_json(v, ok_type)?);
+                    map.insert("Ok".to_string(), expr_to_json(v, ok_type, opts)?);
                     Ok(Value::Object(map))
                 }
                 "Err" => {
-                    map.insert("Err".to_string(), expr_to_json(v, err_type)?);
+                    map.insert("Err".to_string(), expr_to_json(v, err_type, opts)?);
                     Ok(Value::Object(map))
                 }
                 _ => Err(expr_error(expr, want)),
             }
         }
         (Type::Option(inner_type), Expr::Named(_, n, ov)) => match (n.as_str(), ov) {
-            ("Some", Some(v)) => expr_to_json(v, inner_type),
+            ("Some", Some(v)) => expr_to_json(v, inner_type, opts),
             ("None", None) => Ok(Value::Null),
             _ => Err(expr_error(expr, want)),
         },
         (Type::List(inner_type), Expr::List(_, items)) => {
             let mut values: Vec<Value> = Vec::new();
             for item in items.iter() {
-                values.push(expr_to_json(item, inner_type)?);
+                values.push(expr_to_json(item, inner_type, opts)?);
             }
             Ok(Value::Array(values))
         }
@@ -253,14 +329,14 @@ pub fn expr_to_json(expr: &Expr, want: &Arc<Type>) -> Result<Value, EngineError>
             let mut map: Map<String, Value> = Map::new();
             for (k, t) in type_entries.iter() {
                 let v = value_entries.get(k).ok_or_else(|| expr_error(expr, want))?;
-                map.insert(k.clone(), expr_to_json(v, t)?);
+                map.insert(k.clone(), expr_to_json(v, t, opts)?);
             }
             Ok(Value::Object(map))
         }
         (Type::Tuple(inner_types), Expr::Tuple(_, items)) if inner_types.len() == items.len() => {
             let mut values: Vec<Value> = Vec::new();
             for i in 0..inner_types.len() {
-                values.push(expr_to_json(&items[i], &inner_types[i])?);
+                values.push(expr_to_json(&items[i], &inner_types[i], opts)?);
             }
             Ok(Value::Array(values))
         }

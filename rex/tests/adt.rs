@@ -827,9 +827,15 @@ where
     assert_eq!(orig_value, decoded_value);
 
     let json_expected = serde_json::to_value(orig_value.clone()).unwrap();
-    let json_actual = expr_to_json(&actual_encoding, &Arc::new(T::to_type())).unwrap();
+    let json_actual = expr_to_json(
+        &actual_encoding,
+        &Arc::new(T::to_type()),
+        &Default::default(),
+    )
+    .unwrap();
     assert_eq!(json_expected, json_actual);
 
-    let json_encoding = json_to_expr(&json_expected, &Arc::new(T::to_type())).unwrap();
+    let json_encoding =
+        json_to_expr(&json_expected, &Arc::new(T::to_type()), &Default::default()).unwrap();
     assert_expr_eq!(actual_encoding, json_encoding);
 }

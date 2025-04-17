@@ -20,6 +20,8 @@ pub mod type_system {
 pub use engine::program::Program;
 pub use json::expr_to_json;
 pub use json::json_to_expr;
+pub use json::EnumPatch;
+pub use json::JsonOptions;
 pub use rex_ast::expr::Expr;
 pub use rex_ast::id::Id;
 pub use rex_engine::codec::Decode;
