@@ -251,6 +251,7 @@ pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
                     name: v.name.clone(),
                     t: v.t.as_ref().map(|t| apply_subst(t, subst)),
                     t_docs: v.t_docs.clone(),
+                    discriminant: v.discriminant,
                 })
                 .collect(),
         })),

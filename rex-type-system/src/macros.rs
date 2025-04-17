@@ -94,6 +94,7 @@ macro_rules! adt_variant {
             t: None,
             docs: None,
             t_docs: None,
+            discriminant: None,
         }
     }};
 
@@ -105,6 +106,7 @@ macro_rules! adt_variant {
             t: Some(::std::sync::Arc::new($crate::types::Type::Dict(fields))),
             docs: None,
             t_docs: None,
+            discriminant: None,
         }
     }};
 
@@ -116,6 +118,7 @@ macro_rules! adt_variant {
             t: Some(::std::sync::Arc::new($crate::types::Type::Tuple(fields))),
             docs: None,
             t_docs: None,
+            discriminant: None,
         }
     }};
 
@@ -125,6 +128,7 @@ macro_rules! adt_variant {
             t: None,
             docs: None,
             t_docs: None,
+            discriminant: None,
         }
     }};
 }
@@ -283,18 +287,21 @@ mod test {
                         name: "MyVariant1".to_string(),
                         t: Some(dict! { a: bool!(), b: uint!() }),
                         t_docs: None,
+                        discriminant: None,
                     },
                     ADTVariant {
                         docs: None,
                         name: "MyVariant2".to_string(),
                         t: Some(dict! { c: string!() }),
                         t_docs: None,
+                        discriminant: None,
                     },
                     ADTVariant {
                         docs: None,
                         name: "MyVariant3".to_string(),
                         t: None,
                         t_docs: None,
+                        discriminant: None,
                     },
                 ],
             }

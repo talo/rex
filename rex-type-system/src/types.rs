@@ -172,6 +172,7 @@ impl Type {
                         t: variant.t.as_ref().map(|t| t.transform_ref(f)),
                         docs: variant.docs.clone(),
                         t_docs: variant.t_docs.clone(),
+                        discriminant: variant.discriminant,
                     })
                     .collect(),
                 docs: adt.docs.clone(),
@@ -360,6 +361,7 @@ pub struct ADTVariant {
     pub t: Option<Arc<Type>>,
     pub docs: Option<String>,
     pub t_docs: Option<BTreeMap<String, String>>,
+    pub discriminant: Option<i64>,
 }
 
 impl Display for ADTVariant {

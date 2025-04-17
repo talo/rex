@@ -1,7 +1,10 @@
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::{Attribute, Data, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Ident, Type};
+use syn::{
+    Attribute, Data, DeriveInput, Expr, ExprLit, ExprUnary, Fields, FieldsNamed, FieldsUnnamed,
+    Ident, Lit, Type, UnOp, Variant,
+};
 
 #[proc_macro_derive(Rex)]
 pub fn derive_rex(input: TokenStream) -> TokenStream {
@@ -56,6 +59,14 @@ fn impl_to_type(ast: &DeriveInput) -> TokenStream {
                 let variant_docs = docs_from_attrs(&variant.attrs);
                 let mut variant_name = format!("{}", variant.ident.clone());
                 rename_variant(&mut variant_name, variant);
+                let discriminant = match parse_int_discriminant(variant) {
+                    Some(value) => {
+                        quote!(Some(#value))
+                    }
+                    None => {
+                        quote!(None)
+                    }
+                };
 
                 match &variant.fields {
                     Fields::Unnamed(unnamed) => {
@@ -70,6 +81,7 @@ fn impl_to_type(ast: &DeriveInput) -> TokenStream {
                             t: None,
                             docs: #variant_docs,
                             t_docs: None,
+                            discriminant: #discriminant,
                         }
                     },
                 }
@@ -121,6 +133,7 @@ fn fields_unnamed_to_adt_variant(
                 t: None,
                 docs: #variant_docs,
                 t_docs: None,
+                discriminant: None,
             }
         )
     } else if ts.len() == 1 {
@@ -131,6 +144,7 @@ fn fields_unnamed_to_adt_variant(
                 t: Some(#t),
                 docs: #variant_docs,
                 t_docs: None,
+                discriminant: None,
             }
         )
     } else {
@@ -142,6 +156,7 @@ fn fields_unnamed_to_adt_variant(
                 t: Some(::std::sync::Arc::new(::rex::type_system::types::Type::Tuple(elems))),
                 docs: #variant_docs,
                 t_docs: None,
+                discriminant: None,
             }
         })
     }
@@ -175,6 +190,7 @@ fn fields_named_to_adt_variant(
                 t: None,
                 docs: #variant_docs,
                 t_docs: None,
+                discriminant: None,
             }
         )
     } else {
@@ -187,6 +203,7 @@ fn fields_named_to_adt_variant(
                 t: Some(::std::sync::Arc::new(::rex::type_system::types::Type::Dict(fields))),
                 docs: #variant_docs,
                 t_docs: if docs.len() > 0 { Some(docs) } else { None },
+                discriminant: None,
             }
         })
     }
@@ -687,4 +704,32 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+fn parse_int_discriminant(variant: &Variant) -> Option<i64> {
+    match variant.discriminant {
+        Some((_, ref expr)) => parse_int_literal(expr),
+        None => None,
+    }
+}
+
+fn parse_int_literal(expr: &Expr) -> Option<i64> {
+    match expr {
+        Expr::Lit(ExprLit {
+            lit: Lit::Int(ref i),
+            ..
+        }) => i.base10_parse::<i64>().ok(),
+        Expr::Unary(ExprUnary {
+            op: UnOp::Neg(_),
+            ref expr,
+            ..
+        }) => match &**expr {
+            Expr::Lit(ExprLit {
+                lit: Lit::Int(ref i),
+                ..
+            }) => i.base10_parse::<i64>().ok().map(|v| -v),
+            _ => None,
+        },
+        _ => None,
+    }
 }
