@@ -643,6 +643,7 @@ fn instantiate(ty: &Arc<Type>, constraint_system: &mut ConstraintSystem) -> Arc<
                             .as_ref()
                             .map(|t| inst_helper(t, subst, constraint_system)),
                         t_docs: v.t_docs.clone(),
+                        discriminant: v.discriminant,
                     })
                     .collect(),
             })),

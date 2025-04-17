@@ -92,6 +92,7 @@ pub fn derive_struct() {
                 )),
                 docs: None,
                 t_docs: None,
+                discriminant: None,
             }],
             docs: None,
         })
@@ -109,6 +110,7 @@ pub fn derive_struct() {
                 t: None,
                 docs: None,
                 t_docs: None,
+                discriminant: None,
             }],
             docs: None,
         })
@@ -126,6 +128,7 @@ pub fn derive_struct() {
                 t: None,
                 docs: None,
                 t_docs: None,
+                discriminant: None,
             }],
             docs: None,
         })
@@ -232,12 +235,14 @@ These commentsn will appear in the type definition."#
                     t: None,
                     docs: None,
                     t_docs: None,
+                    discriminant: None,
                 },
                 ADTVariant {
                     name: "Y".to_string(),
                     t: None,
                     docs: None,
                     t_docs: None,
+                    discriminant: None,
                 },
                 ADTVariant {
                     docs: Some(
@@ -251,18 +256,21 @@ MyEnum::Z{}
                     name: "Z".to_string(),
                     t: None,
                     t_docs: None,
+                    discriminant: None,
                 },
                 ADTVariant {
                     name: "W".to_string(),
                     t: Some(bool!()),
                     docs: None,
                     t_docs: None,
+                    discriminant: None,
                 },
                 ADTVariant {
                     name: "T".to_string(),
                     t: Some(tuple!(int!(), float!(), list![string!()])),
                     docs: None,
                     t_docs: None,
+                    discriminant: None,
                 },
                 ADTVariant {
                     name: "U".to_string(),
@@ -288,14 +296,62 @@ MyEnum::Z{}
                         .into_iter()
                         .collect()
                     ),
+                    discriminant: None,
                 },
                 ADTVariant {
                     name: "Renamed".to_string(),
                     t: Some(Arc::new(MyInnerStruct::to_type())),
                     docs: None,
                     t_docs: None,
+                    discriminant: None,
                 }
             ]
+        })
+    );
+
+    #[derive(Rex)]
+    enum DiscriminatedEnum {
+        Zero = 0,
+        Positive = 12345,
+        Negative = -44556,
+        None,
+    }
+
+    assert_eq!(
+        DiscriminatedEnum::to_type(),
+        Type::ADT(ADT {
+            docs: None,
+            name: "DiscriminatedEnum".to_string(),
+            variants: vec![
+                ADTVariant {
+                    name: "Zero".to_string(),
+                    t: None,
+                    docs: None,
+                    t_docs: None,
+                    discriminant: Some(0),
+                },
+                ADTVariant {
+                    name: "Positive".to_string(),
+                    t: None,
+                    docs: None,
+                    t_docs: None,
+                    discriminant: Some(12345),
+                },
+                ADTVariant {
+                    name: "Negative".to_string(),
+                    t: None,
+                    docs: None,
+                    t_docs: None,
+                    discriminant: Some(-44556),
+                },
+                ADTVariant {
+                    name: "None".to_string(),
+                    t: None,
+                    docs: None,
+                    t_docs: None,
+                    discriminant: None,
+                },
+            ],
         })
     );
 }

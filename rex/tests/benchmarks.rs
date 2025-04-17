@@ -134,6 +134,7 @@ fn generate_adts(mut params: Params) -> Vec<Arc<Type>> {
                     t: None,
                     docs: None,
                     t_docs: None,
+                    discriminant: None,
                 });
             } else {
                 let mut entries: BTreeMap<String, Arc<Type>> = BTreeMap::new();
@@ -146,6 +147,7 @@ fn generate_adts(mut params: Params) -> Vec<Arc<Type>> {
                     t: Some(Arc::new(Type::Dict(entries))),
                     docs: None,
                     t_docs: None,
+                    discriminant: None,
                 });
             }
         }

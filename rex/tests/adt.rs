@@ -109,6 +109,7 @@ async fn test_struct_single_unnamed_field() {
             t: Some(Arc::new(Type::String)),
             docs: None,
             t_docs: None,
+            discriminant: None,
         }],
     }));
 
@@ -575,8 +576,32 @@ async fn test_enum_unit_int() {
         Blue = 3,
     }
 
-    let expected_type = Arc::new(Type::ADT(adt! {
-        Color = Red . | Green . | Blue .
+    let expected_type = Arc::new(Type::ADT(ADT {
+        docs: None,
+        name: "Color".to_string(),
+        variants: vec![
+            ADTVariant {
+                name: "Red".to_string(),
+                t: None,
+                docs: None,
+                t_docs: None,
+                discriminant: Some(1),
+            },
+            ADTVariant {
+                name: "Green".to_string(),
+                t: None,
+                docs: None,
+                t_docs: None,
+                discriminant: Some(2),
+            },
+            ADTVariant {
+                name: "Blue".to_string(),
+                t: None,
+                docs: None,
+                t_docs: None,
+                discriminant: Some(3),
+            },
+        ],
     }));
 
     let expected_encoding1 = n!("Red", None);
