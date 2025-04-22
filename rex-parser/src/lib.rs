@@ -979,21 +979,21 @@ mod tests {
     fn test_parse_comment() {
         let mut parser = Parser::new(Token::tokenize("true {- this is a boolean -}").unwrap());
         let expr = parser.parse_expr().unwrap();
-        assert_expr_eq!(expr, b!(span!(1:1 - 1:4); true));
+        assert_expr_eq!(expr, b!(span!(1:1 - 1:5); true));
 
         let mut parser = Parser::new(Token::tokenize("{- this is a boolean -} false").unwrap());
         let expr = parser.parse_expr().unwrap();
-        assert_expr_eq!(expr, b!(span!(1:25 - 1:29); false));
+        assert_expr_eq!(expr, b!(span!(1:25 - 1:30); false));
 
         let mut parser = Parser::new(Token::tokenize("(3.54 {- this is a float -}, {- this is an int -} 42, false {- this is a boolean -})").unwrap());
         let expr = parser.parse_expr().unwrap();
         assert_expr_eq!(
             expr,
             tup!(
-                span!(1:1 - 1:84);
-                f!(span!(1:2 - 1:5); 3.54),
-                u!(span!(1:51 - 1:52); 42),
-                b!(span!(1:55 - 1:59); false),
+                span!(1:1 - 1:85);
+                f!(span!(1:2 - 1:6); 3.54),
+                u!(span!(1:51 - 1:53); 42),
+                b!(span!(1:55 - 1:60); false),
             )
         );
     }
@@ -1005,13 +1005,13 @@ mod tests {
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:5);
+                span!(1:1 - 1:6);
                 app!(
-                    span!(1:1 - 1:3);
-                    v!(span!(1:3 - 1:3); "+"),
-                    u!(span!(1:1 - 1:1); 1)
+                    span!(1:1 - 1:4);
+                    v!(span!(1:3 - 1:4); "+"),
+                    u!(span!(1:1 - 1:2); 1)
                 ),
-                u!(span!(1:5 - 1:5); 2)
+                u!(span!(1:5 - 1:6); 2)
             )
         );
 
@@ -1020,13 +1020,13 @@ mod tests {
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:12);
+                span!(1:1 - 1:13);
                 app!(
-                    span!(1:2 - 1:6);
-                    v!(span!(1:6 - 1:6); "+"),
-                    f!(span!(1:2 - 1:4); 6.9)
+                    span!(1:2 - 1:7);
+                    v!(span!(1:6 - 1:7); "+"),
+                    f!(span!(1:2 - 1:5); 6.9)
                 ),
-                f!(span!(1:8 - 1:11); 3.14)
+                f!(span!(1:8 - 1:12); 3.14)
             )
         );
 
@@ -1035,9 +1035,9 @@ mod tests {
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:7);
-                v!(span!(1:1 - 1:3); "+"),
-                u!(span!(1:5 - 1:7); 420)
+                span!(1:1 - 1:8);
+                v!(span!(1:1 - 1:4); "+"),
+                u!(span!(1:5 - 1:8); 420)
             )
         );
     }
@@ -1049,13 +1049,13 @@ mod tests {
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:5);
+                span!(1:1 - 1:6);
                 app!(
-                    span!(1:1 - 1:3);
-                    v!(span!(1:3 - 1:3); "-"),
-                    u!(span!(1:1 - 1:1); 1)
+                    span!(1:1 - 1:4);
+                    v!(span!(1:3 - 1:4); "-"),
+                    u!(span!(1:1 - 1:2); 1)
                 ),
-                u!(span!(1:5 - 1:5); 2)
+                u!(span!(1:5 - 1:6); 2)
             )
         );
 
@@ -1064,13 +1064,13 @@ mod tests {
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:12);
+                span!(1:1 - 1:13);
                 app!(
-                    span!(1:2 - 1:6);
-                    v!(span!(1:6 - 1:6); "-"),
-                    f!(span!(1:2 - 1:4); 6.9)
+                    span!(1:2 - 1:7);
+                    v!(span!(1:6 - 1:7); "-"),
+                    f!(span!(1:2 - 1:5); 6.9)
                 ),
-                f!(span!(1:8 - 1:11); 3.14)
+                f!(span!(1:8 - 1:12); 3.14)
             )
         );
 
@@ -1079,9 +1079,9 @@ mod tests {
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:8);
-                v!(span!(1:1 - 1:3); "-"),
-                f!(span!(1:5 - 1:8); 4.20)
+                span!(1:1 - 1:9);
+                v!(span!(1:1 - 1:4); "-"),
+                f!(span!(1:5 - 1:9); 4.20)
             )
         );
     }
@@ -1093,9 +1093,9 @@ mod tests {
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:2);
-                v!(span!(1:1 - 1:1); "negate"),
-                u!(span!(1:2 - 1:2); 1)
+                span!(1:1 - 1:3);
+                v!(span!(1:1 - 1:2); "negate"),
+                u!(span!(1:2 - 1:3); 1)
             )
         );
 
@@ -1104,9 +1104,9 @@ mod tests {
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:4);
-                v!(span!(1:2 - 1:2); "negate"),
-                u!(span!(1:3 - 1:3); 1)
+                span!(1:1 - 1:5);
+                v!(span!(1:2 - 1:3); "negate"),
+                u!(span!(1:3 - 1:4); 1)
             )
         );
 
@@ -1115,9 +1115,9 @@ mod tests {
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:7);
-                v!(span!(1:2 - 1:2); "negate"),
-                f!(span!(1:4 - 1:6); 6.9)
+                span!(1:1 - 1:8);
+                v!(span!(1:2 - 1:3); "negate"),
+                f!(span!(1:4 - 1:7); 6.9)
             )
         );
     }

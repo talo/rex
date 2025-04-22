@@ -110,7 +110,7 @@ impl Token {
             let begin_line = line;
             let begin_column = column;
             column += capture[0].to_string().chars().count();
-            let span = Span::new(begin_line, begin_column, line, column - 1);
+            let span = Span::new(begin_line, begin_column, line, column);
             if &capture[0] == "\n" {
                 line += 1;
                 column = 1;
