@@ -604,7 +604,7 @@ pub mod test {
     }
 
     #[tokio::test]
-    async fn test_uuid() -> Result<(), String> {
+    async fn test_uuid() {
         let (res, res_type) = parse_infer_and_eval(r#"random_uuid"#).await.unwrap();
         assert!(matches!(&*res_type, Type::Uuid));
         assert!(matches!(res, Expr::Uuid(..))); // Don't check value; it's random!
@@ -612,12 +612,10 @@ pub mod test {
         let (res, res_type) = parse_infer_and_eval(r#"string random_uuid"#).await.unwrap();
         assert!(matches!(&*res_type, Type::String));
         assert!(matches!(res, Expr::String(..))); // Don't check value; it's random!
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn test_datetime() -> Result<(), String> {
+    async fn test_datetime() {
         let (res, res_type) = parse_infer_and_eval(r#"now"#).await.unwrap();
         assert!(matches!(&*res_type, Type::DateTime));
         assert!(matches!(res, Expr::DateTime(..))); // Don't check value; depends on current time
@@ -625,8 +623,6 @@ pub mod test {
         let (res, res_type) = parse_infer_and_eval(r#"string now"#).await.unwrap();
         assert!(matches!(&*res_type, Type::String));
         assert!(matches!(res, Expr::String(..))); // Don't check value; depends on current time
-
-        Ok(())
     }
 
     #[tokio::test]
@@ -1133,19 +1129,17 @@ pub mod test {
     }
 
     #[tokio::test]
-    async fn test_map_map() -> Result<(), String> {
+    async fn test_map_map() {
         let (res, res_type) =
             parse_infer_and_eval(r#"let f = (λx → -x) in map f (map f [3.14, 6.9, 42.0, 1.0])"#)
                 .await
                 .unwrap();
         assert_eq!(res_type, list!(float!()));
         assert_expr_eq!(res, l!(f!(3.14), f!(6.9), f!(42.0), f!(1.0)); ignore span);
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn test_map_extensive() -> Result<(), String> {
+    async fn test_map_extensive() {
         let (res, res_type) = parse_infer_and_eval(
             r#"
                 map
@@ -1168,11 +1162,10 @@ pub mod test {
         .unwrap();
         assert_eq!(res_type, list!(float!()));
         assert_expr_eq!(res, l!(f!(3.1399999999999997), f!(6.9), f!(42.0), f!(1.0)); ignore span);
-        Ok(())
     }
 
     #[tokio::test]
-    async fn test_fold() -> Result<(), String> {
+    async fn test_fold() {
         let (res, res_type) = parse_infer_and_eval(r#"foldl (-) 200.0 [100.0, 40.0, 8.0, 3.0]"#)
             .await
             .unwrap();
@@ -1184,18 +1177,15 @@ pub mod test {
             .unwrap();
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(265.0); ignore span);
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn test_lambda_let_in_var() -> Result<(), String> {
+    async fn test_lambda_let_in_var() {
         let (res, res_type) = parse_infer_and_eval(r#"(λx → let y = identity x in y + y) 6.9"#)
             .await
             .unwrap();
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(13.8); ignore span);
-        Ok(())
     }
 
     /// This test is meant to reflect the kind of usage pattern that we see in

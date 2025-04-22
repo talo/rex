@@ -789,7 +789,7 @@ mod tests {
     }
 
     #[test]
-    fn test_list_expr() -> Result<(), String> {
+    fn test_list_expr() {
         let mut env = TypeEnv::new();
 
         // Test [1, 2, 3]
@@ -807,14 +807,16 @@ mod tests {
         env.insert("three".to_string(), Arc::new(Type::Int));
 
         let mut constraint_system = ConstraintSystem::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system)?;
+        let ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
 
         // Solve constraints
         let mut subst = Subst::new();
         let mut did_change = false;
         for constraint in constraint_system.constraints() {
             match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst, &mut did_change)?,
+                Constraint::Eq(t1, t2) => {
+                    unify::unify_eq(t1, t2, &mut subst, &mut did_change).unwrap()
+                }
                 _ => panic!("Expected equality constraint"),
             }
         }
@@ -832,7 +834,7 @@ mod tests {
         env.insert("true".to_string(), Arc::new(Type::Bool));
 
         let mut constraint_system = ConstraintSystem::new();
-        let _ty = generate_constraints(&expr, &env, &mut constraint_system)?;
+        let _ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
 
         // This should fail unification
         let mut subst = Subst::new();
@@ -848,15 +850,13 @@ mod tests {
         // Test empty list
         let expr = Expr::List(Span::default(), vec![]);
         let mut constraint_system = ConstraintSystem::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system)?;
+        let ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
         assert!(matches!(&*ty, Type::List(_)));
         assert!(constraint_system.is_empty());
-
-        Ok(())
     }
 
     #[test]
-    fn test_list_expr_with_expected_type() -> Result<(), String> {
+    fn test_list_expr_with_expected_type() {
         let mut env = TypeEnv::new();
 
         // let f = \xs -> head xs in f [1, true]
@@ -906,7 +906,7 @@ mod tests {
         env.insert("bool_val".to_string(), Arc::new(Type::Bool));
 
         let mut constraint_system = ConstraintSystem::new();
-        let _ty = generate_constraints(&expr, &env, &mut constraint_system)?;
+        let _ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
 
         // This should fail unification because the list elements don't match
         let mut subst = Subst::new();
@@ -918,12 +918,10 @@ mod tests {
                 _ => panic!("Expected equality constraint"),
             });
         assert!(result.is_err());
-
-        Ok(())
     }
 
     #[test]
-    fn test_list_polymorphism() -> Result<(), String> {
+    fn test_list_polymorphism() {
         let mut env = TypeEnv::new();
 
         // Set up environment with polymorphic head : ∀α. [α] -> α
@@ -965,10 +963,10 @@ mod tests {
         );
 
         let mut constraint_system = ConstraintSystem::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system)?;
+        let ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system)?;
+        let subst = unify::unify_constraints(&constraint_system).unwrap();
 
         let final_type = unify::apply_subst(&ty, &subst);
 
@@ -976,12 +974,10 @@ mod tests {
             final_type,
             Arc::new(Type::Tuple(vec![Arc::new(Type::Int), Arc::new(Type::Bool)]))
         );
-
-        Ok(())
     }
 
     #[test]
-    fn test_let() -> Result<(), String> {
+    fn test_let() {
         let mut env = TypeEnv::new();
 
         // Test expression: let id = (\x -> x) in id 1
@@ -1007,17 +1003,15 @@ mod tests {
         let result_type = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system)?;
+        let subst = unify::unify_constraints(&constraint_system).unwrap();
 
         // Result should be Int
         let final_result = unify::apply_subst(&result_type, &subst);
         assert_eq!(final_result, Arc::new(Type::Int));
-
-        Ok(())
     }
 
     #[test]
-    fn test_let_polymorphism() -> Result<(), String> {
+    fn test_let_polymorphism() {
         let mut env = TypeEnv::new();
 
         // let id = \x -> x
@@ -1055,10 +1049,10 @@ mod tests {
         env.insert("bool_val".to_string(), Arc::new(Type::Bool));
 
         let mut constraint_system = ConstraintSystem::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system)?;
+        let ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system)?;
+        let subst = unify::unify_constraints(&constraint_system).unwrap();
 
         // The final type should be (Int, Bool)
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1066,12 +1060,10 @@ mod tests {
             final_type,
             Arc::new(Type::Tuple(vec![Arc::new(Type::Int), Arc::new(Type::Bool)]))
         );
-
-        Ok(())
     }
 
     #[test]
-    fn test_if_then_else() -> Result<(), String> {
+    fn test_if_then_else() {
         let mut env = TypeEnv::new();
 
         // Test expression: if true then 1 else 2
@@ -1092,17 +1084,15 @@ mod tests {
         let result_type = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system)?;
+        let subst = unify::unify_constraints(&constraint_system).unwrap();
 
         // Result should be Int
         let final_result = unify::apply_subst(&result_type, &subst);
         assert_eq!(final_result, Arc::new(Type::Int));
-
-        Ok(())
     }
 
     #[test]
-    fn test_compose_polymorphism() -> Result<(), String> {
+    fn test_compose_polymorphism() {
         let mut env = TypeEnv::new();
 
         // let compose = \f -> \g -> \x -> f (g x)
@@ -1189,10 +1179,10 @@ mod tests {
         env.insert("int_val".to_string(), Arc::new(Type::Int));
 
         let mut constraint_system = ConstraintSystem::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system)?;
+        let ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system)?;
+        let subst = unify::unify_constraints(&constraint_system).unwrap();
 
         // The final type should be (Bool, Int)
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1200,12 +1190,10 @@ mod tests {
             final_type,
             Arc::new(Type::Tuple(vec![Arc::new(Type::Bool), Arc::new(Type::Int)]))
         );
-
-        Ok(())
     }
 
     #[test]
-    fn test_polymorphic_type_errors() -> Result<(), String> {
+    fn test_polymorphic_type_errors() {
         let mut env = TypeEnv::new();
 
         // let id = \x -> x in
@@ -1275,12 +1263,10 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Cannot unify"));
-
-        Ok(())
     }
 
     #[test]
-    fn test_overloading_with_arguments() -> Result<(), String> {
+    fn test_overloading_with_arguments() {
         let mut env = HashMap::new();
 
         let xor_type_id = Id::new();
@@ -1319,17 +1305,15 @@ mod tests {
                 .into_iter()
                 .collect(),
             )]);
-        let ty = generate_constraints(&bool_expr, &env, &mut constraint_system)?;
+        let ty = generate_constraints(&bool_expr, &env, &mut constraint_system).unwrap();
 
-        let subst = unify::unify_constraints(&constraint_system)?;
+        let subst = unify::unify_constraints(&constraint_system).unwrap();
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Arc::new(Type::Bool));
-
-        Ok(())
     }
 
     #[test]
-    fn test_overloading_with_arguments_and_multiple_uses() -> Result<(), String> {
+    fn test_overloading_with_arguments_and_multiple_uses() {
         let mut env = HashMap::new();
 
         let xor_type_id = Id::new();
@@ -1403,7 +1387,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             )]);
-        let ty = generate_constraints(&tuple_expr, &env, &mut constraint_system)?;
+        let ty = generate_constraints(&tuple_expr, &env, &mut constraint_system).unwrap();
 
         println!(
             "TYPES:\n{}\n\nCONSTRAINTS:\n{}",
@@ -1411,7 +1395,7 @@ mod tests {
             &constraint_system
         );
 
-        let subst = unify::unify_constraints(&constraint_system)?;
+        let subst = unify::unify_constraints(&constraint_system).unwrap();
 
         let final_type = unify::apply_subst(&ty, &subst);
 
@@ -1422,12 +1406,10 @@ mod tests {
             final_type,
             Arc::new(Type::Tuple(vec![Arc::new(Type::Bool), Arc::new(Type::Int)]))
         );
-
-        Ok(())
     }
 
     #[test]
-    fn test_overloading_with_return() -> Result<(), String> {
+    fn test_overloading_with_return() {
         let mut env = TypeEnv::new();
 
         let rand_type_id = Id::new();
@@ -1466,19 +1448,17 @@ mod tests {
                     .into_iter()
                     .collect(),
             )]);
-        let ty = generate_constraints(&sum_expr, &env, &mut constraint_system)?;
+        let ty = generate_constraints(&sum_expr, &env, &mut constraint_system).unwrap();
 
-        let subst = unify::unify_constraints(&constraint_system)?;
+        let subst = unify::unify_constraints(&constraint_system).unwrap();
 
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Arc::new(Type::Int));
-
-        Ok(())
     }
 
     // TODO: get this test working again
     // #[test]
-    fn _test_overloading_with_ambiguity() -> Result<(), String> {
+    fn _test_overloading_with_ambiguity() {
         let mut env = HashMap::new();
 
         let rand_type_id = Id::new();
@@ -1493,7 +1473,7 @@ mod tests {
                     .into_iter()
                     .collect(),
             )]);
-        let _ty = generate_constraints(&expr, &env, &mut constraint_system)?;
+        let _ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
 
         let mut subst = Subst::new();
         let mut did_change = false;
@@ -1508,7 +1488,5 @@ mod tests {
                 }
             });
         assert!(result.is_err());
-
-        Ok(())
     }
 }
