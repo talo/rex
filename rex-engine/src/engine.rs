@@ -605,14 +605,16 @@ where
         }
 
         if adt.variants.len() == 0 {
-            self.register_adt_variant(adt_type, &adt.name, &None, &full_adt_name, defaults)?;
+            self.register_adt_variant(adt_type, &adt.name, &None, &full_adt_name, defaults, false)?;
         } else if adt.variants.len() == 1 && adt.variants[0].name == adt.name {
+            // Only register accessors if there is exactly one variant
             self.register_adt_variant(
                 adt_type,
                 &adt.name,
                 &adt.variants[0].t,
                 &full_adt_name,
                 defaults,
+                true,
             )?;
         } else {
             for variant in &adt.variants {
@@ -623,6 +625,7 @@ where
                     &variant.t,
                     &constructor_name,
                     defaults,
+                    false,
                 )?;
             }
         }
@@ -637,6 +640,7 @@ where
         variant_type: &Option<Arc<Type>>,
         constructor_name: &str,
         defaults: Option<&BTreeMap<String, FtableFn<State>>>,
+        accessors: bool,
     ) -> Result<(), Error> {
         let base_name = variant_name.to_string();
 
@@ -710,7 +714,9 @@ where
                     }),
                 )?;
 
-                self.register_accessors(adt_type, entries)?;
+                if accessors {
+                    self.register_accessors(adt_type, entries)?;
+                }
                 Ok(())
             }
             _ => {
@@ -728,8 +734,10 @@ where
                         }),
                     )?;
 
-                    if let Type::Dict(entries) = &**t {
-                        self.register_accessors(adt_type, entries)?;
+                    if accessors {
+                        if let Type::Dict(entries) = &**t {
+                            self.register_accessors(adt_type, entries)?;
+                        }
                     }
                     Ok(())
                 } else {
