@@ -4,7 +4,7 @@ use rex_ast::{
 };
 use rex_lexer::span::Span;
 use rex_parser::error::ParserErr;
-use rex_type_system::types::{Type, TypeScheme, ADT};
+use rex_type_system::types::{Type, TypeError, TypeScheme, ADT};
 use serde_json::Value;
 use std::{collections::VecDeque, sync::Arc};
 
@@ -18,8 +18,8 @@ pub enum Error {
     UnexpectedToken(Span),
     #[error("parsing failed: {0:?}")]
     Parser(Vec<ParserErr>),
-    #[error("type inference failed: {0:?}")]
-    TypeInference(String),
+    #[error("{0}")]
+    TypeInference(TypeError),
     #[error("variable not found {var}")]
     VarNotFound { var: Var },
     #[error("expected {expected}, got {got}")]

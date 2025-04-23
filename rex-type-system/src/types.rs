@@ -6,7 +6,20 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use rex_ast::{expr::Expr, id::Id};
+use rex_lexer::span::Span;
 use uuid::Uuid;
+
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+pub enum TypeError {
+    #[error("{0}: Unbound variable: {1}")]
+    UnboundVariable(Span, String),
+    #[error("{0}: Cannot unify {1} with {2}")]
+    CannotUnify(Span, Arc<Type>, Arc<Type>),
+    #[error("{0}: Occurs check failed")]
+    OccursCheckFailed(Span),
+    #[error("{0}: {1}")]
+    Other(Span, String),
+}
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub struct TypeScheme {

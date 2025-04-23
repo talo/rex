@@ -4,16 +4,17 @@ use std::{
 };
 
 use rex_ast::id::Id;
+use rex_lexer::span::Span;
 
 use crate::{
     constraint::{Constraint, ConstraintSystem},
-    types::{ADTVariant, Type, TypeScheme, ADT},
+    types::{ADTVariant, Type, TypeError, TypeScheme, ADT},
 };
 
 pub type Subst = HashMap<Id, Arc<Type>>;
 
 // NOTE(loong): We do not support overloaded parametric polymorphism.
-pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, String> {
+pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, TypeError> {
     let mut subst = Subst::new();
     // Loop until no more progress is made in resolving. We often need multiple iterations
     // because unifications that happen in later contraints may enable unifications in earlier
@@ -22,8 +23,8 @@ pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, 
         let mut did_change = false;
         for constraint in constraint_system.constraints() {
             match constraint {
-                Constraint::Eq(t1, t2) => {
-                    unify_eq(t1, t2, &mut subst, &mut did_change)?;
+                Constraint::Eq(span, t1, t2) => {
+                    unify_eq(t1, t2, span, &mut subst, &mut did_change)?;
                 }
                 Constraint::OneOf(..) => {}
             }
@@ -31,13 +32,13 @@ pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, 
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(..) => {}
-                Constraint::OneOf(t1, t2_possibilties) => {
+                Constraint::OneOf(span, t1, t2_possibilties) => {
                     // TODO(loong): doing the naive thing of ? short-circuiting this
                     // result does not work. Because it will cause issues for unused
                     // overloaded type variables. This is because we are resolving
                     // all constraints, not just the ones that are actually used by
                     // the expression.
-                    unify_one_of(t1, t2_possibilties, &mut subst, &mut did_change)?;
+                    unify_one_of(t1, t2_possibilties, span, &mut subst, &mut did_change)?;
                 }
             }
         }
@@ -52,9 +53,10 @@ pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, 
 pub fn unify_eq(
     t1: &Arc<Type>,
     t2: &Arc<Type>,
+    span: &Span,
     subst: &mut Subst,
     did_change: &mut bool,
-) -> Result<(), String> {
+) -> Result<(), TypeError> {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
     let t2 = apply_subst(t2, subst);
@@ -72,29 +74,32 @@ pub fn unify_eq(
         // Tuples
         (Type::Tuple(ts1), Type::Tuple(ts2)) => {
             if ts1.len() != ts2.len() {
-                return Err("Tuple lengths do not match".to_string());
+                return Err(TypeError::Other(
+                    *span,
+                    "Tuple lengths do not match".to_string(),
+                ));
             }
 
             for (t1, t2) in ts1.iter().zip(ts2.iter()) {
-                unify_eq(t1, t2, subst, did_change)?;
+                unify_eq(t1, t2, span, subst, did_change)?;
             }
 
             Ok(())
         }
 
         // Lists
-        (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, subst, did_change),
+        (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, span, subst, did_change),
 
         // Dictionaries
         (Type::Dict(d1), Type::Dict(d2)) => {
             if d1.len() != d2.len() {
-                return Err(missing_keys_error(d1, d2));
+                return Err(TypeError::Other(*span, missing_keys_error(d1, d2)));
             }
             for (key, entry1) in d1.iter() {
                 if let Some(entry2) = d2.get(key) {
-                    unify_eq(entry1, entry2, subst, did_change)?;
+                    unify_eq(entry1, entry2, span, subst, did_change)?;
                 } else {
-                    return Err(missing_keys_error(d1, d2));
+                    return Err(TypeError::Other(*span, missing_keys_error(d1, d2)));
                 }
             }
             Ok(())
@@ -102,21 +107,21 @@ pub fn unify_eq(
 
         // For function types, unify arguments and results
         (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
-            unify_eq(&a1, &a2, subst, did_change)?;
-            unify_eq(&b1, &b2, subst, did_change)
+            unify_eq(&a1, &a2, span, subst, did_change)?;
+            unify_eq(&b1, &b2, span, subst, did_change)
         }
 
         // Result
         (Type::Result(a1, b1), Type::Result(a2, b2)) => {
-            unify_eq(&a1, &a2, subst, did_change)?;
-            unify_eq(&b1, &b2, subst, did_change)
+            unify_eq(&a1, &a2, span, subst, did_change)?;
+            unify_eq(&b1, &b2, span, subst, did_change)
         }
 
         // Option
-        (Type::Option(a1), Type::Option(a2)) => unify_eq(&a1, &a2, subst, did_change),
+        (Type::Option(a1), Type::Option(a2)) => unify_eq(&a1, &a2, span, subst, did_change),
 
         // Promise
-        (Type::Promise(a1), Type::Promise(a2)) => unify_eq(&a1, &a2, subst, did_change),
+        (Type::Promise(a1), Type::Promise(a2)) => unify_eq(&a1, &a2, span, subst, did_change),
 
         // Type variable case requires occurs check
         (Type::Var(v1), Type::Var(v2)) => {
@@ -130,7 +135,7 @@ pub fn unify_eq(
         // Type variable case requires occurs check
         (Type::Var(v), _) => {
             if occurs_check(v, &t2) {
-                Err("Occurs check failed".to_string())
+                Err(TypeError::OccursCheckFailed(*span))
             } else {
                 subst.insert(v.clone(), t2);
                 *did_change = true;
@@ -139,7 +144,7 @@ pub fn unify_eq(
         }
         (_, Type::Var(v)) => {
             if occurs_check(v, &t1) {
-                Err("Occurs check failed".to_string())
+                Err(TypeError::OccursCheckFailed(*span))
             } else {
                 subst.insert(v.clone(), t1.clone());
                 *did_change = true;
@@ -150,11 +155,11 @@ pub fn unify_eq(
         // ADTs
         (Type::ADT(adt1), Type::ADT(adt2)) => {
             if adt1.name != adt2.name {
-                return Err(format!("Cannot unify {} with {}", t1, t2));
+                return Err(TypeError::CannotUnify(*span, t1, t2));
             }
 
             if adt1.variants.len() != adt2.variants.len() {
-                return Err(format!("Cannot unify {} with {}", t1, t2));
+                return Err(TypeError::CannotUnify(*span, t1, t2));
             }
 
             for i in 0..adt1.variants.len() {
@@ -162,16 +167,16 @@ pub fn unify_eq(
                 let v2 = &adt2.variants[i];
 
                 if v1.name != v2.name {
-                    return Err(format!("Cannot unify {} with {}", t1, t2));
+                    return Err(TypeError::CannotUnify(*span, t1, t2));
                 }
 
                 match (&v1.t, &v2.t) {
                     (None, None) => (),
                     (Some(vt1), Some(vt2)) => {
-                        unify_eq(vt1, vt2, subst, did_change)?;
+                        unify_eq(vt1, vt2, span, subst, did_change)?;
                     }
                     _ => {
-                        return Err(format!("Cannot unify {} with {}", t1, t2));
+                        return Err(TypeError::CannotUnify(*span, t1, t2));
                     }
                 }
             }
@@ -180,16 +185,17 @@ pub fn unify_eq(
         }
 
         // Everything else fails
-        (t1, t2) => Err(format!("Cannot unify {} with {}", t1, t2)),
+        (_, _) => Err(TypeError::CannotUnify(*span, t1, t2)),
     }
 }
 
 pub fn unify_one_of(
     t1: &Arc<Type>,
     t2_possibilities: &HashSet<Arc<Type>>,
+    span: &Span,
     subst: &mut Subst,
     did_change: &mut bool,
-) -> Result<(), String> {
+) -> Result<(), TypeError> {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
 
@@ -201,20 +207,23 @@ pub fn unify_one_of(
         let mut test_subst = subst.clone();
         let mut test_did_change = *did_change;
 
-        if unify_eq(&t1, &t2, &mut test_subst, &mut test_did_change).is_ok() {
+        if unify_eq(&t1, &t2, span, &mut test_subst, &mut test_did_change).is_ok() {
             successes.push((t2, test_subst, test_did_change));
         }
     }
 
     match successes.len() {
-        0 => Err(format!(
-            "Cannot unify {} with incompatible candidates [{}]",
-            t1,
-            t2_possibilities
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+        0 => Err(TypeError::Other(
+            *span,
+            format!(
+                "Cannot unify {} with incompatible candidates [{}]",
+                t1,
+                t2_possibilities
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         )),
         1 => {
             // Use the successful substitution
@@ -355,7 +364,7 @@ mod tests {
         // Test case 1: α = Int
         let t1 = Arc::new(Type::Var(alpha));
         let t2 = Arc::new(Type::Int);
-        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
         assert_eq!(
             apply_subst(&Arc::new(Type::Var(alpha)), &subst),
             Arc::new(Type::Int)
@@ -367,7 +376,7 @@ mod tests {
             Arc::new(Type::Var(beta)),
         ));
         let t2 = Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Bool)));
-        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
         assert_eq!(
             apply_subst(&Arc::new(Type::Var(alpha)), &subst),
             Arc::new(Type::Int)
@@ -389,7 +398,7 @@ mod tests {
         // Unify α = β
         let t1 = Arc::new(Type::Var(alpha));
         let t2 = Arc::new(Type::Var(beta));
-        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
 
         // Now α should be mapped to β
         assert_eq!(
@@ -420,7 +429,14 @@ mod tests {
         ));
 
         // Unify f with g directly
-        assert!(unify_eq(&f_type, &g_type, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(
+            &f_type,
+            &g_type,
+            &Span::default(),
+            &mut subst,
+            &mut did_change
+        )
+        .is_ok());
 
         // After unification:
         let final_f = apply_subst(&f_type, &subst);
@@ -463,12 +479,20 @@ mod tests {
         // Now unify g's output with f's input
         let g_output = Arc::new(Type::Var(gamma)); // γ
         let f_input = Arc::new(Type::Var(alpha)); // α
-        assert!(unify_eq(&g_output, &f_input, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(
+            &g_output,
+            &f_input,
+            &Span::default(),
+            &mut subst,
+            &mut did_change
+        )
+        .is_ok());
 
         // Let's make g take an Int
         assert!(unify_eq(
             &Arc::new(Type::Var(gamma)),
             &Arc::new(Type::Int),
+            &Span::default(),
             &mut subst,
             &mut did_change,
         )
@@ -517,7 +541,14 @@ mod tests {
         ));
 
         // Unify f with g
-        assert!(unify_eq(&f_type, &g_type, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(
+            &f_type,
+            &g_type,
+            &Span::default(),
+            &mut subst,
+            &mut did_change
+        )
+        .is_ok());
 
         // After unification:
         let final_f = apply_subst(&f_type, &subst);

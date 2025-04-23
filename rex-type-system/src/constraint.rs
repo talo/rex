@@ -5,9 +5,10 @@ use std::{
 };
 
 use rex_ast::{expr::Expr, id::Id};
+use rex_lexer::span::Span;
 
 use crate::{
-    types::{ADTVariant, Type, TypeEnv, TypeScheme, ADT},
+    types::{ADTVariant, Type, TypeEnv, TypeError, TypeScheme, ADT},
     unify::{self, Subst},
 };
 
@@ -91,12 +92,12 @@ impl ConstraintSystem {
     ) -> bool {
         for check in constraints {
             match (constraint, check) {
-                (Constraint::Eq(t11, t12), Constraint::Eq(t21, t22)) => {
+                (Constraint::Eq(_, t11, t12), Constraint::Eq(_, t21, t22)) => {
                     if t11 == t21 && t12 == t22 {
                         return true;
                     }
                 }
-                (Constraint::OneOf(t1, ts1), Constraint::OneOf(t2, ts2)) => {
+                (Constraint::OneOf(_, t1, ts1), Constraint::OneOf(_, t2, ts2)) => {
                     if t1 == t2 && ts1 == ts2 {
                         return true;
                     }
@@ -112,11 +113,11 @@ impl ConstraintSystem {
         constraints: impl Iterator<Item = &'a mut Constraint>,
     ) {
         constraints.for_each(|constraint| match constraint {
-            Constraint::Eq(t1, t2) => {
+            Constraint::Eq(_, t1, t2) => {
                 *t1 = unify::apply_subst(t1, subst);
                 *t2 = unify::apply_subst(t2, subst);
             }
-            Constraint::OneOf(t, ts) => {
+            Constraint::OneOf(_, t, ts) => {
                 *t = unify::apply_subst(t, subst);
                 *ts = ts.iter().map(|t| unify::apply_subst(t, subst)).collect();
             }
@@ -145,17 +146,17 @@ impl Display for ConstraintSystem {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Constraint {
-    Eq(Arc<Type>, Arc<Type>),
+    Eq(Span, Arc<Type>, Arc<Type>),
     // NOTE(loong): this constraint is mostly used to define overloaded
     // functions.
-    OneOf(Arc<Type>, HashSet<Arc<Type>>),
+    OneOf(Span, Arc<Type>, HashSet<Arc<Type>>),
 }
 
 impl Display for Constraint {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Constraint::Eq(t1, t2) => write!(f, "{} = {}", t1, t2),
-            Constraint::OneOf(t, ts) => {
+            Constraint::Eq(_, t1, t2) => write!(f, "{} = {}", t1, t2),
+            Constraint::OneOf(_, t, ts) => {
                 write!(f, "{} ∈ {{", t)?;
                 for (i, ty) in ts.iter().enumerate() {
                     write!(f, "{}", ty)?;
@@ -176,16 +177,16 @@ pub fn generate_constraints(
     expr: &Expr,
     env: &TypeEnv,
     constraint_system: &mut ConstraintSystem,
-) -> Result<Arc<Type>, String> {
+) -> Result<Arc<Type>, TypeError> {
     match expr {
         Expr::Var(var) => {
             let possible_schemes = env
                 .get(&var.name)
-                .ok_or_else(|| format!("Unbound variable: {}", &var.name))?;
+                .ok_or_else(|| TypeError::UnboundVariable(*expr.span(), var.name.clone()))?;
 
             let mut possible_types: HashSet<Arc<Type>> = HashSet::new();
             for scheme in possible_schemes.iter() {
-                possible_types.insert(instantiate(scheme, constraint_system));
+                possible_types.insert(instantiate(scheme, expr.span(), constraint_system));
             }
 
             if possible_types.len() == 1 {
@@ -197,6 +198,7 @@ pub fn generate_constraints(
 
                 // Add OneOf constraint with same possibilities
                 constraint_system.add_local_constraint(Constraint::OneOf(
+                    *expr.span(),
                     fresh_var.clone(),
                     possible_types.clone(),
                 ));
@@ -247,7 +249,7 @@ pub fn generate_constraints(
             Ok(res)
         }
 
-        Expr::List(_span, exprs) => {
+        Expr::List(span, exprs) => {
             // If list is empty, create a fresh type variable for element type
             if exprs.is_empty() {
                 let elem_ty = Type::Var(Id::new());
@@ -263,15 +265,18 @@ pub fn generate_constraints(
 
             // Add constraints that all elements must have the same type
             for ty in &types[1..] {
-                constraint_system
-                    .add_local_constraint(Constraint::Eq(types[0].clone(), ty.clone()));
+                constraint_system.add_local_constraint(Constraint::Eq(
+                    *span,
+                    types[0].clone(),
+                    ty.clone(),
+                ));
             }
 
             let res = Arc::new(Type::List(types[0].clone()));
             Ok(res)
         }
 
-        Expr::App(_span, f, x) => {
+        Expr::App(span, f, x) => {
             let f_type = generate_constraints(f, env, constraint_system)?;
             let x_type = generate_constraints(x, env, constraint_system)?;
 
@@ -279,7 +284,7 @@ pub fn generate_constraints(
 
             let expected_f_type = Arc::new(Type::Arrow(x_type.clone(), result_type.clone()));
 
-            constraint_system.add_local_constraint(Constraint::Eq(f_type, expected_f_type));
+            constraint_system.add_local_constraint(Constraint::Eq(*span, f_type, expected_f_type));
 
             Ok(result_type)
         }
@@ -328,11 +333,11 @@ pub fn generate_constraints(
             let gen_deps = def_constraint_system
                 .constraints()
                 .filter_map(|c| match c {
-                    Constraint::OneOf(x, _) => match &**x {
+                    Constraint::OneOf(_, x, _) => match &**x {
                         Type::Var(id) => Some(*id),
                         _ => None,
                     },
-                    Constraint::Eq(x, _) => match &**x {
+                    Constraint::Eq(_, x, _) => match &**x {
                         Type::Var(id) => Some(*id),
                         _ => None,
                     },
@@ -378,16 +383,24 @@ pub fn generate_constraints(
             Ok(result_type)
         }
 
-        Expr::Ite(_span, cond, then_branch, else_branch) => {
+        Expr::Ite(span, cond, then_branch, else_branch) => {
             // Generate constraints for all parts
             let cond_type = generate_constraints(cond, env, constraint_system)?;
             let then_type = generate_constraints(then_branch, env, constraint_system)?;
             let else_type = generate_constraints(else_branch, env, constraint_system)?;
 
             // Condition must be boolean
-            constraint_system.add_local_constraint(Constraint::Eq(cond_type, Arc::new(Type::Bool)));
+            constraint_system.add_local_constraint(Constraint::Eq(
+                *cond.span(),
+                cond_type,
+                Arc::new(Type::Bool),
+            ));
             // Then and else branches must have the same type
-            constraint_system.add_local_constraint(Constraint::Eq(then_type.clone(), else_type));
+            constraint_system.add_local_constraint(Constraint::Eq(
+                *span,
+                then_type.clone(),
+                else_type,
+            ));
 
             Ok(then_type)
         }
@@ -520,7 +533,11 @@ fn generalize(env: &TypeEnv, ty: &Arc<Type>, deps: BTreeSet<Id>) -> TypeScheme {
 }
 
 // Instantiate a type scheme by replacing quantified variables with fresh ones
-fn instantiate(scheme: &TypeScheme, constraint_system: &mut ConstraintSystem) -> Arc<Type> {
+fn instantiate(
+    scheme: &TypeScheme,
+    span: &Span,
+    constraint_system: &mut ConstraintSystem,
+) -> Arc<Type> {
     if scheme.ids.len() == 0 {
         return scheme.ty.clone();
     }
@@ -542,10 +559,11 @@ fn instantiate(scheme: &TypeScheme, constraint_system: &mut ConstraintSystem) ->
 
         for constraint in constraint_system.constraints() {
             match constraint {
-                Constraint::Eq(x1, t2) => match &**x1 {
+                Constraint::Eq(_, x1, t2) => match &**x1 {
                     Type::Var(t1) => {
                         if t1 == dep_id {
                             new_constraint_sytem.add_local_constraint(Constraint::Eq(
+                                *span,
                                 Arc::new(Type::Var(fresh_dep_id)),
                                 t2.clone(),
                             ));
@@ -553,10 +571,11 @@ fn instantiate(scheme: &TypeScheme, constraint_system: &mut ConstraintSystem) ->
                     }
                     _ => {}
                 },
-                Constraint::OneOf(x1, ts) => match &**x1 {
+                Constraint::OneOf(_, x1, ts) => match &**x1 {
                     Type::Var(t1) => {
                         if t1 == dep_id {
                             new_constraint_sytem.add_local_constraint(Constraint::OneOf(
+                                *span,
                                 Arc::new(Type::Var(fresh_dep_id)),
                                 ts.clone(),
                             ));
@@ -571,11 +590,12 @@ fn instantiate(scheme: &TypeScheme, constraint_system: &mut ConstraintSystem) ->
     new_constraint_sytem.apply_subst(&subst);
     constraint_system.extend(new_constraint_sytem);
 
-    inst_helper(&scheme.ty, &mut subst, constraint_system)
+    inst_helper(&scheme.ty, span, &mut subst, constraint_system)
 }
 
 fn inst_helper(
     ty: &Arc<Type>,
+    span: &Span,
     subst: &mut Subst,
     constraint_system: &mut ConstraintSystem,
 ) -> Arc<Type> {
@@ -596,31 +616,36 @@ fn inst_helper(
                     name: v.name.clone(),
                     t: v.t
                         .as_ref()
-                        .map(|t| inst_helper(t, subst, constraint_system)),
+                        .map(|t| inst_helper(t, span, subst, constraint_system)),
                     t_docs: v.t_docs.clone(),
                     discriminant: v.discriminant,
                 })
                 .collect(),
         })),
         Type::Arrow(a, b) => Arc::new(Type::Arrow(
-            inst_helper(a, subst, constraint_system),
-            inst_helper(b, subst, constraint_system),
+            inst_helper(a, span, subst, constraint_system),
+            inst_helper(b, span, subst, constraint_system),
         )),
         Type::Result(t, e) => Arc::new(Type::Result(
-            inst_helper(t, subst, constraint_system),
-            inst_helper(e, subst, constraint_system),
+            inst_helper(t, span, subst, constraint_system),
+            inst_helper(e, span, subst, constraint_system),
         )),
-        Type::Option(t) => Arc::new(Type::Option(inst_helper(t, subst, constraint_system))),
-        Type::Promise(t) => Arc::new(Type::Promise(inst_helper(t, subst, constraint_system))),
-        Type::List(t) => Arc::new(Type::List(inst_helper(t, subst, constraint_system))),
+        Type::Option(t) => Arc::new(Type::Option(inst_helper(t, span, subst, constraint_system))),
+        Type::Promise(t) => Arc::new(Type::Promise(inst_helper(
+            t,
+            span,
+            subst,
+            constraint_system,
+        ))),
+        Type::List(t) => Arc::new(Type::List(inst_helper(t, span, subst, constraint_system))),
         Type::Dict(kts) => Arc::new(Type::Dict(
             kts.iter()
-                .map(|(k, t)| (k.clone(), inst_helper(t, subst, constraint_system)))
+                .map(|(k, t)| (k.clone(), inst_helper(t, span, subst, constraint_system)))
                 .collect(),
         )),
         Type::Tuple(ts) => Arc::new(Type::Tuple(
             ts.iter()
-                .map(|t| inst_helper(t, subst, constraint_system))
+                .map(|t| inst_helper(t, span, subst, constraint_system))
                 .collect(),
         )),
 
@@ -724,7 +749,7 @@ mod tests {
             deps: BTreeSet::new(),
         };
 
-        let inst_ty = instantiate(&scheme, &mut ConstraintSystem::new());
+        let inst_ty = instantiate(&scheme, &Span::default(), &mut ConstraintSystem::new());
 
         // Should become γ -> β where γ is fresh
         match &*inst_ty {
@@ -766,8 +791,8 @@ mod tests {
         let mut did_change = false;
         for constraint in constraint_system.constraints() {
             match constraint {
-                Constraint::Eq(t1, t2) => {
-                    unify::unify_eq(t1, t2, &mut subst, &mut did_change).unwrap()
+                Constraint::Eq(_, t1, t2) => {
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change).unwrap()
                 }
                 _ => panic!("Expected equality constraint"),
             }
@@ -794,7 +819,9 @@ mod tests {
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst, &mut did_change),
+                Constraint::Eq(_, t1, t2) => {
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)
+                }
                 _ => panic!("Expected equality constraint"),
             });
         assert!(result.is_err());
@@ -866,7 +893,9 @@ mod tests {
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst, &mut did_change),
+                Constraint::Eq(_, t1, t2) => {
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)
+                }
                 _ => panic!("Expected equality constraint"),
             });
         assert!(result.is_err());
@@ -1212,7 +1241,9 @@ mod tests {
             let mut did_change = false;
             for constraint in constraint_system.constraints() {
                 match constraint {
-                    Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst, &mut did_change)?,
+                    Constraint::Eq(_, t1, t2) => {
+                        unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)?
+                    }
                     _ => panic!("Expected equality constraint"),
                 }
             }
@@ -1220,7 +1251,10 @@ mod tests {
         });
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Cannot unify"));
+        assert!(matches!(
+            result.unwrap_err(),
+            TypeError::CannotUnify(_, _, _)
+        ));
     }
 
     #[test]
@@ -1249,6 +1283,7 @@ mod tests {
 
         let mut constraint_system =
             ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Span::default(),
                 Arc::new(Type::Var(xor_type_id)),
                 vec![
                     Arc::new(Type::Arrow(
@@ -1409,6 +1444,7 @@ mod tests {
 
         let mut constraint_system =
             ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Span::default(),
                 Arc::new(Type::Var(rand_type_id)),
                 vec![Arc::new(Type::Int), Arc::new(Type::Bool)]
                     .into_iter()
@@ -1434,6 +1470,7 @@ mod tests {
 
         let mut constraint_system =
             ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
+                Span::default(),
                 Arc::new(Type::Var(rand_type_id)),
                 vec![Arc::new(Type::Int), Arc::new(Type::Bool)]
                     .into_iter()
@@ -1448,10 +1485,16 @@ mod tests {
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(t1, t2) => unify::unify_eq(t1, t2, &mut subst, &mut did_change),
-                Constraint::OneOf(t1, t2_possibilties) => {
-                    unify::unify_one_of(t1, &t2_possibilties, &mut subst, &mut did_change)
+                Constraint::Eq(_, t1, t2) => {
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)
                 }
+                Constraint::OneOf(_, t1, t2_possibilties) => unify::unify_one_of(
+                    t1,
+                    &t2_possibilties,
+                    &Span::default(),
+                    &mut subst,
+                    &mut did_change,
+                ),
             });
         assert!(result.is_err());
     }
