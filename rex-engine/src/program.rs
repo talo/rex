@@ -8,7 +8,11 @@ use rex_lexer::LexicalError;
 use rex_lexer::Token;
 use rex_parser::Parser;
 use rex_type_system::unify::Subst;
-use rex_type_system::{constraint::generate_constraints, types::Type, unify};
+use rex_type_system::{
+    constraint::{generate_constraints, ConstraintSystem},
+    types::Type,
+    unify,
+};
 use std::sync::Arc;
 
 pub struct Program<State>
@@ -34,7 +38,8 @@ where
             rex_parser::error::Error::Parser(e) => Error::Parser(e),
         })?;
 
-        let (mut constraint_system, ftable, type_env) = builder.build();
+        let (ftable, type_env) = builder.build();
+        let mut constraint_system = ConstraintSystem::new();
 
         let ty = generate_constraints(&expr, &type_env, &mut constraint_system)
             .map_err(|e| Error::TypeInference(e))?;

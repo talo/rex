@@ -7,7 +7,7 @@ use rex_ast::id::Id;
 
 use crate::{
     constraint::{Constraint, ConstraintSystem},
-    types::{ADTVariant, Type, ADT},
+    types::{ADTVariant, Type, TypeScheme, ADT},
 };
 
 pub type Subst = HashMap<Id, Arc<Type>>;
@@ -236,10 +236,6 @@ pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
                 t.clone()
             }
         }
-        Type::ForAll(id, ty, deps) => {
-            Arc::new(Type::ForAll(*id, apply_subst(ty, subst), deps.clone()))
-        }
-
         Type::ADT(adt) => Arc::new(Type::ADT(ADT {
             docs: adt.docs.clone(),
             name: adt.name.clone(),
@@ -279,20 +275,23 @@ pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
     }
 }
 
+pub fn occurs_check_type_scheme(var: &Id, scheme: &TypeScheme) -> bool {
+    // If we're looking for the same variable that's quantified,
+    // then it doesn't occur freely (it's bound)
+
+    for id in scheme.ids.iter() {
+        if id == var {
+            return false;
+        }
+    }
+
+    occurs_check(var, &scheme.ty)
+}
+
 pub fn occurs_check(var: &Id, t: &Arc<Type>) -> bool {
     match &**t {
         Type::UnresolvedVar(_) => false, // TODO(loong): should this function return a result?
         Type::Var(v) => v == var,
-        Type::ForAll(id, ty, _deps) => {
-            // If we're looking for the same variable that's quantified,
-            // then it doesn't occur freely (it's bound)
-            if id == var {
-                false
-            } else {
-                occurs_check(var, ty)
-            }
-        }
-
         Type::ADT(adt) => adt.variants.iter().any(|v| match &v.t {
             Some(t) => occurs_check(var, t),
             None => false,
@@ -596,27 +595,27 @@ mod tests {
 
         // ForAll cases - would have failed before our fix
         // Case 1: The variable we're looking for is bound by the ForAll
-        assert!(!occurs_check(
+        assert!(!occurs_check_type_scheme(
             &var,
-            &Arc::new(Type::ForAll(
-                alpha,
-                Arc::new(Type::Var(alpha)),
-                BTreeSet::new()
-            ))
+            &TypeScheme {
+                ids: vec![alpha],
+                ty: Arc::new(Type::Var(alpha)),
+                deps: BTreeSet::new(),
+            }
         ));
 
         // Case 2: The variable we're looking for occurs freely in the body
         let var2 = beta;
-        assert!(occurs_check(
+        assert!(occurs_check_type_scheme(
             &var2,
-            &Arc::new(Type::ForAll(
-                alpha,
-                Arc::new(Type::Arrow(
+            &TypeScheme {
+                ids: vec![alpha],
+                ty: Arc::new(Type::Arrow(
                     Arc::new(Type::Var(beta)),
                     Arc::new(Type::Var(alpha))
                 )),
-                BTreeSet::new()
-            ))
+                deps: BTreeSet::new()
+            }
         ));
     }
 }

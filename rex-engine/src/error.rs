@@ -4,7 +4,7 @@ use rex_ast::{
 };
 use rex_lexer::span::Span;
 use rex_parser::error::ParserErr;
-use rex_type_system::types::{Type, ADT};
+use rex_type_system::types::{Type, TypeScheme, ADT};
 use serde_json::Value;
 use std::{collections::VecDeque, sync::Arc};
 
@@ -12,6 +12,8 @@ use std::{collections::VecDeque, sync::Arc};
 // errors when something goes wrong.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Error {
+    #[error("ambiguous overload of function {0}: types {1} and {2} may overlap")]
+    OverlappingFunctions(String, TypeScheme, TypeScheme),
     #[error("unexpected token {0}")]
     UnexpectedToken(Span),
     #[error("parsing failed: {0:?}")]

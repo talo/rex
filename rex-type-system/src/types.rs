@@ -8,14 +8,38 @@ use chrono::{DateTime, Utc};
 use rex_ast::{expr::Expr, id::Id};
 use uuid::Uuid;
 
-pub type TypeEnv = HashMap<String, Arc<Type>>;
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+pub struct TypeScheme {
+    pub ids: Vec<Id>,
+    pub ty: Arc<Type>,
+    pub deps: BTreeSet<Id>,
+}
+
+impl TypeScheme {
+    pub fn maybe_overlaps_with(&self, other: &TypeScheme) -> bool {
+        // We can ignore type variables hwere, since any two variables are considered
+        // potentially overlapping
+        self.ty.maybe_overlaps_with(&other.ty)
+    }
+}
+
+impl From<Arc<Type>> for TypeScheme {
+    fn from(t: Arc<Type>) -> Self {
+        TypeScheme {
+            ids: vec![],
+            ty: t,
+            deps: BTreeSet::new(),
+        }
+    }
+}
+
+pub type TypeEnv = HashMap<String, HashSet<TypeScheme>>;
 
 #[derive(Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Type {
     UnresolvedVar(String),
     Var(Id),
-    ForAll(Id, Arc<Type>, BTreeSet<Id>),
 
     ADT(ADT),
     Arrow(Arc<Type>, Arc<Type>),
@@ -81,7 +105,6 @@ impl Type {
         match self {
             Type::UnresolvedVar(_) => true,
             Type::Var(_) => true,
-            Type::ForAll(_, _, _) => true,
             Type::ADT(adt) => match other {
                 Expr::Named(_, n, _) => {
                     for variant in adt.variants.iter() {
@@ -130,6 +153,70 @@ impl Type {
         }
     }
 
+    pub fn maybe_overlaps_with(&self, other: &Type) -> bool {
+        // This function is conservative; we only we return false if we're certain
+        // there's no match.
+        if matches!(other, Type::Var(..)) {
+            return true; // could refer to anything
+        }
+        if matches!(other, Type::UnresolvedVar(..)) {
+            return true; // could refer to anything
+        }
+
+        match self {
+            Type::UnresolvedVar(_) => true,
+            Type::Var(_) => true,
+            Type::ADT(adt1) => match other {
+                Type::ADT(adt2) => adt1.name == adt2.name,
+                _ => false,
+            },
+            Type::Arrow(arg1, res1) => match other {
+                Type::Arrow(arg2, res2) => {
+                    arg1.maybe_overlaps_with(arg2) && res1.maybe_overlaps_with(res2)
+                }
+                _ => false,
+            },
+            Type::Result(ok1, err1) => match other {
+                Type::Result(ok2, err2) => {
+                    ok1.maybe_overlaps_with(ok2) && err1.maybe_overlaps_with(err2)
+                }
+                _ => false,
+            },
+            Type::Option(lhs) => match other {
+                Type::Option(rhs) => lhs.maybe_overlaps_with(rhs),
+                _ => false,
+            },
+            Type::Promise(lhs) => match other {
+                Type::Promise(rhs) => lhs.maybe_overlaps_with(rhs),
+                _ => false,
+            },
+            Type::List(lhs) => match other {
+                Type::List(rhs) => lhs.maybe_overlaps_with(rhs),
+                _ => false,
+            },
+            Type::Dict(_) => {
+                true // TODO
+            }
+            Type::Tuple(lhs) => match other {
+                Type::Tuple(rhs) => {
+                    lhs.len() == rhs.len()
+                        && lhs
+                            .iter()
+                            .zip(rhs.iter())
+                            .all(|(l, r)| l.maybe_overlaps_with(r))
+                }
+                _ => false,
+            },
+            Type::Bool => matches!(other, Type::Bool),
+            Type::Uint => matches!(other, Type::Uint),
+            Type::Int => matches!(other, Type::Int),
+            Type::Float => matches!(other, Type::Float),
+            Type::String => matches!(other, Type::String),
+            Type::Uuid => matches!(other, Type::Uuid),
+            Type::DateTime => matches!(other, Type::DateTime),
+        }
+    }
+
     pub fn for_each<F>(&self, mut f: F) -> Arc<Type>
     where
         F: FnMut(&Type),
@@ -159,9 +246,6 @@ impl Type {
         match self {
             Type::UnresolvedVar(x) => Arc::new(Type::UnresolvedVar(x.clone())),
             Type::Var(v) => Arc::new(Type::Var(v.clone())),
-            Type::ForAll(id, t, ids) => {
-                Arc::new(Type::ForAll(id.clone(), t.transform_ref(f), ids.clone()))
-            }
             Type::ADT(adt) => Arc::new(Type::ADT(ADT {
                 name: adt.name.clone(),
                 variants: adt
@@ -196,6 +280,28 @@ impl Type {
             Type::Uuid => Arc::new(Type::Uuid),
             Type::DateTime => Arc::new(Type::DateTime),
         }
+    }
+}
+
+impl Display for TypeScheme {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for x in self.ids.iter() {
+            "∀τ".fmt(f)?;
+            x.fmt(f)?;
+            ". ".fmt(f)?;
+        }
+        self.ty.fmt(f)?;
+        if !self.deps.is_empty() {
+            " with {".fmt(f)?;
+            for (i, dep) in self.deps.iter().enumerate() {
+                dep.fmt(f)?;
+                if i + 1 < self.deps.len() {
+                    ", ".fmt(f)?;
+                }
+            }
+            '}'.fmt(f)?;
+        }
+        Ok(())
     }
 }
 
@@ -267,23 +373,6 @@ impl Display for Type {
             Type::Var(x) => {
                 'τ'.fmt(f)?;
                 x.fmt(f)
-            }
-            Type::ForAll(x, t, deps) => {
-                "∀τ".fmt(f)?;
-                x.fmt(f)?;
-                ". ".fmt(f)?;
-                t.fmt(f)?;
-                if !deps.is_empty() {
-                    " with {".fmt(f)?;
-                    for (i, dep) in deps.iter().enumerate() {
-                        dep.fmt(f)?;
-                        if i + 1 < deps.len() {
-                            ", ".fmt(f)?;
-                        }
-                    }
-                    '}'.fmt(f)?;
-                }
-                Ok(())
             }
             Type::List(x) => {
                 '['.fmt(f)?;

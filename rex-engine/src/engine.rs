@@ -1,7 +1,4 @@
-use rex_type_system::{
-    constraint::{Constraint, ConstraintSystem},
-    types::{Dispatch, ToType, Type, TypeEnv, ADT},
-};
+use rex_type_system::types::{Dispatch, ToType, Type, TypeEnv, TypeScheme, ADT};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt,
@@ -26,77 +23,69 @@ use uuid::Uuid;
 
 const MAX_TUPLE_LEN: usize = 8; // register elem_M_N functions for tuple sizes up to M
 
-fn register_fn_core<State>(builder: &mut Builder<State>, n: &str, t: Arc<Type>)
+fn register_fn_core<State>(builder: &mut Builder<State>, n: &str, t: Arc<Type>) -> Result<(), Error>
 where
     State: Clone + Send + Sync + 'static,
 {
     let unresolved_vars = t.unresolved_vars();
 
-    match builder.fconstraints.get(n) {
-        None if !unresolved_vars.is_empty() => {
-            if builder.ftenv.contains_key(n) {
-                panic!("Attempt to overload function {} with generic type {}", n, t);
+    let scheme = if !unresolved_vars.is_empty() {
+        let mut assignments = HashMap::new();
+        for var in &unresolved_vars {
+            if let None = assignments.get(var) {
+                assignments.insert(var.clone(), Arc::new(Type::Var(Id::new())));
             }
-
-            let mut assignments = HashMap::new();
-            for var in &unresolved_vars {
-                if let None = assignments.get(var) {
-                    assignments.insert(var.clone(), Arc::new(Type::Var(Id::new())));
-                }
-            }
-
-            let t = t.resolve_vars(&assignments);
-
-            // Build the type from inside out
-            let mut for_all = t;
-            for var in assignments.into_values() {
-                if let Type::Var(var) = *var {
-                    for_all = Arc::new(Type::ForAll(var.clone(), for_all, BTreeSet::new()));
-                } else {
-                    panic!("Expected a type variable");
-                }
-            }
-
-            builder.ftenv.insert(n.to_string(), for_all);
         }
+
+        let t = t.resolve_vars(&assignments);
+
+        let mut ids: Vec<Id> = Vec::new();
+        for var in assignments.into_values() {
+            if let Type::Var(var) = *var {
+                ids.push(var);
+            } else {
+                panic!("Expected a type variable");
+            }
+        }
+        let for_all = TypeScheme {
+            ids,
+            ty: t,
+            deps: BTreeSet::new(),
+        };
+        for_all
+    } else {
+        TypeScheme::from(t)
+    };
+
+    match builder.builtins.get_mut(n) {
         None => {
-            let new_id = Id::new();
-            builder.fconstraints.insert(
-                n.to_string(),
-                Constraint::Eq(Arc::new(Type::Var(new_id)), t),
-            );
-            builder
-                .ftenv
-                .insert(n.to_string(), Arc::new(Type::Var(new_id)));
+            let mut ts = HashSet::new();
+            ts.insert(scheme);
+            builder.builtins.insert(n.to_string(), ts);
         }
-        Some(_) if !unresolved_vars.is_empty() => {
-            panic!("Attempt to overload function {} with generic type {}", n, t);
-        }
-        Some(Constraint::Eq(tid, prev_t)) => {
-            let mut new_ts = HashSet::new();
-            new_ts.insert(prev_t.clone());
-            new_ts.insert(t);
+        Some(set) => {
+            for s in set.iter() {
+                if scheme.maybe_overlaps_with(s) {
+                    return Err(Error::OverlappingFunctions(
+                        n.to_string(),
+                        scheme.clone(),
+                        s.clone(),
+                    ));
+                }
+            }
 
-            builder
-                .fconstraints
-                .insert(n.to_string(), Constraint::OneOf(tid.clone(), new_ts));
-        }
-        Some(Constraint::OneOf(tid, prev_ts)) => {
-            let mut new_ts = prev_ts.clone();
-            new_ts.insert(t);
-
-            builder
-                .fconstraints
-                .insert(n.to_string(), Constraint::OneOf(tid.clone(), new_ts));
+            set.insert(scheme);
         }
     }
+
+    Ok(())
 }
 
 macro_rules! impl_register_fn_core {
     ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
         let n = $n.to_string();
         let t = Arc::new(<fn($($($param,)*)?) -> B as ToType>::to_type());
-        register_fn_core($self, &n, t);
+        register_fn_core($self, &n, t).unwrap();
         $self.ftable.$name(n, $f);
     }}
 }
@@ -154,9 +143,8 @@ pub struct Builder<State>
 where
     State: Clone + Sync + 'static,
 {
-    pub fconstraints: HashMap<String, Constraint>,
+    pub builtins: BTreeMap<String, HashSet<TypeScheme>>,
     pub ftable: Ftable<State>,
-    pub ftenv: TypeEnv,
     pub adts: BTreeMap<String, ADT>,
     pub accessors: HashSet<String>,
 }
@@ -167,9 +155,8 @@ where
 {
     pub fn with_prelude() -> Result<Self, Error> {
         let mut this = Self {
+            builtins: BTreeMap::new(),
             ftable: Ftable::new(),
-            fconstraints: Default::default(),
-            ftenv: Default::default(),
             adts: Default::default(),
             accessors: Default::default(),
         };
@@ -364,7 +351,7 @@ where
         // Result
         this.register_fn1("Ok", |_ctx: &Context<_>, x: A| Ok(Ok::<A, B>(x)));
         this.register_fn1("Err", |_ctx: &Context<_>, x: B| Ok(Err::<A, B>(x)));
-        this.register_fn_async2("map_result", |ctx, f: Func<A, B>, x: Result<A, E>| {
+        this.register_fn_async2("map", |ctx, f: Func<A, B>, x: Result<A, E>| {
             Box::pin(async move {
                 match x {
                     Ok(x) => Ok(Ok(B(apply(ctx, &f, &x).await?))),
@@ -373,7 +360,7 @@ where
             })
         });
         this.register_fn_async2(
-            "and_then_result",
+            "and_then",
             |ctx, f: Func<A, Result<B, E>>, x: Result<A, E>| {
                 Box::pin(async move {
                     match x {
@@ -384,7 +371,7 @@ where
             },
         );
         this.register_fn_async2(
-            "or_else_result",
+            "or_else",
             |ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
                 Box::pin(async move {
                     match x {
@@ -394,22 +381,19 @@ where
                 })
             },
         );
-        this.register_fn_async2(
-            "unwrap_or_else_result",
-            |ctx, f: Func<E, A>, x: Result<A, E>| {
-                Box::pin(async move {
-                    match x {
-                        Ok(x) => Ok(x),
-                        Err(x) => Ok(A(apply(ctx, &f, &x).await?)),
-                    }
-                })
-            },
-        );
+        this.register_fn_async2("unwrap_or_else", |ctx, f: Func<E, A>, x: Result<A, E>| {
+            Box::pin(async move {
+                match x {
+                    Ok(x) => Ok(x),
+                    Err(x) => Ok(A(apply(ctx, &f, &x).await?)),
+                }
+            })
+        });
 
         // Option
         this.register_fn0("None", |_ctx: &Context<_>| Ok(None::<A>));
         this.register_fn1("Some", |_ctx: &Context<_>, x: A| Ok(Some(x)));
-        this.register_fn_async2("map_option", |ctx, f: Func<A, B>, x: Option<A>| {
+        this.register_fn_async2("map", |ctx, f: Func<A, B>, x: Option<A>| {
             Box::pin(async move {
                 match x {
                     Some(x) => Ok(Some(B(apply(ctx, &f, &x).await?))),
@@ -417,47 +401,38 @@ where
                 }
             })
         });
-        this.register_fn_async2(
-            "and_then_option",
-            |ctx, f: Func<A, Option<B>>, x: Option<A>| {
-                Box::pin(async move {
-                    match x {
-                        Some(x) => Ok(Option::<B>::try_decode(&apply(ctx, &f, &x).await?)?),
-                        None => Ok(None),
+        this.register_fn_async2("and_then", |ctx, f: Func<A, Option<B>>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(Option::<B>::try_decode(&apply(ctx, &f, &x).await?)?),
+                    None => Ok(None),
+                }
+            })
+        });
+        this.register_fn_async2("or_else", |ctx, f: Func<(), Option<A>>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(Some(x)),
+                    None => {
+                        let x = Expr::Tuple(Span::default(), vec![]);
+                        let res = apply(ctx, &f, &x).await?;
+                        Ok(Option::<A>::try_decode(&res)?)
                     }
-                })
-            },
-        );
-        this.register_fn_async2(
-            "or_else_option",
-            |ctx, f: Func<(), Option<A>>, x: Option<A>| {
-                Box::pin(async move {
-                    match x {
-                        Some(x) => Ok(Some(x)),
-                        None => {
-                            let x = Expr::Tuple(Span::default(), vec![]);
-                            let res = apply(ctx, &f, &x).await?;
-                            Ok(Option::<A>::try_decode(&res)?)
-                        }
+                }
+            })
+        });
+        this.register_fn_async2("unwrap_or_else", |ctx, f: Func<(), A>, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(x),
+                    None => {
+                        let x = Expr::Tuple(Span::default(), vec![]);
+                        let res = apply(ctx, &f, &x).await?;
+                        Ok(A(res))
                     }
-                })
-            },
-        );
-        this.register_fn_async2(
-            "unwrap_or_else_option",
-            |ctx, f: Func<(), A>, x: Option<A>| {
-                Box::pin(async move {
-                    match x {
-                        Some(x) => Ok(x),
-                        None => {
-                            let x = Expr::Tuple(Span::default(), vec![]);
-                            let res = apply(ctx, &f, &x).await?;
-                            Ok(A(res))
-                        }
-                    }
-                })
-            },
-        );
+                }
+            })
+        });
 
         // Uuid
         this.register_fn1("string", |_ctx: &Context<_>, x: Uuid| Ok(format!("{}", x)));
@@ -531,7 +506,7 @@ where
             let tuple_type = Arc::new(Type::Tuple(element_types.clone()));
 
             for tuple_index in 0..tuple_len {
-                let fun_name = format!("elem_{}_{}", tuple_len, tuple_index);
+                let fun_name = format!("elem{}", tuple_index);
                 let fun_type = Arc::new(Type::Arrow(
                     tuple_type.clone(),
                     element_types[tuple_index].clone(),
@@ -567,8 +542,9 @@ where
         t: Arc<Type>,
         f: FtableFn<State>,
     ) -> Result<(), Error> {
-        register_fn_core(self, name, t.clone());
-        self.ftable.add_fn(name, Box::new(t), f)
+        register_fn_core(self, name, t.clone())?;
+        self.ftable.add_fn(name, Box::new(t), f)?;
+        Ok(())
     }
 
     pub fn register_adt(
@@ -766,7 +742,7 @@ where
                 Arc::new(Type::Arrow(adt_type.clone(), entry_type.clone()));
 
             // Register the type
-            register_fn_core(self, entry_key, this_accessor_fun_type.clone());
+            register_fn_core(self, entry_key, this_accessor_fun_type.clone())?;
 
             // Register the implementation, if one does not already exist
             if !self.accessors.contains(entry_key) {
@@ -787,12 +763,12 @@ where
     impl_register_fn_async!(register_fn_async2, A0, A1);
     impl_register_fn_async!(register_fn_async3, A0, A1, A2);
 
-    pub fn build(self) -> (ConstraintSystem, Ftable<State>, TypeEnv) {
-        let mut constraint_system = ConstraintSystem::new();
-        for (_, constraint) in &self.fconstraints {
-            constraint_system.add_global_constraint(constraint.clone());
+    pub fn build(self) -> (Ftable<State>, TypeEnv) {
+        let mut ftenv = HashMap::new();
+        for (n, b) in self.builtins.into_iter() {
+            ftenv.insert(n.clone(), b);
         }
-        (constraint_system, self.ftable, self.ftenv)
+        (self.ftable, ftenv)
     }
 }
 
