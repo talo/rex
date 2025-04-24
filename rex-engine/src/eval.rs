@@ -882,6 +882,22 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_unwrap_result() {
+        let (res, res_type) = parse_infer_and_eval(r#"unwrap (Ok 4)"#).await.unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(4); ignore span);
+
+        let res = parse_infer_and_eval(r#"unwrap (Err 'oops!')"#).await;
+        assert_eq!(
+            res,
+            Err(Error::Custom {
+                error: "unwrap called with Err: oops!".to_string(),
+                trace: Default::default(),
+            })
+        );
+    }
+
+    #[tokio::test]
     async fn test_option() {
         let (res, res_type) = parse_infer_and_eval(r#"let a = Some 4, b = None in [a, b]"#)
             .await
@@ -1094,6 +1110,22 @@ pub mod test {
         // .unwrap();
         // assert_eq!(res_type, tuple!(list!(uint!()), list!(uint!())));
         // assert_expr_eq!(res,tup!(l!(u!(4), u!(99)), l!(u!(5), u!(99))); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_unwrap_option() {
+        let (res, res_type) = parse_infer_and_eval(r#"unwrap (Some 4)"#).await.unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(4); ignore span);
+
+        let res = parse_infer_and_eval(r#"unwrap None"#).await;
+        assert_eq!(
+            res,
+            Err(Error::Custom {
+                error: "unwrap called with None".to_string(),
+                trace: Default::default(),
+            })
+        );
     }
 
     #[tokio::test]

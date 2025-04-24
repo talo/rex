@@ -389,6 +389,20 @@ where
                 }
             })
         });
+        this.register_fn_async1("unwrap", |_ctx, x: Result<A, E>| {
+            Box::pin(async move {
+                match x {
+                    Ok(x) => Ok(x),
+                    Err(e) => Err(Error::Custom {
+                        error: format!(
+                            "unwrap called with Err: {}",
+                            e.try_encode(Span::default())?
+                        ),
+                        trace: Default::default(),
+                    }),
+                }
+            })
+        });
 
         // Option
         this.register_fn0("None", |_ctx: &Context<_>| Ok(None::<A>));
@@ -430,6 +444,17 @@ where
                         let res = apply(ctx, &f, &x).await?;
                         Ok(A(res))
                     }
+                }
+            })
+        });
+        this.register_fn_async1("unwrap", |_ctx, x: Option<A>| {
+            Box::pin(async move {
+                match x {
+                    Some(x) => Ok(x),
+                    None => Err(Error::Custom {
+                        error: format!("unwrap called with None"),
+                        trace: Default::default(),
+                    }),
                 }
             })
         });
