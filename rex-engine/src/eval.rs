@@ -16,6 +16,19 @@ where
     pub state: Arc<State>,
 }
 
+impl<State> Context<State>
+where
+    State: Clone + Sync + 'static,
+{
+    pub fn with_scope(&self, scope: Scope) -> Self {
+        Context {
+            scope,
+            ftable: self.ftable.clone(),
+            state: self.state.clone(),
+        }
+    }
+}
+
 #[async_recursion::async_recursion]
 pub async fn eval<State>(ctx: &Context<State>, expr: &Expr) -> Result<Expr, Error>
 where
@@ -158,12 +171,7 @@ where
 
     let res = match f.borrow() {
         Expr::Lam(_span, scope, param, body) => {
-            let mut ctx: Context<State> = ctx.clone();
-            ctx.scope.insert_mut(param.name.clone(), x);
-            for (k, v) in scope.iter() {
-                ctx.scope.insert_mut(k.clone(), v.clone());
-            }
-
+            let ctx = ctx.with_scope(scope.insert(param.name.clone(), x));
             eval(&ctx, &body).await?
         }
         Expr::Curry(span, var, args) => {
@@ -1284,6 +1292,59 @@ pub mod test {
             .unwrap();
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(13.8); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_lambda_scope() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let foo = [1, 2, 3] in map (\foo -> negate foo) foo
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(int!()));
+        assert_expr_eq!(res, l!(i!(-1), i!(-2), i!(-3)); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let foo = ["one"] in (\foo -> negate foo) 2
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, int!());
+        assert_expr_eq!(res, i!(-2); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let
+                foo = [(1, "one"), (2, "two")],
+            in
+                map (\foo -> (elem0 foo, elem1 foo)) foo
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(tuple!(uint!(), string!())));
+        assert_expr_eq!(res, l!(tup!(u!(1), s!("one")), tup!(u!(2), s!("two"))); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let
+                a = 10,
+                f = let
+                        a = 20,
+                    in
+                        (\x -> a + x),
+            in
+                f 3
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(23); ignore span);
     }
 
     /// This test is meant to reflect the kind of usage pattern that we see in
