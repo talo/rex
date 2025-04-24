@@ -742,7 +742,15 @@ where
                 Arc::new(Type::Arrow(adt_type.clone(), entry_type.clone()));
 
             // Register the type
-            register_fn_core(self, entry_key, this_accessor_fun_type.clone())?;
+            match register_fn_core(self, entry_key, this_accessor_fun_type.clone()) {
+                Ok(()) => {}
+                Err(Error::OverlappingFunctions(_, t1, t2)) if t1 == t2 => {
+                    // Ignore this case; it can happen if there are multiple ADTs imported
+                    // from different tengu modules that have the same name but different
+                    // prefixes
+                }
+                Err(e) => return Err(e),
+            }
 
             // Register the implementation, if one does not already exist
             if !self.accessors.contains(entry_key) {
