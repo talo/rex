@@ -463,6 +463,101 @@ mod test {
         );
     }
 
+    #[tokio::test]
+    async fn test_map_result() {
+        let val = parse_and_eval(
+            r#"
+            map
+                (\x -> map (\y -> "*" ++ y) x)
+                [ok "one", err 2, ok "three", err 4]
+            "#,
+            &(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            val,
+            Value::List(vec![
+                Value::Result(Ok(Box::new(Value::String("*one".to_string())))),
+                Value::Result(Err(Box::new(Value::Uint(2)))),
+                Value::Result(Ok(Box::new(Value::String("*three".to_string())))),
+                Value::Result(Err(Box::new(Value::Uint(4)))),
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_filter_map() {
+        let val = parse_and_eval(
+            r#"
+            let
+                results = [ok "one", err 2, ok "three", err 4],
+                result_to_option = (λx → unwrap_or_else (λy → none) (map some x)),
+                only_successful_results = λr → filter_map result_to_option r
+            in
+                only_successful_results results
+            "#,
+            &(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            val,
+            Value::List(vec![
+                Value::String("one".to_string()),
+                Value::String("three".to_string()),
+            ])
+        );
+
+        let val = parse_and_eval(
+            r#"
+            let
+                results = [ok "one", err 2, ok "three", err 4],
+                only_successful_results = λr →
+                    filter_map (unwrap_or_else (λy → none)) (map (λx → map some x) r),
+            in
+                only_successful_results results
+            "#,
+            &(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            val,
+            Value::List(vec![
+                Value::String("one".to_string()),
+                Value::String("three".to_string()),
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_unwrap_or_else() {
+        let val = parse_and_eval(
+            r#"
+            map
+                (\x -> unwrap_or_else (\y -> "TEST") x)
+                [ok "one", err 2, ok "three", err 4],
+            "#,
+            &(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            val,
+            Value::List(vec![
+                Value::String("one".to_string()),
+                Value::String("TEST".to_string()),
+                Value::String("three".to_string()),
+                Value::String("TEST".to_string()),
+            ])
+        );
+    }
+
     // FIXME: returns a closure, not a value
     // #[tokio::test]
     // async fn test_fold() {

@@ -664,6 +664,103 @@ impl<S: Send + Sync + 'static> Ftable<S> {
 
                             Ok(Value::List(s))
                         }
+                        (Some(f), Some(Value::Result(Ok(x)))) => {
+                            let r = apply::apply(ctx, runner, state, f.clone(), *x.clone()).await?;
+                            Ok(Value::Result(Ok(Box::new(r))))
+                        }
+                        (Some(_), Some(Value::Result(Err(e)))) => Ok(Value::Result(Err(e.clone()))),
+                        // Everything else
+                        (Some(_), Some(x)) => Err(Error::UnexpectedType {
+                            expected: list!(a!()),
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+        // 'filter_map'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "filter_map".to_string(),
+                params: vec![arrow!(a!() => b!()), list!(a!())],
+                ret: list!(b!()),
+            },
+            Box::new(|ctx, runner, state, args| {
+                Box::pin(async move {
+                    match (args.first(), args.get(1)) {
+                        // Wrong number of arguments
+                        (_, None) | (None, _) => Err(Error::ExpectedArguments {
+                            expected: 2,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        (Some(f), Some(Value::List(xs))) => {
+                            let mut ys = Vec::with_capacity(xs.len());
+                            for x in xs {
+                                ys.push(apply::apply(ctx, runner, state, f.clone(), x.clone()));
+                            }
+                            let nthreads = std::thread::available_parallelism()
+                                .unwrap_or(NonZeroUsize::new(1).unwrap())
+                                .get()
+                                * 2;
+                            let s: Vec<Value> =
+                                stream::iter(ys).buffered(nthreads).try_collect().await?;
+                            let mut result: Vec<Value> = Vec::new();
+                            for value in s {
+                                match &value {
+                                    Value::Option(Some(x)) => {
+                                        result.push(Value::clone(x));
+                                    }
+                                    Value::Option(None) => {
+                                        // Omit from result
+                                    }
+                                    _ => {
+                                        return Err(Error::UnexpectedType {
+                                            expected: Type::Option(Box::new(a!())),
+                                            got: value.clone(),
+                                            trace: Default::default(),
+                                        })
+                                    }
+                                }
+                            }
+
+                            Ok(Value::List(result))
+                        }
+                        // Everything else
+                        (Some(_), Some(x)) => Err(Error::UnexpectedType {
+                            expected: list!(a!()),
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+        // 'unwrap_or_else'
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "unwrap_or_else".to_string(),
+                params: vec![arrow!(a!() => b!()), list!(a!())],
+                ret: list!(b!()),
+            },
+            Box::new(|ctx, runner, state, args| {
+                Box::pin(async move {
+                    match (args.first(), args.get(1)) {
+                        // Wrong number of arguments
+                        (_, None) | (None, _) => Err(Error::ExpectedArguments {
+                            expected: 2,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        (Some(_), Some(Value::Result(Ok(x)))) => Ok(Value::clone(x)),
+                        (Some(f), Some(Value::Result(Err(e)))) => {
+                            Ok(apply::apply(ctx, runner, state, f.clone(), *e.clone()).await?)
+                        }
                         // Everything else
                         (Some(_), Some(x)) => Err(Error::UnexpectedType {
                             expected: list!(a!()),
