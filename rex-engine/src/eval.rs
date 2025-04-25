@@ -284,7 +284,7 @@ where
 
 #[cfg(test)]
 pub mod test {
-    use crate::{engine::Builder, program::Program};
+    use crate::{codec::Encode, engine::Builder, program::Program};
     use rex_ast::{assert_expr_eq, b, d, f, i, l, n, s, tup, u};
     use rex_type_system::{
         bool, dict, float, int, list, option, result, string, tuple, types::Type, uint,
@@ -406,6 +406,125 @@ pub mod test {
             .unwrap();
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(21.99490445859873); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"6.9 % 4.20"#).await.unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(2.7); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"6 % 4"#).await.unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(2); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_relational_operators_uint() {
+        let values: Vec<u64> = vec![1, 2, 3, 4, 5];
+        let expected = values
+            .into_iter()
+            .map(|x| vec![x == 3, x != 3, x < 3, x <= 3, x > 3, x >= 3])
+            .collect::<Vec<_>>();
+        let expected_expr = expected.try_encode(Span::default()).unwrap();
+
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            map (\x -> [x == 3, x != 3, x < 3, x <= 3, x > 3, x >= 3]) [1, 2, 3, 4, 5]
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(list!(bool!())));
+        assert_expr_eq!(res, expected_expr; ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_relational_operators_int() {
+        let values: Vec<i64> = vec![1, 2, 3, 4, 5];
+        let expected = values
+            .into_iter()
+            .map(|x| vec![x == 3, x != 3, x < 3, x <= 3, x > 3, x >= 3])
+            .collect::<Vec<_>>();
+        let expected_expr = expected.try_encode(Span::default()).unwrap();
+
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let y = (int 3) in
+            map (\x -> [x == y, x != y, x < y, x <= y, x > y, x >= y]) (map int [1, 2, 3, 4, 5])
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(list!(bool!())));
+        assert_expr_eq!(res, expected_expr; ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_relational_operators_float() {
+        let values: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let expected = values
+            .into_iter()
+            .map(|x| vec![x == 3.0, x != 3.0, x < 3.0, x <= 3.0, x > 3.0, x >= 3.0])
+            .collect::<Vec<_>>();
+        let expected_expr = expected.try_encode(Span::default()).unwrap();
+
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            map
+                (\x -> [x == 3.0, x != 3.0, x < 3.0, x <= 3.0, x > 3.0, x >= 3.0])
+                [1.0, 2.0, 3.0, 4.0, 5.0]
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(list!(bool!())));
+        assert_expr_eq!(res, expected_expr; ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_relational_operators_string() {
+        let values: Vec<&str> = vec!["a", "b", "c", "d", "e"];
+        let expected = values
+            .into_iter()
+            .map(|x| vec![x == "c", x != "c", x < "c", x <= "c", x > "c", x >= "c"])
+            .collect::<Vec<_>>();
+        let expected_expr = expected.try_encode(Span::default()).unwrap();
+
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            map
+                (\x -> [x == "c", x != "c", x < "c", x <= "c", x > "c", x >= "c"])
+                ["a", "b", "c", "d", "e"]
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(list!(bool!())));
+        assert_expr_eq!(res, expected_expr; ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_append_list() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            [1, 2, 3] ++ [4] ++ [5, 6]
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(1), u!(2), u!(3), u!(4), u!(5), u!(6)); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_append_string() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            "Hello" ++ " " ++ "World"
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, string!());
+        assert_expr_eq!(res, s!("Hello World"); ignore span);
     }
 
     // TODO: get this test working again

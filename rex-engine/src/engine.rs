@@ -191,6 +191,32 @@ where
         this.register_fn2("==", |_ctx: &Context<_>, x: u64, y: u64| Ok(x == y));
         this.register_fn2("==", |_ctx: &Context<_>, x: i64, y: i64| Ok(x == y));
         this.register_fn2("==", |_ctx: &Context<_>, x: f64, y: f64| Ok(x == y));
+        this.register_fn2("==", |_ctx: &Context<_>, x: String, y: String| Ok(x == y));
+
+        this.register_fn2("!=", |_ctx: &Context<_>, x: u64, y: u64| Ok(x != y));
+        this.register_fn2("!=", |_ctx: &Context<_>, x: i64, y: i64| Ok(x != y));
+        this.register_fn2("!=", |_ctx: &Context<_>, x: f64, y: f64| Ok(x != y));
+        this.register_fn2("!=", |_ctx: &Context<_>, x: String, y: String| Ok(x != y));
+
+        this.register_fn2(">", |_ctx: &Context<_>, x: u64, y: u64| Ok(x > y));
+        this.register_fn2(">", |_ctx: &Context<_>, x: i64, y: i64| Ok(x > y));
+        this.register_fn2(">", |_ctx: &Context<_>, x: f64, y: f64| Ok(x > y));
+        this.register_fn2(">", |_ctx: &Context<_>, x: String, y: String| Ok(x > y));
+
+        this.register_fn2(">=", |_ctx: &Context<_>, x: u64, y: u64| Ok(x >= y));
+        this.register_fn2(">=", |_ctx: &Context<_>, x: i64, y: i64| Ok(x >= y));
+        this.register_fn2(">=", |_ctx: &Context<_>, x: f64, y: f64| Ok(x >= y));
+        this.register_fn2(">=", |_ctx: &Context<_>, x: String, y: String| Ok(x >= y));
+
+        this.register_fn2("<", |_ctx: &Context<_>, x: u64, y: u64| Ok(x < y));
+        this.register_fn2("<", |_ctx: &Context<_>, x: i64, y: i64| Ok(x < y));
+        this.register_fn2("<", |_ctx: &Context<_>, x: f64, y: f64| Ok(x < y));
+        this.register_fn2("<", |_ctx: &Context<_>, x: String, y: String| Ok(x < y));
+
+        this.register_fn2("<=", |_ctx: &Context<_>, x: u64, y: u64| Ok(x <= y));
+        this.register_fn2("<=", |_ctx: &Context<_>, x: i64, y: i64| Ok(x <= y));
+        this.register_fn2("<=", |_ctx: &Context<_>, x: f64, y: f64| Ok(x <= y));
+        this.register_fn2("<=", |_ctx: &Context<_>, x: String, y: String| Ok(x <= y));
 
         this.register_fn2("+", |_ctx: &Context<_>, x: u64, y: u64| Ok(x + y));
         this.register_fn2("+", |_ctx: &Context<_>, x: i64, y: i64| Ok(x + y));
@@ -207,6 +233,10 @@ where
         this.register_fn2("/", |_ctx: &Context<_>, x: u64, y: u64| Ok(x / y));
         this.register_fn2("/", |_ctx: &Context<_>, x: i64, y: i64| Ok(x / y));
         this.register_fn2("/", |_ctx: &Context<_>, x: f64, y: f64| Ok(x / y));
+
+        this.register_fn2("%", |_ctx: &Context<_>, x: u64, y: u64| Ok(x % y));
+        this.register_fn2("%", |_ctx: &Context<_>, x: i64, y: i64| Ok(x % y));
+        this.register_fn2("%", |_ctx: &Context<_>, x: f64, y: f64| Ok(x % y));
 
         this.register_fn1("abs", |_ctx: &Context<_>, x: i64| Ok(x.abs()));
         this.register_fn1("abs", |_ctx: &Context<_>, x: f64| Ok(x.abs()));
@@ -229,6 +259,10 @@ where
             zs.extend(xs);
             zs.extend(ys);
             Ok(zs)
+        });
+
+        this.register_fn2("++", |_ctx: &Context<_>, a: String, b: String| {
+            Ok(format!("{}{}", a, b))
         });
 
         this.register_fn2("take", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {

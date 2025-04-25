@@ -33,6 +33,7 @@ impl Parser {
             eof: tokens.eof,
             errors: Vec::new(),
         };
+        // println!("tokens = {:#?}", parser.tokens);
         parser.strip_comments();
         parser
     }
@@ -135,10 +136,12 @@ impl Parser {
             Token::Div(..) => Operator::Div,
             Token::Dot(..) => Operator::Dot,
             Token::Eq(..) => Operator::Eq,
+            Token::Ne(..) => Operator::Ne,
             Token::Ge(..) => Operator::Ge,
             Token::Gt(..) => Operator::Gt,
             Token::Le(..) => Operator::Le,
             Token::Lt(..) => Operator::Lt,
+            Token::Mod(..) => Operator::Mod,
             Token::Mul(..) => Operator::Mul,
             Token::Or(..) => Operator::Or,
             Token::Sub(..) => Operator::Sub,
@@ -168,6 +171,7 @@ impl Parser {
                 | Token::Concat(..)
                 | Token::Div(..)
                 | Token::Mul(..)
+                | Token::Mod(..)
                 | Token::Or(..)
                 | Token::Sub(..) => false,
                 // But it is right-associative
@@ -201,6 +205,7 @@ impl Parser {
     }
 
     fn parse_unary_expr(&mut self) -> Result<Expr, ParserErr> {
+        // println!("parse_unary_expr: self.current_token() = {:#?}", self.current_token());
         let mut call_base_expr = match self.current_token() {
             Token::ParenL(..) => self.parse_paren_expr(),
             Token::BracketL(..) => self.parse_bracket_expr(),
@@ -320,6 +325,10 @@ impl Parser {
             Token::Lt(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "<"))
+            }
+            Token::Mod(span, ..) => {
+                self.next_token();
+                Expr::Var(Var::with_span(span, "%"))
             }
             Token::Mul(span, ..) => {
                 self.next_token();

@@ -53,6 +53,7 @@ pub enum Token {
     Gt(Span),
     Le(Span),
     Lt(Span),
+    Mod(Span),
     Mul(Span),
     Or(Span),
     Sub(Span),
@@ -208,6 +209,8 @@ impl Token {
                     Token::Le(span)
                 } else if capture.name("LessThan").is_some() {
                     Token::Lt(span)
+                } else if capture.name("Mod").is_some() {
+                    Token::Mod(span)
                 } else if capture.name("Mul").is_some() {
                     Token::Mul(span)
                 } else if capture.name("Or").is_some() {
@@ -302,10 +305,11 @@ impl Token {
             r"(?P<Equal>==)|",
             r"(?P<Assign>=)|", // Must come after `==`
             r"(?P<NotEqual>!=)|",
-            r"(?P<LessThan><)|",
             r"(?P<LessThanEq><=)|",
-            r"(?P<GreaterThan>>)|",
+            r"(?P<LessThan><)|",
             r"(?P<GreaterThanEq>>=)|",
+            r"(?P<GreaterThan>>)|",
+            r"(?P<Mod>%)|",
             r"(?P<Mul>\*)|",
             r"(?P<Or>\|\|)|",
             r"(?P<Sub>-)|",
@@ -332,7 +336,7 @@ impl Token {
             And(..) => Precedence(2),
             Eq(..) | Ne(..) | Lt(..) | Le(..) | Gt(..) | Ge(..) => Precedence(3),
             Add(..) | Sub(..) | Concat(..) => Precedence(4),
-            Mul(..) | Div(..) => Precedence(5),
+            Mul(..) | Div(..) | Mod(..) => Precedence(5),
             Dot(..) => Precedence(6),
             Ident(..) => Precedence::highest(),
             _ => Precedence::lowest(),
@@ -394,6 +398,7 @@ impl Spanned for Token {
             Gt(span, ..) => span,
             Le(span, ..) => span,
             Lt(span, ..) => span,
+            Mod(span, ..) => span,
             Mul(span, ..) => span,
             Or(span, ..) => span,
             Sub(span, ..) => span,
@@ -462,6 +467,7 @@ impl Spanned for Token {
             Gt(span, ..) => span,
             Le(span, ..) => span,
             Lt(span, ..) => span,
+            Mod(span, ..) => span,
             Mul(span, ..) => span,
             Or(span, ..) => span,
             Sub(span, ..) => span,
@@ -532,6 +538,7 @@ impl Display for Token {
             Ge(..) => write!(f, ">="),
             Lt(..) => write!(f, "<"),
             Le(..) => write!(f, "<="),
+            Mod(..) => write!(f, "%"),
             Mul(..) => write!(f, "*"),
             Or(..) => write!(f, "||"),
             Sub(..) => write!(f, "-"),
