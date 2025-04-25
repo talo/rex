@@ -1332,6 +1332,97 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_filter() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            filter (\x -> x % 2 == 0) [1, 2, 3, 4, 5]
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(2), u!(4)); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let
+                is_even = (\x -> x % 2 == 0)
+            in
+                filter is_even [1, 2, 3, 4, 5]
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(2), u!(4)); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_filter_map() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            filter_map
+                (\x ->
+                    if x % 2 == 0 then
+                        (Some (100 + x))
+                    else
+                        None
+                )
+                 [1, 2, 3, 4, 5]
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(102), u!(104)); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let
+                results = [Ok "one", Err 2, Ok "three", Err 4],
+            in
+                filter_map (unwrap_or_else (λy → None)) (map (λx → map Some x) results)
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(string!()));
+        assert_expr_eq!(res, l!(s!("one"), s!("three")); ignore span);
+
+        let (res, _res_type) = parse_infer_and_eval(
+            r#"
+            let
+                results = [Ok "one", Err 2, Ok "three", Err 4],
+                only_successful_results = λr →
+                    filter_map (unwrap_or_else (λy → None)) (map (λx → map Some x) r),
+            in
+                only_successful_results results
+            "#,
+        )
+        .await
+        .unwrap();
+        // FIXME(peter): let bindings are not properly generalized in this case
+        // assert_eq!(res_type, list!(string!()));
+        assert_expr_eq!(res, l!(s!("one"), s!("three")); ignore span);
+
+        let (res, _res_type) = parse_infer_and_eval(
+            r#"
+            let
+                results = [Ok "one", Err 2, Ok "three", Err 4],
+                result_to_option = (λx → unwrap_or_else (λy → None) (map Some x)),
+                only_successful_results = λr → filter_map result_to_option r
+            in
+                only_successful_results results
+            "#,
+        )
+        .await
+        .unwrap();
+        // FIXME(peter): let bindings are not properly generalized in this case
+        // assert_eq!(res_type, list!(string!()));
+        assert_expr_eq!(res, l!(s!("one"), s!("three")); ignore span);
+    }
+
+    #[tokio::test]
     async fn test_regex_utils() {
         // Test for basic Regex parsing using capture gros
         let (res, res_type) = parse_infer_and_eval(r#"regex_captures "\d+" "111a222bc444""#)

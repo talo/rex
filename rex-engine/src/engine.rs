@@ -344,6 +344,32 @@ where
             })
         });
 
+        this.register_fn_async2("filter", |ctx, f: Func<A, bool>, xs: Vec<A>| {
+            Box::pin(async move {
+                let mut ys: Vec<A> = Vec::with_capacity(xs.len());
+                for x in xs {
+                    let b = bool::try_decode(&apply(ctx, &f, &x).await?)?;
+                    if b {
+                        ys.push(x);
+                    }
+                }
+                Ok(ys)
+            })
+        });
+
+        this.register_fn_async2("filter_map", |ctx, f: Func<A, Option<B>>, xs: Vec<A>| {
+            Box::pin(async move {
+                let mut ys: Vec<B> = Vec::with_capacity(xs.len());
+                for x in xs {
+                    let y = <Option<B>>::try_decode(&apply(ctx, &f, &x).await?)?;
+                    if let Some(y) = y {
+                        ys.push(y);
+                    }
+                }
+                Ok(ys)
+            })
+        });
+
         this.register_fn_async3(
             "foldl",
             |ctx, f: Func<A, Func<B, A>>, base: A, xs: Vec<B>| {
