@@ -34,9 +34,7 @@ where
             LexicalError::UnexpectedToken(s) => Error::UnexpectedToken(s),
         })?;
         let mut parser = Parser::new(tokens);
-        let expr = parser.parse_expr().map_err(|e| match e {
-            rex_parser::error::Error::Parser(e) => Error::Parser(e),
-        })?;
+        let expr = parser.parse_program().map_err(Error::Parser)?;
 
         let (ftable, type_env) = builder.build();
         let mut constraint_system = ConstraintSystem::new();

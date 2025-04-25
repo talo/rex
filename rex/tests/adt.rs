@@ -124,7 +124,7 @@ async fn test_struct_single_unnamed_field() {
     builder
         .register_adt(&Arc::new(Foo::to_type()), None, None)
         .unwrap();
-    let program = Program::compile(builder, r#"Foo "Hello" }"#).unwrap();
+    let program = Program::compile(builder, r#"Foo "Hello""#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding; ignore span);
@@ -148,7 +148,7 @@ async fn test_struct_unnamed_fields() {
     builder
         .register_adt(&Arc::new(Foo::to_type()), None, None)
         .unwrap();
-    let program = Program::compile(builder, r#"Foo 42 "Hello" }"#).unwrap();
+    let program = Program::compile(builder, r#"Foo 42 "Hello""#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding; ignore span);

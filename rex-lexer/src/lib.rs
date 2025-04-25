@@ -92,6 +92,9 @@ pub enum Token {
 
     // Idents
     Ident(String, Span),
+
+    // Eof
+    Eof(Span),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -101,7 +104,7 @@ pub enum LexicalError {
 }
 
 impl Token {
-    pub fn tokenize(input: &str) -> Result<Vec<Token>, LexicalError> {
+    pub fn tokenize(input: &str) -> Result<Tokens, LexicalError> {
         let mut line = 1;
         let mut column = 1;
         let mut tokens = Vec::new();
@@ -243,10 +246,13 @@ impl Token {
         }
 
         // Filter whitespace
-        Ok(tokens
-            .into_iter()
-            .filter(|token| !matches!(*token, Token::Whitespace(..)))
-            .collect())
+        Ok(Tokens {
+            items: tokens
+                .into_iter()
+                .filter(|token| !matches!(*token, Token::Whitespace(..)))
+                .collect(),
+            eof: Span::new(line, column, line, column),
+        })
     }
 
     /// Get the regular expression that can capture all Tokens. The regular
@@ -401,6 +407,9 @@ impl Spanned for Token {
 
             // Idents
             Ident(_, span, ..) => span,
+
+            // Eof
+            Eof(span) => span,
         }
     }
 
@@ -466,6 +475,9 @@ impl Spanned for Token {
 
             // Idents
             Ident(_, span, ..) => span,
+
+            // Eof
+            Eof(span) => span,
         }
     }
 }
@@ -533,8 +545,14 @@ impl Display for Token {
 
             // Idents
             Ident(ident, ..) => write!(f, "{}", ident),
+
+            // Eof
+            Eof(..) => write!(f, "EOF"),
         }
     }
 }
 
-pub type Tokens = Vec<Token>;
+pub struct Tokens {
+    pub items: Vec<Token>,
+    pub eof: Span,
+}

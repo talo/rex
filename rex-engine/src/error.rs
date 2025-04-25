@@ -16,7 +16,7 @@ pub enum Error {
     OverlappingFunctions(String, TypeScheme, TypeScheme),
     #[error("unexpected token {0}")]
     UnexpectedToken(Span),
-    #[error("parsing failed: {0:?}")]
+    #[error("{msg}", msg = parse_error_msg(.0))]
     Parser(Vec<ParserErr>),
     #[error("{0}")]
     TypeInference(TypeError),
@@ -59,4 +59,15 @@ pub enum Error {
         error: String,
         trace: VecDeque<Expr>,
     },
+}
+
+fn parse_error_msg(errors: &Vec<ParserErr>) -> String {
+    let mut res = String::new();
+    for (i, e) in errors.iter().enumerate() {
+        if i > 0 {
+            res.push_str("\n");
+        }
+        res.push_str(&e.to_string());
+    }
+    res
 }
