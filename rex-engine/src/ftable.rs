@@ -1,16 +1,8 @@
-#![allow(unused_variables)]
-#![allow(dead_code)]
-#![allow(unused_mut)]
-#![allow(unused_assignments)]
-#![allow(unused_imports)]
-#![allow(unused_macros)]
-#![allow(non_upper_case_globals)]
-
 use std::{collections::HashMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
-use rex_type_system::types::{Dispatch, ToType, Type};
+use rex_type_system::types::{Dispatch, ToType};
 
 use crate::{
     codec::{Decode, Encode},
