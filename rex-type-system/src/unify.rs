@@ -213,18 +213,16 @@ pub fn unify_one_of(
     }
 
     match successes.len() {
-        0 => Err(TypeError::Other(
-            *span,
-            format!(
-                "Cannot unify {} with incompatible candidates [{}]",
-                t1,
-                t2_possibilities
-                    .iter()
-                    .map(|x| x.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        )),
+        0 => {
+            let mut msg = String::new();
+            msg.push_str(&format!("Cannot unify\n"));
+            msg.push_str(&format!("    {}\n", t1));
+            msg.push_str(&format!("with incompatible candidates"));
+            for t2 in t2_possibilities.iter() {
+                msg.push_str(&format!("\n    {}", t2));
+            }
+            Err(TypeError::Other(*span, msg))
+        }
         1 => {
             // Use the successful substitution
             *subst = successes[0].1.clone();
