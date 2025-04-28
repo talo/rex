@@ -265,6 +265,9 @@ where
             Ok(format!("{}{}", a, b))
         });
 
+        this.register_fn1("len", |_ctx, x: String| Ok(x.len() as u64));
+        this.register_fn1("len", |_ctx, x: Vec<A>| Ok(x.len() as u64));
+
         this.register_fn2("take", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
             Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
         });
