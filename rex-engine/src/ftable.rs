@@ -90,6 +90,63 @@ impl<S: Send + Sync + 'static> Ftable<S> {
             ftable: HashMap::new(),
         };
 
+        // boolean logic
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "&&".to_string(),
+                params: vec![a!(), a!()],
+                ret: a!(),
+            },
+            Box::new(|_ctx, _runner, _state, args| {
+                Box::pin(async move {
+                    match (args.first(), args.get(1)) {
+                        // Wrong number of arguments
+                        (_, None) | (None, _) => Err(Error::ExpectedArguments {
+                            expected: 2,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        (Some(Value::Bool(x)), Some(Value::Bool(y))) => Ok(Value::Bool(*x && *y)),
+                        // Everything else
+                        (Some(x), _) => Err(Error::ExpectedNum {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
+        this.register_function(
+            Function {
+                id: id_dispenser.next(),
+                name: "||".to_string(),
+                params: vec![a!(), a!()],
+                ret: a!(),
+            },
+            Box::new(|_ctx, _runner, _state, args| {
+                Box::pin(async move {
+                    match (args.first(), args.get(1)) {
+                        // Wrong number of arguments
+                        (_, None) | (None, _) => Err(Error::ExpectedArguments {
+                            expected: 2,
+                            got: args.len(),
+                            trace: Default::default(),
+                        }),
+                        // Implementation
+                        (Some(Value::Bool(x)), Some(Value::Bool(y))) => Ok(Value::Bool(*x || *y)),
+                        // Everything else
+                        (Some(x), _) => Err(Error::ExpectedNum {
+                            got: x.clone(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
+
         // arithmetic
         this.register_function(
             Function {

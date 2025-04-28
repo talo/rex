@@ -608,6 +608,65 @@ mod test {
         assert_eq!(val, Value::List(vec![Value::Uint(4), Value::Uint(3)]));
     }
 
+    // test boolean operators
+    #[tokio::test]
+    async fn test_boolean_operators() {
+        // Check operator precedence
+        let code = r#"a && b || c && d || e && f"#;
+        let mut parser = Parser::new(Token::tokenize(code).unwrap());
+        let expr = parser.parse_expr().unwrap();
+        assert_eq!(expr.to_string(), "|| (&& a b) (|| (&& c d) (&& e f))");
+
+        let code = r#"a || b && c || d && e || f"#;
+        let mut parser = Parser::new(Token::tokenize(code).unwrap());
+        let expr = parser.parse_expr().unwrap();
+        assert_eq!(expr.to_string(), "|| a (|| (&& b c) (|| (&& d e) f))");
+
+        let val = parse_and_eval(
+            "[
+                true && true,
+                true && false,
+                false && true,
+                false && false
+            ]
+            ",
+            &(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            val,
+            Value::List(vec![
+                Value::Bool(true && true),
+                Value::Bool(true && false),
+                Value::Bool(false && true),
+                Value::Bool(false && false),
+            ])
+        );
+
+        let val = parse_and_eval(
+            "[
+                true || true,
+                true || false,
+                false || true,
+                false || false
+            ]
+            ",
+            &(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            val,
+            Value::List(vec![
+                Value::Bool(true || true),
+                Value::Bool(true || false),
+                Value::Bool(false || true),
+                Value::Bool(false || false),
+            ])
+        );
+    }
+
     // test avg
     #[tokio::test]
     async fn test_avg() {
