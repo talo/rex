@@ -1,6 +1,6 @@
 use rex::{
     type_system::{bool, float, list, string, uint},
-    Builder, Error, Program, Rex, Span, ToType, TypeError,
+    Builder, Error, Program, Rex, Span, ToType, Trace, TypeError,
 };
 use std::sync::Arc;
 
@@ -28,10 +28,13 @@ async fn test_missing_fields() {
     .map(|_| ());
     assert_eq!(
         res,
-        Err(Error::TypeInference(vec![TypeError::Other(
-            Span::new(3, 21, 3, 66),
-            "Missing keys: [\"c\", \"d\"]".to_string()
-        )]))
+        Err(Error::TypeInference {
+            errors: vec![TypeError::Other(
+                Span::new(3, 21, 3, 66),
+                "Missing keys: [\"c\", \"d\"]".to_string()
+            )],
+            trace: Default::default(),
+        })
     );
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
@@ -50,10 +53,13 @@ async fn test_missing_fields() {
     .map(|_| ());
     assert_eq!(
         res,
-        Err(Error::TypeInference(vec![TypeError::Other(
-            Span::new(3, 21, 3, 35),
-            "Missing keys: [\"b\"]".to_string()
-        )]))
+        Err(Error::TypeInference {
+            errors: vec![TypeError::Other(
+                Span::new(3, 21, 3, 35),
+                "Missing keys: [\"b\"]".to_string()
+            )],
+            trace: Default::default(),
+        })
     );
 }
 
@@ -74,10 +80,13 @@ async fn test_unbound_variable() {
 
     assert_eq!(
         res,
-        Err(Error::TypeInference(vec![
-            TypeError::UnboundVariable(Span::new(6, 17, 6, 20), "foo".to_string(),),
-            TypeError::UnboundVariable(Span::new(6, 25, 6, 28), "bar".to_string(),),
-        ]))
+        Err(Error::TypeInference {
+            errors: vec![
+                TypeError::UnboundVariable(Span::new(6, 17, 6, 20), "foo".to_string(),),
+                TypeError::UnboundVariable(Span::new(6, 25, 6, 28), "bar".to_string(),),
+            ],
+            trace: Default::default(),
+        })
     );
 }
 
@@ -93,11 +102,14 @@ async fn test_multiple_unification_errors_tuple() {
     .map(|_| ());
     assert_eq!(
         res,
-        Err(Error::TypeInference(vec![
-            TypeError::CannotUnify(Span::new(2, 10, 2, 22), float!(), string!()),
-            TypeError::CannotUnify(Span::new(2, 24, 2, 35), float!(), bool!()),
-            TypeError::CannotUnify(Span::new(2, 37, 2, 47), float!(), list!(uint!())),
-        ]))
+        Err(Error::TypeInference {
+            errors: vec![
+                TypeError::CannotUnify(Span::new(2, 10, 2, 22), float!(), string!()),
+                TypeError::CannotUnify(Span::new(2, 24, 2, 35), float!(), bool!()),
+                TypeError::CannotUnify(Span::new(2, 37, 2, 47), float!(), list!(uint!())),
+            ],
+            trace: Default::default(),
+        })
     );
 }
 
@@ -118,11 +130,14 @@ async fn test_multiple_unification_errors_let() {
     .map(|_| ());
     assert_eq!(
         res,
-        Err(Error::TypeInference(vec![
-            TypeError::CannotUnify(Span::new(3, 17, 3, 29), float!(), string!()),
-            TypeError::CannotUnify(Span::new(4, 17, 4, 28), float!(), bool!()),
-            TypeError::CannotUnify(Span::new(5, 17, 5, 27), float!(), list!(uint!())),
-        ]))
+        Err(Error::TypeInference {
+            errors: vec![
+                TypeError::CannotUnify(Span::new(3, 17, 3, 29), float!(), string!()),
+                TypeError::CannotUnify(Span::new(4, 17, 4, 28), float!(), bool!()),
+                TypeError::CannotUnify(Span::new(5, 17, 5, 27), float!(), list!(uint!())),
+            ],
+            trace: Default::default(),
+        })
     );
 }
 
@@ -131,7 +146,7 @@ async fn test_incompatible_candidates() {
     let builder: Builder<()> = Builder::with_prelude().unwrap();
     let res = Program::compile(builder, r#"len true"#).map(|_| ());
     match &res {
-        Err(Error::TypeInference(errors)) => {
+        Err(Error::TypeInference { errors, .. }) => {
             assert_eq!(errors.len(), 1);
             assert!(matches!(
                 errors[0],
@@ -142,4 +157,70 @@ async fn test_incompatible_candidates() {
             panic!("Expected a type inference error");
         }
     }
+}
+
+#[tokio::test]
+async fn test_runtime_error_direct() {
+    let builder: Builder<()> = Builder::with_prelude().unwrap();
+    let program = Program::compile(
+        builder,
+        r#"
+        let
+            a = \x -> len (list_range 0 10 (Some x)),
+            b = \x -> (a x),
+            c = \x -> (b x),
+            d = \x -> (c x),
+        in
+            d 0
+        "#,
+    )
+    .unwrap();
+    let res = program.run(()).await;
+    assert_eq!(
+        res,
+        Err(Error::Custom {
+            error: "Step cannot be zero".to_string(),
+            trace: Trace(vec![
+                Span::new(3, 27, 3, 53),
+                Span::new(3, 23, 3, 53),
+                Span::new(4, 23, 4, 28),
+                Span::new(5, 23, 5, 28),
+                Span::new(6, 23, 6, 28),
+                Span::new(8, 13, 8, 16),
+            ])
+        })
+    );
+}
+
+#[tokio::test]
+async fn test_runtime_error_nested() {
+    let builder: Builder<()> = Builder::with_prelude().unwrap();
+    let program = Program::compile(
+        builder,
+        r#"
+        let
+            a = \x -> len (list_range 0 10 (Some x)),
+            b = \x -> (a x),
+            c = \x -> map b [x],
+            d = \x -> (c x),
+        in
+            d 0
+        "#,
+    )
+    .unwrap();
+    let res = program.run(()).await;
+    assert_eq!(
+        res,
+        Err(Error::Custom {
+            error: "Step cannot be zero".to_string(),
+            trace: Trace(vec![
+                Span::new(3, 27, 3, 53),
+                Span::new(3, 23, 3, 53),
+                Span::new(4, 23, 4, 28),
+                Span::new(5, 23, 5, 32),
+                Span::new(6, 23, 6, 28),
+                Span::new(8, 13, 8, 16),
+            ])
+        })
+    );
 }

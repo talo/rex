@@ -500,6 +500,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                     ::rex::engine::error::Error::ExpectedTypeGotValue {
                                         expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                         got: v.clone(),
+                                        trace: ::std::default::Default::default(),
                                     })?
                             )? )
                 });
@@ -516,6 +517,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                     Err(::rex::engine::error::Error::ExpectedTypeGotValue {
                                         expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                         got: v.clone(),
+                                        trace: ::std::default::Default::default(),
                                     })
                                 }
                             }
@@ -524,6 +526,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
                                 expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
+                                trace: ::std::default::Default::default(),
                             })
                         }
                     }
@@ -539,6 +542,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
                                 expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
+                                trace: ::std::default::Default::default(),
                             })
                         }
                     }
@@ -562,6 +566,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                     Err(::rex::engine::error::Error::ExpectedTypeGotValue {
                                         expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                         got: v.clone(),
+                                        trace: ::std::default::Default::default(),
                                     })
                                 }
                             }
@@ -570,6 +575,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
                                 expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
+                                trace: ::std::default::Default::default(),
                             })
                         }
                     }
@@ -585,6 +591,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
                                 expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                 got: v.clone(),
+                                trace: ::std::default::Default::default(),
                             })
                         }
                     }
@@ -606,6 +613,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                         ::rex::engine::error::Error::ExpectedTypeGotValue {
                                             expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                             got: v.clone(),
+                                            trace: ::std::default::Default::default(),
                                         })?
                                 )? )
                         });
@@ -621,6 +629,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
                                             expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                             got: v.clone(),
+                                            trace: ::std::default::Default::default(),
                                         })
                                     }
                                 }
@@ -657,6 +666,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
                                             expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                                             got: v.clone(),
+                                            trace: ::std::default::Default::default(),
                                         })
                                     }
                                 }
@@ -680,6 +690,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                         Err(::rex::engine::error::Error::ExpectedTypeGotValue {
                             expected: ::std::sync::Arc::new(<Self as ::rex::type_system::types::ToType>::to_type()),
                             got: v.clone(),
+                            trace: ::std::default::Default::default(),
                         })
                     }
                 }

@@ -4,7 +4,10 @@ use futures::future;
 use rex_ast::expr::{Expr, Scope, Var};
 use rex_lexer::span::Span;
 
-use crate::{error::Error, ftable::Ftable};
+use crate::{
+    error::{Error, Trace},
+    ftable::Ftable,
+};
 
 #[derive(Clone)]
 pub struct Context<State>
@@ -29,8 +32,36 @@ where
     }
 }
 
+pub struct Stack<'a> {
+    pub span: Span,
+    pub parent: Option<&'a Stack<'a>>,
+}
+
+impl<'a> Stack<'a> {
+    pub fn new(span: Span, parent: Option<&'a Stack<'a>>) -> Self {
+        Stack { span, parent }
+    }
+
+    pub fn collect_vec(mut stack: Option<&Stack>, spans: &mut Vec<Span>) {
+        while let Some(s) = stack {
+            spans.push(s.span.clone());
+            stack = s.parent;
+        }
+    }
+
+    pub fn to_vec(stack: Option<&Stack>) -> Vec<Span> {
+        let mut spans = Vec::new();
+        Self::collect_vec(stack, &mut spans);
+        spans
+    }
+}
+
 #[async_recursion::async_recursion]
-pub async fn eval<State>(ctx: &Context<State>, expr: &Expr) -> Result<Expr, Error>
+pub async fn eval<State>(
+    ctx: &Context<State>,
+    expr: &Expr,
+    stack: Option<&Stack<'_>>,
+) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -44,14 +75,14 @@ where
         | Expr::DateTime(..)
         | Expr::Named(..)
         | Expr::Promise(..) => Ok(expr.clone()),
-        Expr::Tuple(span, tuple) => eval_tuple(ctx, span, tuple).await,
-        Expr::List(span, list) => eval_list(ctx, span, list).await,
-        Expr::Dict(span, dict) => eval_dict(ctx, span, dict).await,
-        Expr::Var(var) => eval_var(ctx, var).await,
-        Expr::App(span, f, x) => eval_app(ctx, span, f, x).await,
+        Expr::Tuple(span, tuple) => eval_tuple(ctx, span, tuple, stack).await,
+        Expr::List(span, list) => eval_list(ctx, span, list, stack).await,
+        Expr::Dict(span, dict) => eval_dict(ctx, span, dict, stack).await,
+        Expr::Var(var) => eval_var(ctx, var, stack).await,
+        Expr::App(span, f, x) => eval_app(ctx, span, f, x, stack).await,
         Expr::Lam(span, scope, param, body) => eval_lam(ctx, span, scope, param, body).await,
-        Expr::Let(span, var, def, body) => eval_let(ctx, span, var, def, body).await,
-        Expr::Ite(span, cond, then, r#else) => eval_ite(ctx, span, cond, then, r#else).await,
+        Expr::Let(span, var, def, body) => eval_let(ctx, span, var, def, body, stack).await,
+        Expr::Ite(span, cond, then, r#else) => eval_ite(ctx, span, cond, then, r#else, stack).await,
         Expr::Curry(span, f, args) => Ok(Expr::Curry(span.clone(), f.clone(), args.clone())),
     }
 }
@@ -60,13 +91,14 @@ pub async fn eval_tuple<State>(
     ctx: &Context<State>,
     span: &Span,
     tuple: &Vec<Expr>,
+    stack: Option<&Stack<'_>>,
 ) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
     let mut result = Vec::with_capacity(tuple.len());
     for v in tuple {
-        result.push(eval(ctx, v));
+        result.push(eval(ctx, v, stack));
     }
     Ok(Expr::Tuple(
         span.clone(),
@@ -81,13 +113,14 @@ pub async fn eval_list<State>(
     ctx: &Context<State>,
     span: &Span,
     list: &Vec<Expr>,
+    stack: Option<&Stack<'_>>,
 ) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
     let mut result = Vec::with_capacity(list.len());
     for v in list {
-        result.push(eval(ctx, v));
+        result.push(eval(ctx, v, stack));
     }
     Ok(Expr::List(
         span.clone(),
@@ -102,6 +135,7 @@ pub async fn eval_dict<State>(
     ctx: &Context<State>,
     span: &Span,
     dict: &BTreeMap<String, Expr>,
+    stack: Option<&Stack<'_>>,
 ) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
@@ -110,7 +144,7 @@ where
     let mut vals = Vec::with_capacity(dict.len());
     for (k, v) in dict {
         keys.push(k);
-        vals.push(eval(ctx, v));
+        vals.push(eval(ctx, v, stack));
     }
 
     let mut result = BTreeMap::new();
@@ -121,7 +155,11 @@ where
 }
 
 #[async_recursion::async_recursion]
-pub async fn eval_var<State>(ctx: &Context<State>, var: &Var) -> Result<Expr, Error>
+pub async fn eval_var<State>(
+    ctx: &Context<State>,
+    var: &Var,
+    stack: Option<&Stack<'_>>,
+) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -141,38 +179,44 @@ where
                 return Ok(Expr::Curry(Span::default(), var.clone(), Vec::new()));
             }
 
-            Err(Error::VarNotFound { var: var.clone() })
+            Err(Error::VarNotFound {
+                var: var.clone(),
+                trace: Trace::from(stack),
+            })
         }
     }
 }
 
 pub async fn eval_app<State>(
     ctx: &Context<State>,
-    _span: &Span,
+    span: &Span,
     f: &Expr,
     x: &Expr,
+    parent: Option<&Stack<'_>>,
 ) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
-    apply(ctx, f, x).await
+    let stack = Stack::new(*span, parent);
+    apply(ctx, f, x, Some(&stack)).await
 }
 
 pub async fn apply<State>(
     ctx: &Context<State>,
     f: impl Borrow<Expr>,
     x: impl Borrow<Expr>,
+    stack: Option<&Stack<'_>>,
 ) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
-    let f = eval(ctx, f.borrow()).await?;
-    let x = eval(ctx, x.borrow()).await?;
+    let f = eval(ctx, f.borrow(), stack).await?;
+    let x = eval(ctx, x.borrow(), stack).await?;
 
-    let res = match f.borrow() {
+    match f.borrow() {
         Expr::Lam(_span, scope, param, body) => {
             let ctx = ctx.with_scope(scope.insert(param.name.clone(), x));
-            eval(&ctx, &body).await?
+            eval(&ctx, &body, stack).await
         }
         Expr::Curry(span, var, args) => {
             let mut args = args.clone();
@@ -180,7 +224,10 @@ where
                 .ftable
                 .0
                 .get(&var.name)
-                .ok_or_else(|| Error::VarNotFound { var: var.clone() })?;
+                .ok_or_else(|| Error::VarNotFound {
+                    var: var.clone(),
+                    trace: Trace::from(stack),
+                })?;
 
             args.push(x.clone());
             if entry.num_params < args.len() {
@@ -196,34 +243,33 @@ where
                 if candidates.len() == 0 {
                     return Err(Error::Custom {
                         error: format!("0 candidates for function {}", var.name),
-                        trace: Default::default(),
+                        trace: Trace::from(stack),
                     });
                 }
 
                 if candidates.len() > 1 {
                     return Err(Error::Custom {
                         error: format!("{} candidates for function {}", candidates.len(), var.name),
-                        trace: Default::default(),
+                        trace: Trace::from(stack),
                     });
                 }
 
                 let f = candidates[0];
 
-                f(ctx, &args).await?
+                match f(ctx, &args).await {
+                    Ok(res) => Ok(res),
+                    Err(e) => Err(e.with_extra_trace(stack)),
+                }
             } else {
                 // TODO(loong): fix the span.
-                Expr::Curry(span.clone(), var.clone(), args)
+                Ok(Expr::Curry(span.clone(), var.clone(), args))
             }
         }
-        _ => {
-            return Err(Error::Custom {
-                error: format!("Function application on non-function type: {}", f),
-                trace: Default::default(),
-            })
-        }
-    };
-
-    Ok(res)
+        _ => Err(Error::Custom {
+            error: format!("Function application on non-function type: {}", f),
+            trace: Trace::from(stack),
+        }),
+    }
 }
 
 pub async fn eval_lam<State>(
@@ -254,14 +300,15 @@ pub async fn eval_let<State>(
     var: &Var,
     def: &Expr,
     body: &Expr,
+    stack: Option<&Stack<'_>>,
 ) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
     let mut ctx = ctx.clone();
-    let value = eval(&ctx, def).await?;
+    let value = eval(&ctx, def, stack).await?;
     ctx.scope = ctx.scope.insert(var.name.clone(), value);
-    eval(&ctx, body).await
+    eval(&ctx, body, stack).await
 }
 
 pub async fn eval_ite<State>(
@@ -270,14 +317,15 @@ pub async fn eval_ite<State>(
     cond: &Expr,
     then: &Expr,
     r#else: &Expr,
+    stack: Option<&Stack<'_>>,
 ) -> Result<Expr, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
-    let cond = eval(ctx, cond).await?;
+    let cond = eval(ctx, cond, stack).await?;
     match cond {
-        Expr::Bool(_, true) => eval(ctx, then).await,
-        Expr::Bool(_, false) => eval(ctx, r#else).await,
+        Expr::Bool(_, true) => eval(ctx, then, stack).await,
+        Expr::Bool(_, false) => eval(ctx, r#else, stack).await,
         _ => unimplemented!(),
     }
 }
@@ -1011,7 +1059,7 @@ pub mod test {
             res,
             Err(Error::Custom {
                 error: "unwrap called with Err: \"oops!\"".to_string(),
-                trace: Default::default(),
+                trace: Trace(vec![Span::new(1, 1, 1, 21)])
             })
         );
     }
@@ -1242,7 +1290,7 @@ pub mod test {
             res,
             Err(Error::Custom {
                 error: "unwrap called with None".to_string(),
-                trace: Default::default(),
+                trace: Trace(vec![Span::new(1, 1, 1, 12)])
             })
         );
     }

@@ -44,7 +44,7 @@ macro_rules! impl_register_fn {
                         let mut r = f(ctx $(, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*)?)?
                             .try_encode(Span::default())?; // FIXME(loong): assign a proper span
                         while i < args.len() {
-                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }]).await?;
+                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }], None).await?;
                         }
                         Ok(r)
                     })
@@ -84,7 +84,7 @@ macro_rules! impl_register_fn_async {
                             .await?
                             .try_encode(Span::default())?; // FIXME(loong): assign a proper span
                         while i < args.len() {
-                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }]).await?;
+                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }], None).await?;
                         }
                         Ok(r)
                     })
@@ -174,6 +174,7 @@ where
                         name: n,
                         new: num_params,
                         existing: entry.num_params,
+                        trace: Default::default(),
                     });
                 }
                 entry.items.push((t, f));
@@ -231,7 +232,10 @@ where
     A: Decode,
 {
     args.get(i)
-        .ok_or(Error::MissingArgument { argument: i })
+        .ok_or(Error::MissingArgument {
+            argument: i,
+            trace: Default::default(),
+        })
         .and_then(|a0| A::try_decode(a0))
 }
 

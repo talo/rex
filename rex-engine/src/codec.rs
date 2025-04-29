@@ -239,6 +239,7 @@ impl Decode for bool {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -251,6 +252,7 @@ impl Decode for u8 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -263,6 +265,7 @@ impl Decode for u16 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -275,6 +278,7 @@ impl Decode for u32 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -286,6 +290,7 @@ impl Decode for u64 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -298,6 +303,7 @@ impl Decode for u128 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -310,6 +316,7 @@ impl Decode for i8 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -322,6 +329,7 @@ impl Decode for i16 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -334,6 +342,7 @@ impl Decode for i32 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -346,6 +355,7 @@ impl Decode for i64 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -358,6 +368,7 @@ impl Decode for i128 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -370,6 +381,7 @@ impl Decode for f32 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Float),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -382,6 +394,7 @@ impl Decode for f64 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Float),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -394,6 +407,7 @@ impl Decode for String {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -406,6 +420,7 @@ impl Decode for Uuid {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -418,6 +433,7 @@ impl Decode for DateTime<Utc> {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -430,6 +446,7 @@ impl Decode for () {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -445,6 +462,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -463,6 +481,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -484,6 +503,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -507,6 +527,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -528,6 +549,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -545,6 +567,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Result(Arc::new(T::to_type()), Arc::new(E::to_type()))),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -561,6 +584,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Option(Arc::new(T::to_type()))),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }

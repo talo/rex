@@ -31,10 +31,16 @@ where
 {
     pub fn compile(builder: Builder<State>, code: &str) -> Result<Self, Error> {
         let tokens = Token::tokenize(code).map_err(|e| match e {
-            LexicalError::UnexpectedToken(s) => Error::UnexpectedToken(s),
+            LexicalError::UnexpectedToken(s) => Error::UnexpectedToken {
+                span: s,
+                trace: Default::default(),
+            },
         })?;
         let mut parser = Parser::new(tokens);
-        let expr = parser.parse_program().map_err(Error::Parser)?;
+        let expr = parser.parse_program().map_err(|es| Error::Parser {
+            errors: es,
+            trace: Default::default(),
+        })?;
 
         let (ftable, type_env) = builder.build();
         let mut constraint_system = ConstraintSystem::new();
@@ -44,7 +50,10 @@ where
         let subst = unify::unify_constraints(&constraint_system, &mut errors);
         if errors.len() > 0 {
             // Errors will be ordered by span, due to use of BTreeSet
-            return Err(Error::TypeInference(errors.into_iter().collect()));
+            return Err(Error::TypeInference {
+                errors: errors.into_iter().collect(),
+                trace: Default::default(),
+            });
         }
 
         let res_type = unify::apply_subst(&ty, &subst);
@@ -64,6 +73,7 @@ where
                 state: Arc::new(state),
             },
             &self.expr,
+            None,
         )
         .await
     }

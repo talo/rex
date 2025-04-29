@@ -28,6 +28,7 @@ pub use rex_engine::codec::Decode;
 pub use rex_engine::codec::Encode;
 pub use rex_engine::engine::Builder;
 pub use rex_engine::error::Error;
+pub use rex_engine::error::Trace;
 pub use rex_engine::eval::Context;
 pub use rex_engine::ftable::Ftable;
 pub use rex_engine::ftable::FtableFn;

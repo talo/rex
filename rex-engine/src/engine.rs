@@ -66,11 +66,12 @@ where
         Some(set) => {
             for s in set.iter() {
                 if scheme.maybe_overlaps_with(s) {
-                    return Err(Error::OverlappingFunctions(
-                        n.to_string(),
-                        scheme.clone(),
-                        s.clone(),
-                    ));
+                    return Err(Error::OverlappingFunctions {
+                        name: n.to_string(),
+                        t1: scheme.clone(),
+                        t2: s.clone(),
+                        trace: Default::default(),
+                    });
                 }
             }
 
@@ -329,8 +330,8 @@ where
             "flip",
             |ctx: &Context<_>, f: Func<A, Func<B, C>>, x: B, y: A| {
                 Box::pin(async move {
-                    let g = apply(ctx, &f, &y).await?;
-                    let z = apply(ctx, &g, &x).await?;
+                    let g = apply(ctx, &f, &y, None).await?;
+                    let z = apply(ctx, &g, &x, None).await?;
                     Ok(C(z))
                 })
             },
@@ -340,7 +341,7 @@ where
             Box::pin(async move {
                 let mut ys: Vec<B> = Vec::with_capacity(xs.len());
                 for x in xs {
-                    let y = apply(ctx, &f, &x).await?;
+                    let y = apply(ctx, &f, &x, None).await?;
                     ys.push(B(y));
                 }
                 Ok(ys)
@@ -351,7 +352,7 @@ where
             Box::pin(async move {
                 let mut ys: Vec<A> = Vec::with_capacity(xs.len());
                 for x in xs {
-                    let b = bool::try_decode(&apply(ctx, &f, &x).await?)?;
+                    let b = bool::try_decode(&apply(ctx, &f, &x, None).await?)?;
                     if b {
                         ys.push(x);
                     }
@@ -364,7 +365,7 @@ where
             Box::pin(async move {
                 let mut ys: Vec<B> = Vec::with_capacity(xs.len());
                 for x in xs {
-                    let y = <Option<B>>::try_decode(&apply(ctx, &f, &x).await?)?;
+                    let y = <Option<B>>::try_decode(&apply(ctx, &f, &x, None).await?)?;
                     if let Some(y) = y {
                         ys.push(y);
                     }
@@ -379,8 +380,8 @@ where
                 Box::pin(async move {
                     let mut res = base;
                     for x in xs {
-                        let ares1 = apply(ctx, &f, &res).await?;
-                        let ares2 = apply(ctx, &ares1, &x).await?;
+                        let ares1 = apply(ctx, &f, &res, None).await?;
+                        let ares2 = apply(ctx, &ares1, &x, None).await?;
                         res = A(ares2)
                     }
                     Ok(res)
@@ -394,8 +395,8 @@ where
                 Box::pin(async move {
                     let mut res = base;
                     for x in xs.iter().rev() {
-                        let ares1 = apply(ctx, &f, x).await?;
-                        let ares2 = apply(ctx, &ares1, &res).await?;
+                        let ares1 = apply(ctx, &f, x, None).await?;
+                        let ares2 = apply(ctx, &ares1, &res, None).await?;
                         res = B(ares2);
                     }
                     Ok(res)
@@ -405,8 +406,8 @@ where
 
         this.register_fn_async3(".", |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
             Box::pin(async move {
-                let x = apply(ctx, &g, &x).await?;
-                let x = apply(ctx, &f, &x).await?;
+                let x = apply(ctx, &g, &x, None).await?;
+                let x = apply(ctx, &f, &x, None).await?;
                 Ok(C(x))
             })
         });
@@ -417,7 +418,7 @@ where
         this.register_fn_async2("map", |ctx, f: Func<A, B>, x: Result<A, E>| {
             Box::pin(async move {
                 match x {
-                    Ok(x) => Ok(Ok(B(apply(ctx, &f, &x).await?))),
+                    Ok(x) => Ok(Ok(B(apply(ctx, &f, &x, None).await?))),
                     Err(e) => Ok(Err(e)),
                 }
             })
@@ -427,7 +428,9 @@ where
             |ctx, f: Func<A, Result<B, E>>, x: Result<A, E>| {
                 Box::pin(async move {
                     match x {
-                        Ok(x) => Ok(Result::<B, E>::try_decode(&apply(ctx, &f, &x).await?)?),
+                        Ok(x) => Ok(Result::<B, E>::try_decode(
+                            &apply(ctx, &f, &x, None).await?,
+                        )?),
                         Err(e) => Ok(Err(e)),
                     }
                 })
@@ -439,7 +442,9 @@ where
                 Box::pin(async move {
                     match x {
                         Ok(x) => Ok(Ok(x)),
-                        Err(x) => Ok(Result::<A, F>::try_decode(&apply(ctx, &f, &x).await?)?),
+                        Err(x) => Ok(Result::<A, F>::try_decode(
+                            &apply(ctx, &f, &x, None).await?,
+                        )?),
                     }
                 })
             },
@@ -448,7 +453,7 @@ where
             Box::pin(async move {
                 match x {
                     Ok(x) => Ok(x),
-                    Err(x) => Ok(A(apply(ctx, &f, &x).await?)),
+                    Err(x) => Ok(A(apply(ctx, &f, &x, None).await?)),
                 }
             })
         });
@@ -473,7 +478,7 @@ where
         this.register_fn_async2("map", |ctx, f: Func<A, B>, x: Option<A>| {
             Box::pin(async move {
                 match x {
-                    Some(x) => Ok(Some(B(apply(ctx, &f, &x).await?))),
+                    Some(x) => Ok(Some(B(apply(ctx, &f, &x, None).await?))),
                     None => Ok(None),
                 }
             })
@@ -481,7 +486,7 @@ where
         this.register_fn_async2("and_then", |ctx, f: Func<A, Option<B>>, x: Option<A>| {
             Box::pin(async move {
                 match x {
-                    Some(x) => Ok(Option::<B>::try_decode(&apply(ctx, &f, &x).await?)?),
+                    Some(x) => Ok(Option::<B>::try_decode(&apply(ctx, &f, &x, None).await?)?),
                     None => Ok(None),
                 }
             })
@@ -492,7 +497,7 @@ where
                     Some(x) => Ok(Some(x)),
                     None => {
                         let x = Expr::Tuple(Span::default(), vec![]);
-                        let res = apply(ctx, &f, &x).await?;
+                        let res = apply(ctx, &f, &x, None).await?;
                         Ok(Option::<A>::try_decode(&res)?)
                     }
                 }
@@ -504,7 +509,7 @@ where
                     Some(x) => Ok(x),
                     None => {
                         let x = Expr::Tuple(Span::default(), vec![]);
-                        let res = apply(ctx, &f, &x).await?;
+                        let res = apply(ctx, &f, &x, None).await?;
                         Ok(A(res))
                     }
                 }
@@ -593,8 +598,12 @@ where
                                 Some(arg) => Err(Error::ExpectedTypeGotValue {
                                     expected: tuple_type.clone(),
                                     got: arg.clone(),
+                                    trace: Default::default(),
                                 }),
-                                _ => Err(Error::MissingArgument { argument: 0 }),
+                                _ => Err(Error::MissingArgument {
+                                    argument: 0,
+                                    trace: Default::default(),
+                                }),
                             }
                         })
                     }),
@@ -636,6 +645,7 @@ where
                     name: full_adt_name.clone(),
                     new: adt.clone(),
                     existing: existing.clone(),
+                    trace: Default::default(),
                 });
             }
         }
@@ -812,7 +822,7 @@ where
             // Register the type
             match register_fn_core(self, entry_key, this_accessor_fun_type.clone()) {
                 Ok(()) => {}
-                Err(Error::OverlappingFunctions(_, t1, t2)) if t1 == t2 => {
+                Err(Error::OverlappingFunctions { t1, t2, .. }) if t1 == t2 => {
                     // Ignore this case; it can happen if there are multiple ADTs imported
                     // from different tengu modules that have the same name but different
                     // prefixes

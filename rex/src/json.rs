@@ -365,6 +365,7 @@ fn type_error(json: &Value, want: &Arc<Type>) -> EngineError {
     EngineError::ExpectedTypeGotJSON {
         expected: want.clone(),
         got: json.clone(),
+        trace: Default::default(),
     }
 }
 
@@ -372,5 +373,6 @@ fn expr_error(expr: &Expr, want: &Arc<Type>) -> EngineError {
     EngineError::ExpectedTypeGotValue {
         expected: want.clone(),
         got: expr.clone(),
+        trace: Default::default(),
     }
 }
