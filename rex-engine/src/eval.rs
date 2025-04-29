@@ -1010,7 +1010,7 @@ pub mod test {
         assert_eq!(
             res,
             Err(Error::Custom {
-                error: "unwrap called with Err: oops!".to_string(),
+                error: "unwrap called with Err: \"oops!\"".to_string(),
                 trace: Default::default(),
             })
         );
