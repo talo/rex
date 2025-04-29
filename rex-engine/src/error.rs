@@ -64,6 +64,24 @@ pub enum Error {
     },
 }
 
+impl From<&str> for Error {
+    fn from(msg: &str) -> Self {
+        Error::Custom {
+            error: msg.to_string(),
+            trace: Default::default(),
+        }
+    }
+}
+
+impl From<String> for Error {
+    fn from(msg: String) -> Self {
+        Error::Custom {
+            error: msg,
+            trace: Default::default(),
+        }
+    }
+}
+
 fn parse_error_msg(errors: &Vec<ParserErr>) -> String {
     let mut res = String::new();
     for (i, e) in errors.iter().enumerate() {
