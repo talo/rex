@@ -104,9 +104,9 @@ async fn test_multiple_unification_errors_tuple() {
         res,
         Err(Error::TypeInference {
             errors: vec![
-                TypeError::CannotUnify(Span::new(2, 10, 2, 22), float!(), string!()),
-                TypeError::CannotUnify(Span::new(2, 24, 2, 35), float!(), bool!()),
-                TypeError::CannotUnify(Span::new(2, 37, 2, 47), float!(), list!(uint!())),
+                TypeError::CannotUnify(Span::new(2, 10, 2, 22), float!(), string!(), None),
+                TypeError::CannotUnify(Span::new(2, 24, 2, 35), float!(), bool!(), None),
+                TypeError::CannotUnify(Span::new(2, 37, 2, 47), float!(), list!(uint!()), None),
             ],
             trace: Default::default(),
         })
@@ -132,9 +132,9 @@ async fn test_multiple_unification_errors_let() {
         res,
         Err(Error::TypeInference {
             errors: vec![
-                TypeError::CannotUnify(Span::new(3, 17, 3, 29), float!(), string!()),
-                TypeError::CannotUnify(Span::new(4, 17, 4, 28), float!(), bool!()),
-                TypeError::CannotUnify(Span::new(5, 17, 5, 27), float!(), list!(uint!())),
+                TypeError::CannotUnify(Span::new(3, 17, 3, 29), float!(), string!(), None),
+                TypeError::CannotUnify(Span::new(4, 17, 4, 28), float!(), bool!(), None),
+                TypeError::CannotUnify(Span::new(5, 17, 5, 27), float!(), list!(uint!()), None),
             ],
             trace: Default::default(),
         })

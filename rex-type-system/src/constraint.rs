@@ -775,7 +775,8 @@ mod tests {
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(_, t1, t2) => {
-                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change).unwrap();
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change, None)
+                        .unwrap();
                 }
                 _ => panic!("Expected equality constraint"),
             }
@@ -805,7 +806,7 @@ mod tests {
             .constraints()
             .try_for_each(|constraint| match constraint {
                 Constraint::Eq(_, t1, t2) => {
-                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change, None)
                 }
                 _ => panic!("Expected equality constraint"),
             });
@@ -883,7 +884,7 @@ mod tests {
             .constraints()
             .try_for_each(|constraint| match constraint {
                 Constraint::Eq(_, t1, t2) => {
-                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change, None)
                 }
                 _ => panic!("Expected equality constraint"),
             });
@@ -1253,9 +1254,14 @@ mod tests {
             let mut did_change = false;
             for constraint in constraint_system.constraints() {
                 match constraint {
-                    Constraint::Eq(_, t1, t2) => {
-                        unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)?
-                    }
+                    Constraint::Eq(_, t1, t2) => unify::unify_eq(
+                        t1,
+                        t2,
+                        &Span::default(),
+                        &mut subst,
+                        &mut did_change,
+                        None,
+                    )?,
                     _ => panic!("Expected equality constraint"),
                 }
             }
@@ -1265,7 +1271,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            TypeError::CannotUnify(_, _, _)
+            TypeError::CannotUnify(_, _, _, _)
         ));
     }
 
@@ -1509,7 +1515,7 @@ mod tests {
             .constraints()
             .try_for_each(|constraint| match constraint {
                 Constraint::Eq(_, t1, t2) => {
-                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change, None)
                 }
                 Constraint::OneOf(_, t1, t2_possibilties) => unify::unify_one_of(
                     t1,
