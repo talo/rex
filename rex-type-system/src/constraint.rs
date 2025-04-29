@@ -8,7 +8,8 @@ use rex_ast::{expr::Expr, id::Id};
 use rex_lexer::span::Span;
 
 use crate::{
-    types::{ADTVariant, Type, TypeEnv, TypeError, TypeScheme, ADT},
+    error::TypeError,
+    types::{ADTVariant, Type, TypeEnv, TypeScheme, ADT},
     unify::{self, Subst},
 };
 
@@ -149,7 +150,7 @@ pub enum Constraint {
     Eq(Span, Arc<Type>, Arc<Type>),
     // NOTE(loong): this constraint is mostly used to define overloaded
     // functions.
-    OneOf(Span, Arc<Type>, HashSet<Arc<Type>>),
+    OneOf(Span, Arc<Type>, BTreeSet<Arc<Type>>),
 }
 
 impl Display for Constraint {
@@ -177,20 +178,25 @@ pub fn generate_constraints(
     expr: &Expr,
     env: &TypeEnv,
     constraint_system: &mut ConstraintSystem,
-) -> Result<Arc<Type>, TypeError> {
+    errors: &mut BTreeSet<TypeError>,
+) -> Arc<Type> {
     match expr {
         Expr::Var(var) => {
-            let possible_schemes = env
-                .get(&var.name)
-                .ok_or_else(|| TypeError::UnboundVariable(*expr.span(), var.name.clone()))?;
+            let possible_schemes = match env.get(&var.name) {
+                Some(ps) => ps,
+                None => {
+                    errors.insert(TypeError::UnboundVariable(*expr.span(), var.name.clone()));
+                    return Arc::new(Type::Var(Id::new()));
+                }
+            };
 
-            let mut possible_types: HashSet<Arc<Type>> = HashSet::new();
+            let mut possible_types: BTreeSet<Arc<Type>> = BTreeSet::new();
             for scheme in possible_schemes.iter() {
                 possible_types.insert(instantiate(scheme, expr.span(), constraint_system));
             }
 
             if possible_types.len() == 1 {
-                Ok(possible_types.into_iter().next().unwrap())
+                possible_types.into_iter().next().unwrap()
             } else {
                 // Create fresh type variable for this use
                 let fresh_id = Id::new();
@@ -203,7 +209,7 @@ pub fn generate_constraints(
                     possible_types.clone(),
                 ));
 
-                Ok(fresh_var)
+                fresh_var
             }
         }
 
@@ -212,12 +218,11 @@ pub fn generate_constraints(
 
             // Generate constraints for each expression in the tuple
             for (key, expr) in exprs {
-                let ty = generate_constraints(expr, env, constraint_system)?;
+                let ty = generate_constraints(expr, env, constraint_system, errors);
                 kvs.insert(key.clone(), ty);
             }
 
-            let res = Arc::new(Type::Dict(kvs));
-            Ok(res)
+            Arc::new(Type::Dict(kvs))
         }
 
         Expr::Named(..) => {
@@ -241,25 +246,24 @@ pub fn generate_constraints(
 
             // Generate constraints for each expression in the tuple
             for expr in exprs {
-                let ty = generate_constraints(expr, env, constraint_system)?;
+                let ty = generate_constraints(expr, env, constraint_system, errors);
                 types.push(ty);
             }
 
-            let res = Arc::new(Type::Tuple(types));
-            Ok(res)
+            Arc::new(Type::Tuple(types))
         }
 
         Expr::List(span, exprs) => {
             // If list is empty, create a fresh type variable for element type
             if exprs.is_empty() {
                 let elem_ty = Type::Var(Id::new());
-                return Ok(Arc::new(Type::List(Arc::new(elem_ty))));
+                return Arc::new(Type::List(Arc::new(elem_ty)));
             }
 
             // Generate constraints for all expressions
             let mut types = Vec::new();
             for expr in exprs {
-                let ty = generate_constraints(expr, env, constraint_system)?;
+                let ty = generate_constraints(expr, env, constraint_system, errors);
                 types.push(ty);
             }
 
@@ -272,13 +276,12 @@ pub fn generate_constraints(
                 ));
             }
 
-            let res = Arc::new(Type::List(types[0].clone()));
-            Ok(res)
+            Arc::new(Type::List(types[0].clone()))
         }
 
         Expr::App(span, f, x) => {
-            let f_type = generate_constraints(f, env, constraint_system)?;
-            let x_type = generate_constraints(x, env, constraint_system)?;
+            let f_type = generate_constraints(f, env, constraint_system, errors);
+            let x_type = generate_constraints(x, env, constraint_system, errors);
 
             let result_type = Arc::new(Type::Var(Id::new()));
 
@@ -286,7 +289,7 @@ pub fn generate_constraints(
 
             constraint_system.add_local_constraint(Constraint::Eq(*span, f_type, expected_f_type));
 
-            Ok(result_type)
+            result_type
         }
 
         Expr::Lam(_span, _scope, param, body) => {
@@ -298,10 +301,9 @@ pub fn generate_constraints(
                 HashSet::from([TypeScheme::from(param_type.clone())]),
             );
 
-            let body_type = generate_constraints(body, &new_env, constraint_system)?;
+            let body_type = generate_constraints(body, &new_env, constraint_system, errors);
 
-            let result_type = Arc::new(Type::Arrow(param_type, body_type));
-            Ok(result_type)
+            Arc::new(Type::Arrow(param_type, body_type))
         }
 
         Expr::Let(_span, var, def, body) => {
@@ -322,10 +324,10 @@ pub fn generate_constraints(
             // ```
             let mut def_constraint_system = constraint_system.clone();
 
-            let def_type = generate_constraints(def, env, &mut def_constraint_system)?;
+            let def_type = generate_constraints(def, env, &mut def_constraint_system, errors);
 
             // Solve definition constraints to get its type
-            let def_subst = unify::unify_constraints(&def_constraint_system)?;
+            let def_subst = unify::unify_constraints(&def_constraint_system, errors);
             let solved_def_type = unify::apply_subst(&def_type, &def_subst);
             constraint_system.extend(def_constraint_system.clone());
 
@@ -378,16 +380,16 @@ pub fn generate_constraints(
             new_env.insert(var.name.clone(), HashSet::from([type_scheme]));
 
             // Generate constraints for the body with the new environment
-            let result_type = generate_constraints(body, &new_env, constraint_system)?;
+            let result_type = generate_constraints(body, &new_env, constraint_system, errors);
 
-            Ok(result_type)
+            result_type
         }
 
         Expr::Ite(span, cond, then_branch, else_branch) => {
             // Generate constraints for all parts
-            let cond_type = generate_constraints(cond, env, constraint_system)?;
-            let then_type = generate_constraints(then_branch, env, constraint_system)?;
-            let else_type = generate_constraints(else_branch, env, constraint_system)?;
+            let cond_type = generate_constraints(cond, env, constraint_system, errors);
+            let then_type = generate_constraints(then_branch, env, constraint_system, errors);
+            let else_type = generate_constraints(else_branch, env, constraint_system, errors);
 
             // Condition must be boolean
             constraint_system.add_local_constraint(Constraint::Eq(
@@ -402,37 +404,16 @@ pub fn generate_constraints(
                 else_type,
             ));
 
-            Ok(then_type)
+            then_type
         }
 
-        Expr::Bool(_span, _x) => {
-            let res = Arc::new(Type::Bool);
-            Ok(res)
-        }
-        Expr::Uint(_span, _x) => {
-            let res = Arc::new(Type::Uint);
-            Ok(res)
-        }
-        Expr::Int(_span, _x) => {
-            let res = Arc::new(Type::Int);
-            Ok(res)
-        }
-        Expr::Float(_span, _x) => {
-            let res = Arc::new(Type::Float);
-            Ok(res)
-        }
-        Expr::String(_span, _x) => {
-            let res = Arc::new(Type::String);
-            Ok(res)
-        }
-        Expr::Uuid(_span, _x) => {
-            let res = Arc::new(Type::Uuid);
-            Ok(res)
-        }
-        Expr::DateTime(_span, _x) => {
-            let res = Arc::new(Type::DateTime);
-            Ok(res)
-        }
+        Expr::Bool(_span, _x) => Arc::new(Type::Bool),
+        Expr::Uint(_span, _x) => Arc::new(Type::Uint),
+        Expr::Int(_span, _x) => Arc::new(Type::Int),
+        Expr::Float(_span, _x) => Arc::new(Type::Float),
+        Expr::String(_span, _x) => Arc::new(Type::String),
+        Expr::Uuid(_span, _x) => Arc::new(Type::Uuid),
+        Expr::DateTime(_span, _x) => Arc::new(Type::DateTime),
 
         Expr::Curry(..) => {
             todo!("generate_constraints for Expr::Curry just like we do for Expr::App")
@@ -784,7 +765,9 @@ mod tests {
         insert_type(&mut env, "three", Arc::new(Type::Int));
 
         let mut constraint_system = ConstraintSystem::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // Solve constraints
         let mut subst = Subst::new();
@@ -792,7 +775,7 @@ mod tests {
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(_, t1, t2) => {
-                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change).unwrap()
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change).unwrap();
                 }
                 _ => panic!("Expected equality constraint"),
             }
@@ -811,7 +794,9 @@ mod tests {
         insert_type(&mut env, "true", Arc::new(Type::Bool));
 
         let mut constraint_system = ConstraintSystem::new();
-        let _ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // This should fail unification
         let mut subst = Subst::new();
@@ -829,7 +814,9 @@ mod tests {
         // Test empty list
         let expr = Expr::List(Span::default(), vec![]);
         let mut constraint_system = ConstraintSystem::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
         assert!(matches!(&*ty, Type::List(_)));
         assert!(constraint_system.is_empty());
     }
@@ -885,7 +872,9 @@ mod tests {
         insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
 
         let mut constraint_system = ConstraintSystem::new();
-        let _ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // This should fail unification because the list elements don't match
         let mut subst = Subst::new();
@@ -946,10 +935,13 @@ mod tests {
         );
 
         let mut constraint_system = ConstraintSystem::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         let final_type = unify::apply_subst(&ty, &subst);
 
@@ -983,10 +975,13 @@ mod tests {
         insert_type(&mut env, "one", Arc::new(Type::Int));
 
         let mut constraint_system = ConstraintSystem::new();
-        let result_type = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let result_type = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // Result should be Int
         let final_result = unify::apply_subst(&result_type, &subst);
@@ -1032,10 +1027,13 @@ mod tests {
         insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
 
         let mut constraint_system = ConstraintSystem::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // The final type should be (Int, Bool)
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1064,10 +1062,13 @@ mod tests {
 
         // Generate constraints
         let mut constraint_system = ConstraintSystem::new();
-        let result_type = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let result_type = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // Result should be Int
         let final_result = unify::apply_subst(&result_type, &subst);
@@ -1165,10 +1166,13 @@ mod tests {
         insert_type(&mut env, "int_val", Arc::new(Type::Int));
 
         let mut constraint_system = ConstraintSystem::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         // The final type should be (Bool, Int)
         let final_type = unify::apply_subst(&ty, &subst);
@@ -1236,7 +1240,15 @@ mod tests {
 
         // This should fail with a type error
         let mut constraint_system = ConstraintSystem::new();
-        let result = generate_constraints(&expr, &env, &mut constraint_system).and_then(|ty| {
+        let mut errors = BTreeSet::new();
+        let result = Ok(generate_constraints(
+            &expr,
+            &env,
+            &mut constraint_system,
+            &mut errors,
+        ))
+        .and_then(|ty| {
+            assert_eq!(errors.len(), 0);
             let mut subst = Subst::new();
             let mut did_change = false;
             for constraint in constraint_system.constraints() {
@@ -1298,9 +1310,12 @@ mod tests {
                 .into_iter()
                 .collect(),
             )]);
-        let ty = generate_constraints(&bool_expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let ty = generate_constraints(&bool_expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Arc::new(Type::Bool));
     }
@@ -1386,7 +1401,9 @@ mod tests {
         // );
 
         let mut constraint_system = ConstraintSystem::with_global_constraints(vec![]);
-        let ty = generate_constraints(&tuple_expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let ty = generate_constraints(&tuple_expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         println!(
             "TYPES:\n{}\n\nCONSTRAINTS:\n{}",
@@ -1394,7 +1411,8 @@ mod tests {
             &constraint_system
         );
 
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         let final_type = unify::apply_subst(&ty, &subst);
 
@@ -1450,9 +1468,12 @@ mod tests {
                     .into_iter()
                     .collect(),
             )]);
-        let ty = generate_constraints(&sum_expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let ty = generate_constraints(&sum_expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
-        let subst = unify::unify_constraints(&constraint_system).unwrap();
+        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         let final_type = unify::apply_subst(&ty, &subst);
         assert_eq!(final_type, Arc::new(Type::Int));
@@ -1476,7 +1497,9 @@ mod tests {
                     .into_iter()
                     .collect(),
             )]);
-        let _ty = generate_constraints(&expr, &env, &mut constraint_system).unwrap();
+        let mut errors = BTreeSet::new();
+        let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
+        assert_eq!(errors.len(), 0);
 
         let mut subst = Subst::new();
         let mut did_change = false;

@@ -13,7 +13,7 @@ use rex_type_system::{
     types::Type,
     unify,
 };
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 pub struct Program<State>
 where
@@ -39,10 +39,13 @@ where
         let (ftable, type_env) = builder.build();
         let mut constraint_system = ConstraintSystem::new();
 
-        let ty = generate_constraints(&expr, &type_env, &mut constraint_system)
-            .map_err(|e| Error::TypeInference(e))?;
-        let subst =
-            unify::unify_constraints(&constraint_system).map_err(|e| Error::TypeInference(e))?;
+        let mut errors = BTreeSet::new();
+        let ty = generate_constraints(&expr, &type_env, &mut constraint_system, &mut errors);
+        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        if errors.len() > 0 {
+            // Errors will be ordered by span, due to use of BTreeSet
+            return Err(Error::TypeInference(errors.into_iter().collect()));
+        }
 
         let res_type = unify::apply_subst(&ty, &subst);
         Ok(Program {

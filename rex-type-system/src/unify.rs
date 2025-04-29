@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
 };
 
@@ -8,46 +8,106 @@ use rex_lexer::span::Span;
 
 use crate::{
     constraint::{Constraint, ConstraintSystem},
-    types::{ADTVariant, Type, TypeError, TypeScheme, ADT},
+    error::TypeError,
+    types::{ADTVariant, Type, TypeScheme, ADT},
 };
 
 pub type Subst = HashMap<Id, Arc<Type>>;
 
 // NOTE(loong): We do not support overloaded parametric polymorphism.
-pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, TypeError> {
+pub fn unify_constraints(
+    zconstraint_system: &ConstraintSystem,
+    errors: &mut BTreeSet<TypeError>,
+) -> Subst {
     let mut subst = Subst::new();
+
+    let mut eq_constraints: Vec<Constraint> = Vec::new();
+    let mut one_of_constraints: Vec<Constraint> = Vec::new();
+
+    for constraint in zconstraint_system.constraints() {
+        match constraint {
+            Constraint::Eq(..) => {
+                eq_constraints.push(constraint.clone());
+            }
+            Constraint::OneOf(..) => {
+                one_of_constraints.push(constraint.clone());
+            }
+        }
+    }
+
     // Loop until no more progress is made in resolving. We often need multiple iterations
     // because unifications that happen in later contraints may enable unifications in earlier
     // ones.
     loop {
         let mut did_change = false;
-        for constraint in constraint_system.constraints() {
-            match constraint {
-                Constraint::Eq(span, t1, t2) => {
-                    unify_eq(t1, t2, span, &mut subst, &mut did_change)?;
-                }
-                Constraint::OneOf(..) => {}
-            }
-        }
-        for constraint in constraint_system.constraints() {
-            match constraint {
-                Constraint::Eq(..) => {}
-                Constraint::OneOf(span, t1, t2_possibilties) => {
-                    // TODO(loong): doing the naive thing of ? short-circuiting this
-                    // result does not work. Because it will cause issues for unused
-                    // overloaded type variables. This is because we are resolving
-                    // all constraints, not just the ones that are actually used by
-                    // the expression.
-                    unify_one_of(t1, t2_possibilties, span, &mut subst, &mut did_change)?;
-                }
-            }
-        }
+
+        eq_constraints = unify_eq_constraints(eq_constraints, &mut subst, &mut did_change, errors);
+        one_of_constraints =
+            unify_one_of_constraints(one_of_constraints, &mut subst, &mut did_change, errors);
 
         if !did_change {
             break;
         }
     }
-    Ok(subst)
+
+    subst
+}
+
+fn unify_eq_constraints(
+    constraints: Vec<Constraint>,
+    subst: &mut Subst,
+    did_change: &mut bool,
+    errors: &mut BTreeSet<TypeError>,
+) -> Vec<Constraint> {
+    let mut keep: Vec<Constraint> = Vec::new();
+
+    for constraint in constraints.into_iter() {
+        match &constraint {
+            Constraint::Eq(span, t1, t2) => match unify_eq(t1, t2, span, subst, did_change) {
+                Ok(()) => {
+                    keep.push(constraint);
+                }
+                Err(e) => {
+                    errors.insert(e);
+                }
+            },
+            Constraint::OneOf(..) => {}
+        }
+    }
+
+    keep
+}
+
+fn unify_one_of_constraints(
+    constraints: Vec<Constraint>,
+    subst: &mut Subst,
+    did_change: &mut bool,
+    errors: &mut BTreeSet<TypeError>,
+) -> Vec<Constraint> {
+    let mut keep: Vec<Constraint> = Vec::new();
+
+    for constraint in constraints.into_iter() {
+        match &constraint {
+            Constraint::Eq(..) => {}
+            Constraint::OneOf(span, t1, t2_possibilties) => {
+                // TODO(loong): doing the naive thing of ? short-circuiting this
+                // result does not work. Because it will cause issues for unused
+                // overloaded type variables. This is because we are resolving
+                // all constraints, not just the ones that are actually used by
+                // the expression.
+                match unify_one_of(t1, t2_possibilties, span, subst, did_change) {
+                    Ok(()) => {
+                        keep.push(constraint);
+                    }
+                    Err(e) => {
+                        errors.insert(e);
+                    }
+                }
+            }
+        }
+    }
+
+    keep
 }
 
 pub fn unify_eq(
@@ -191,7 +251,7 @@ pub fn unify_eq(
 
 pub fn unify_one_of(
     t1: &Arc<Type>,
-    t2_possibilities: &HashSet<Arc<Type>>,
+    t2_possibilities: &BTreeSet<Arc<Type>>,
     span: &Span,
     subst: &mut Subst,
     did_change: &mut bool,
@@ -213,16 +273,11 @@ pub fn unify_one_of(
     }
 
     match successes.len() {
-        0 => {
-            let mut msg = String::new();
-            msg.push_str(&format!("Cannot unify\n"));
-            msg.push_str(&format!("    {}\n", t1));
-            msg.push_str(&format!("with incompatible candidates"));
-            for t2 in t2_possibilities.iter() {
-                msg.push_str(&format!("\n    {}", t2));
-            }
-            Err(TypeError::Other(*span, msg))
-        }
+        0 => Err(TypeError::IncompatibleCandidates(
+            *span,
+            t1.clone(),
+            BTreeSet::from_iter(t2_possibilities.iter().cloned()),
+        )),
         1 => {
             // Use the successful substitution
             *subst = successes[0].1.clone();

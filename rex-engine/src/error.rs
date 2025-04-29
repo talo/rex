@@ -4,7 +4,10 @@ use rex_ast::{
 };
 use rex_lexer::span::Span;
 use rex_parser::error::ParserErr;
-use rex_type_system::types::{Type, TypeError, TypeScheme, ADT};
+use rex_type_system::{
+    error::TypeError,
+    types::{Type, TypeScheme, ADT},
+};
 use serde_json::Value;
 use std::{collections::VecDeque, sync::Arc};
 
@@ -18,8 +21,8 @@ pub enum Error {
     UnexpectedToken(Span),
     #[error("{msg}", msg = parse_error_msg(.0))]
     Parser(Vec<ParserErr>),
-    #[error("{0}")]
-    TypeInference(TypeError),
+    #[error("{msg}", msg=type_error_msg(.0))]
+    TypeInference(Vec<TypeError>),
     #[error("variable not found {var}")]
     VarNotFound { var: Var },
     #[error("expected {expected}, got {got}")]
@@ -62,6 +65,17 @@ pub enum Error {
 }
 
 fn parse_error_msg(errors: &Vec<ParserErr>) -> String {
+    let mut res = String::new();
+    for (i, e) in errors.iter().enumerate() {
+        if i > 0 {
+            res.push_str("\n");
+        }
+        res.push_str(&e.to_string());
+    }
+    res
+}
+
+fn type_error_msg(errors: &Vec<TypeError>) -> String {
     let mut res = String::new();
     for (i, e) in errors.iter().enumerate() {
         if i > 0 {
