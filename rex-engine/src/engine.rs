@@ -164,6 +164,11 @@ where
 
         this.register_fn1("swap", |_ctx: &Context<_>, (x, y): (A, B)| Ok((y, x)));
 
+        this.register_fn1("string", |_ctx: &Context<_>, x: bool| Ok(format!("{}", x)));
+        this.register_fn1("string", |_ctx: &Context<_>, x: u64| Ok(format!("{}", x)));
+        this.register_fn1("string", |_ctx: &Context<_>, x: i64| Ok(format!("{}", x)));
+        this.register_fn1("string", |_ctx: &Context<_>, x: f64| Ok(format!("{}", x)));
+
         this.register_fn1("uint", |_ctx: &Context<_>, x: i64| Ok(x as u64));
         this.register_fn1("uint", |_ctx: &Context<_>, x: f64| Ok(x as u64));
         this.register_fn1("uint", |_ctx: &Context<_>, x: String| {
