@@ -103,7 +103,7 @@ async fn test_map_adt() {
     let program = Program::compile(
         builder,
         r#"
-        map (λx → Foo { a = x, b = 'Hello' }) (range 1 4)
+        map (λx → Foo { a = x, b = 'Hello' }) (list_range 1 4 None)
         "#,
     )
     .unwrap();

@@ -1679,8 +1679,23 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_range() {
+        let (res, res_type) = parse_infer_and_eval(r#"list_range 5 9 None"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res,l!{u!(5), u!(6), u!(7), u!(8)}; ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"list_range 5 16 (Some 3)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res,l!{u!(5), u!(8), u!(11), u!(14)}; ignore span);
+    }
+
+    #[tokio::test]
     async fn test_map_range() {
-        let (res, res_type) = parse_infer_and_eval(r#"map (λx → 2 * x) (range 0 4)"#)
+        let (res, res_type) = parse_infer_and_eval(r#"map (λx → 2 * x) (list_range 0 4 None)"#)
             .await
             .unwrap();
         assert_eq!(res_type, list!(uint!()));

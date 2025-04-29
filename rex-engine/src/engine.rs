@@ -541,44 +541,24 @@ where
         });
         this.register_fn0("now", |_ctx: &Context<_>| Ok(Utc::now()));
 
-        // This function highlights a bug in the tracking of Expr types  in the current evaluator.
-        // When constructing a nested Expr such as a list, the inner Exprs will not have their
-        // types recorded in the type environment, and this will cause a panic to occur when an
-        // attempt is made to look up the type of one of these expressions. This function is
-        // implemented to directly operate on Exprs (i.e. not using register_fn2) to illustrate
-        // how it is currently necessary to manually record the types of all nested Exprs.
-        this.register_fn_core_with_name(
-            "range",
-            Type::build_arrow(
-                vec![Arc::new(Type::Uint), Arc::new(Type::Uint)],
-                Arc::new(Type::List(Arc::new(Type::Uint))),
-            ),
-            Box::new(move |_ctx, args| {
-                Box::pin(async move {
-                    let Some(Expr::Uint(_, start)) = args.get(0) else {
-                        return Err(Error::MissingArgument { argument: 0 });
-                    };
+        this.register_fn3(
+            "list_range",
+            |_ctx: &Context<_>,
+             start: u64,
+             end: u64,
+             step: Option<u64>|
+             -> Result<Vec<u64>, Error> {
+                let step = step.unwrap_or(1);
+                if step == 0 {
+                    return Err(Error::Custom {
+                        error: "Step cannot be zero".to_string(),
+                        trace: Default::default(),
+                    });
+                }
 
-                    let Some(Expr::Uint(_, end)) = args.get(1) else {
-                        return Err(Error::MissingArgument { argument: 1 });
-                    };
-                    let start = *start;
-                    let end = *end;
-
-                    let mut items: Vec<Expr> = Vec::new();
-                    for i in start..end {
-                        let expr = Expr::Uint(Span::default(), i);
-                        items.push(expr);
-                    }
-
-                    // We can get by without recording the type of the resulting list, since
-                    // this is done at the end of apply()
-                    let list_expr = Expr::List(Span::default(), items);
-                    Ok(list_expr)
-                })
-            }),
-        )
-        .unwrap();
+                Ok((start..end).step_by(step as usize).collect())
+            },
+        );
 
         Ok(this)
     }
