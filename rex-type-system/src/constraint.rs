@@ -652,6 +652,7 @@ mod tests {
         trace::{sprint_subst, sprint_type_env},
         types::TypeEnv,
         unify,
+        unify::Path,
     };
 
     use super::*;
@@ -775,8 +776,15 @@ mod tests {
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(_, t1, t2) => {
-                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change, None)
-                        .unwrap();
+                    unify::unify_eq(
+                        t1,
+                        t2,
+                        &Span::default(),
+                        &mut subst,
+                        &mut did_change,
+                        &Path::Empty,
+                    )
+                    .unwrap();
                 }
                 _ => panic!("Expected equality constraint"),
             }
@@ -805,9 +813,14 @@ mod tests {
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(_, t1, t2) => {
-                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change, None)
-                }
+                Constraint::Eq(_, t1, t2) => unify::unify_eq(
+                    t1,
+                    t2,
+                    &Span::default(),
+                    &mut subst,
+                    &mut did_change,
+                    &Path::Empty,
+                ),
                 _ => panic!("Expected equality constraint"),
             });
         assert!(result.is_err());
@@ -883,9 +896,14 @@ mod tests {
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(_, t1, t2) => {
-                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change, None)
-                }
+                Constraint::Eq(_, t1, t2) => unify::unify_eq(
+                    t1,
+                    t2,
+                    &Span::default(),
+                    &mut subst,
+                    &mut did_change,
+                    &Path::Empty,
+                ),
                 _ => panic!("Expected equality constraint"),
             });
         assert!(result.is_err());
@@ -1260,7 +1278,7 @@ mod tests {
                         &Span::default(),
                         &mut subst,
                         &mut did_change,
-                        None,
+                        &Path::Empty,
                     )?,
                     _ => panic!("Expected equality constraint"),
                 }
@@ -1514,9 +1532,14 @@ mod tests {
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(_, t1, t2) => {
-                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change, None)
-                }
+                Constraint::Eq(_, t1, t2) => unify::unify_eq(
+                    t1,
+                    t2,
+                    &Span::default(),
+                    &mut subst,
+                    &mut did_change,
+                    &Path::Empty,
+                ),
                 Constraint::OneOf(_, t1, t2_possibilties) => unify::unify_one_of(
                     t1,
                     &t2_possibilties,

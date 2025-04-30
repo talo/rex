@@ -307,7 +307,47 @@ impl Display for TypeScheme {
 
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
+        TypeFormatter::new().fmt_type(self, f)
+    }
+}
+
+pub struct TypeFormatter {
+    var_names: BTreeMap<Id, String>,
+    next_var_no: u64,
+}
+
+impl TypeFormatter {
+    pub fn new() -> Self {
+        TypeFormatter {
+            var_names: BTreeMap::new(),
+            next_var_no: 1,
+        }
+    }
+
+    fn alloc_var_no(&mut self) -> u64 {
+        let var_no = self.next_var_no;
+        self.next_var_no += 1;
+        var_no
+    }
+
+    fn get_var_name(&mut self, id: &Id) -> String {
+        match self.var_names.get(id) {
+            Some(name) => name.clone(),
+            None => {
+                let var_no = self.alloc_var_no();
+                let var_name = format!("τ{}", var_no);
+                self.var_names.insert(*id, var_name.clone());
+                var_name
+            }
+        }
+    }
+
+    pub fn fmt_var(&mut self, id: &Id, f: &mut Formatter<'_>) -> fmt::Result {
+        self.get_var_name(id).fmt(f)
+    }
+
+    pub fn fmt_type(&mut self, t: &Type, f: &mut Formatter<'_>) -> fmt::Result {
+        match t {
             Type::Bool => "bool".fmt(f),
             Type::Uint => "uint".fmt(f),
             Type::Int => "int".fmt(f),
@@ -316,26 +356,26 @@ impl Display for Type {
             Type::Uuid => "uuid".fmt(f),
             Type::DateTime => "datetime".fmt(f),
             Type::Option(x) => {
-                "Option (".fmt(f)?;
-                x.fmt(f)?;
-                ')'.fmt(f)
+                "Option<".fmt(f)?;
+                self.fmt_type(x, f)?;
+                '>'.fmt(f)
             }
             Type::Promise(x) => {
-                "Promise (".fmt(f)?;
-                x.fmt(f)?;
-                ')'.fmt(f)
+                "Promise<".fmt(f)?;
+                self.fmt_type(x, f)?;
+                '>'.fmt(f)
             }
             Type::Result(a, b) => {
-                "Result (".fmt(f)?;
-                a.fmt(f)?;
-                ") (".fmt(f)?;
-                b.fmt(f)?;
-                ')'.fmt(f)
+                "Result<".fmt(f)?;
+                self.fmt_type(a, f)?;
+                ", ".fmt(f)?;
+                self.fmt_type(b, f)?;
+                '>'.fmt(f)
             }
             Type::Tuple(xs) => {
                 '('.fmt(f)?;
                 for (i, x) in xs.iter().enumerate() {
-                    x.fmt(f)?;
+                    self.fmt_type(x, f)?;
                     if i + 1 < xs.len() {
                         ", ".fmt(f)?;
                     }
@@ -347,7 +387,7 @@ impl Display for Type {
                 for (i, (k, v)) in xs.iter().enumerate() {
                     k.fmt(f)?;
                     " = ".fmt(f)?;
-                    v.fmt(f)?;
+                    self.fmt_type(v, f)?;
                     if i + 1 < xs.len() {
                         ", ".fmt(f)?;
                     }
@@ -358,28 +398,25 @@ impl Display for Type {
                 match a.as_ref() {
                     Type::Arrow(_, _) => {
                         '('.fmt(f)?;
-                        a.fmt(f)?;
+                        self.fmt_type(a, f)?;
                         ')'.fmt(f)?;
                     }
-                    _ => a.fmt(f)?,
+                    _ => self.fmt_type(a, f)?,
                 }
                 " → ".fmt(f)?;
-                b.fmt(f)
+                self.fmt_type(b, f)
             }
             Type::UnresolvedVar(x) => {
                 'τ'.fmt(f)?;
                 x.fmt(f)
             }
-            Type::Var(x) => {
-                'τ'.fmt(f)?;
-                x.fmt(f)
-            }
+            Type::Var(x) => self.fmt_var(x, f),
             Type::List(x) => {
                 '['.fmt(f)?;
-                x.fmt(f)?;
+                self.fmt_type(x, f)?;
                 ']'.fmt(f)
             }
-            Type::ADT(x) => x.fmt(f),
+            Type::ADT(x) => x.name.fmt(f), // Only show name
         }
     }
 }

@@ -12,6 +12,7 @@ use rex_type_system::{
     constraint::{generate_constraints, ConstraintSystem},
     types::Type,
     unify,
+    // error::TypeError,
 };
 use std::{collections::BTreeSet, sync::Arc};
 
@@ -49,9 +50,14 @@ where
         let ty = generate_constraints(&expr, &type_env, &mut constraint_system, &mut errors);
         let subst = unify::unify_constraints(&constraint_system, &mut errors);
         if errors.len() > 0 {
-            // Errors will be ordered by span, due to use of BTreeSet
+            // Sort by span and path first, so the errors appear in the same order the parts
+            // of the input file they correspond do. The default order for an enum produced by
+            // #[derive(Ord)] sorts by type first, which is not the best choice for this case.
+            let mut errors = errors.into_iter().collect::<Vec<_>>();
+            errors.sort_by(|a, b| (a.span(), a.path(), a).cmp(&(b.span(), b.path(), b)));
+
             return Err(Error::TypeInference {
-                errors: errors.into_iter().collect(),
+                errors,
                 trace: Default::default(),
             });
         }
