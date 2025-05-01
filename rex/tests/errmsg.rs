@@ -450,3 +450,74 @@ async fn test_path_error3() {
         })
     );
 }
+
+#[tokio::test]
+async fn test_path_error_multiple() {
+    #[derive(Rex, Debug, PartialEq, Clone)]
+    pub struct Foo {
+        pub a: u64,
+        pub b: String,
+        pub c: bool,
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
+    let res = Program::compile(
+        builder,
+        r#"
+        (
+            Foo { a = 42, b = "Hello", c = true },
+            Foo { a = 42, b = true, c = true },
+            Foo { a = true, b = true, c = true },
+            Foo { a = true, b = true, c = 42 },
+        )
+    "#,
+    )
+    .map(|_| ());
+    assert_eq!(
+        res,
+        Err(Error::TypeInference {
+            errors: vec![
+                TypeError::CannotUnify(
+                    Span::new(4, 13, 4, 47),
+                    "In property b".to_string(),
+                    string!(),
+                    bool!()
+                ),
+                TypeError::CannotUnify(
+                    Span::new(5, 13, 5, 49),
+                    "In property a".to_string(),
+                    uint!(),
+                    bool!()
+                ),
+                TypeError::CannotUnify(
+                    Span::new(5, 13, 5, 49),
+                    "In property b".to_string(),
+                    string!(),
+                    bool!()
+                ),
+                TypeError::CannotUnify(
+                    Span::new(6, 13, 6, 47),
+                    "In property a".to_string(),
+                    uint!(),
+                    bool!()
+                ),
+                TypeError::CannotUnify(
+                    Span::new(6, 13, 6, 47),
+                    "In property b".to_string(),
+                    string!(),
+                    bool!()
+                ),
+                TypeError::CannotUnify(
+                    Span::new(6, 13, 6, 47),
+                    "In property c".to_string(),
+                    bool!(),
+                    uint!()
+                ),
+            ],
+            trace: Default::default(),
+        })
+    );
+}

@@ -64,16 +64,14 @@ fn unify_eq_constraints(
 
     for constraint in constraints.into_iter() {
         match &constraint {
-            Constraint::Eq(span, t1, t2) => {
-                match unify_eq(t1, t2, span, subst, did_change, &Path::Empty) {
-                    Ok(()) => {
-                        keep.push(constraint);
-                    }
-                    Err(e) => {
-                        errors.insert(e);
-                    }
+            Constraint::Eq(span, t1, t2) => match unify_eq(t1, t2, span, subst, did_change) {
+                Ok(()) => {
+                    keep.push(constraint);
                 }
-            }
+                Err(es) => {
+                    errors.extend(es);
+                }
+            },
             Constraint::OneOf(..) => {}
         }
     }
@@ -119,84 +117,142 @@ pub fn unify_eq(
     span: &Span,
     subst: &mut Subst,
     did_change: &mut bool,
+) -> Result<(), Vec<TypeError>> {
+    let mut errors: Vec<TypeError> = Vec::new();
+    unify_eq_r(t1, t2, span, subst, did_change, &mut errors, &Path::Empty);
+    if errors.len() > 0 {
+        return Err(errors);
+    } else {
+        return Ok(());
+    }
+}
+
+pub fn unify_eq_r(
+    t1: &Arc<Type>,
+    t2: &Arc<Type>,
+    span: &Span,
+    subst: &mut Subst,
+    did_change: &mut bool,
+    errors: &mut Vec<TypeError>,
     path: &Path<'_>,
-) -> Result<(), TypeError> {
+) {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
     let t2 = apply_subst(t2, subst);
 
     match (&*t1, &*t2) {
         // Base types must match exactly
-        (Type::Bool, Type::Bool) => Ok(()),
-        (Type::Uint, Type::Uint) => Ok(()),
-        (Type::Int, Type::Int) => Ok(()),
-        (Type::Float, Type::Float) => Ok(()),
-        (Type::String, Type::String) => Ok(()),
-        (Type::Uuid, Type::Uuid) => Ok(()),
-        (Type::DateTime, Type::DateTime) => Ok(()),
+        (Type::Bool, Type::Bool) => {}
+        (Type::Uint, Type::Uint) => {}
+        (Type::Int, Type::Int) => {}
+        (Type::Float, Type::Float) => {}
+        (Type::String, Type::String) => {}
+        (Type::Uuid, Type::Uuid) => {}
+        (Type::DateTime, Type::DateTime) => {}
 
         // Tuples
         (Type::Tuple(ts1), Type::Tuple(ts2)) => {
             if ts1.len() != ts2.len() {
-                return Err(TypeError::TupleLengthMismatch(*span, path.to_string()));
+                errors.push(TypeError::TupleLengthMismatch(*span, path.to_string()));
+                return;
             }
 
             for (i, (t1, t2)) in ts1.iter().zip(ts2.iter()).enumerate() {
-                unify_eq(t1, t2, span, subst, did_change, &path.index(i))?;
+                unify_eq_r(t1, t2, span, subst, did_change, errors, &path.index(i));
             }
-
-            Ok(())
         }
 
         // Lists
-        (Type::List(t1), Type::List(t2)) => {
-            unify_eq(&t1, &t2, span, subst, did_change, &path.variant("item"))
-        }
+        (Type::List(t1), Type::List(t2)) => unify_eq_r(
+            &t1,
+            &t2,
+            span,
+            subst,
+            did_change,
+            errors,
+            &path.variant("item"),
+        ),
 
         // Dictionaries
         (Type::Dict(d1), Type::Dict(d2)) => {
             if d1.len() != d2.len() {
-                return Err(TypeError::DictKeysMismatch(
+                errors.push(TypeError::DictKeysMismatch(
                     *span,
                     path.to_string(),
                     missing_keys_vec(d1, d2),
                 ));
+                return;
             }
             for (key, entry1) in d1.iter() {
                 if let Some(entry2) = d2.get(key) {
-                    unify_eq(entry1, entry2, span, subst, did_change, &path.property(key))?;
+                    unify_eq_r(
+                        entry1,
+                        entry2,
+                        span,
+                        subst,
+                        did_change,
+                        errors,
+                        &path.property(key),
+                    );
                 } else {
-                    return Err(TypeError::DictKeysMismatch(
+                    errors.push(TypeError::DictKeysMismatch(
                         *span,
                         path.to_string(),
                         missing_keys_vec(d1, d2),
                     ));
                 }
             }
-            Ok(())
         }
 
         // For function types, unify arguments and results
         (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
-            unify_eq(&a1, &a2, span, subst, did_change, path)?;
-            unify_eq(&b1, &b2, span, subst, did_change, path)
+            unify_eq_r(&a1, &a2, span, subst, did_change, errors, path);
+            unify_eq_r(&b1, &b2, span, subst, did_change, errors, path);
         }
 
         // Result
         (Type::Result(a1, b1), Type::Result(a2, b2)) => {
-            unify_eq(&a1, &a2, span, subst, did_change, &path.variant("Ok"))?;
-            unify_eq(&b1, &b2, span, subst, did_change, &path.variant("Err"))
+            unify_eq_r(
+                &a1,
+                &a2,
+                span,
+                subst,
+                did_change,
+                errors,
+                &path.variant("Ok"),
+            );
+            unify_eq_r(
+                &b1,
+                &b2,
+                span,
+                subst,
+                did_change,
+                errors,
+                &path.variant("Err"),
+            );
         }
 
         // Option
-        (Type::Option(a1), Type::Option(a2)) => {
-            unify_eq(&a1, &a2, span, subst, did_change, &path.variant("Some"))
-        }
+        (Type::Option(a1), Type::Option(a2)) => unify_eq_r(
+            &a1,
+            &a2,
+            span,
+            subst,
+            did_change,
+            errors,
+            &path.variant("Some"),
+        ),
 
         // Promise
-        (Type::Promise(a1), Type::Promise(a2)) => {
-            unify_eq(&a1, &a2, span, subst, did_change, &path.variant("Promise"))
-        }
+        (Type::Promise(a1), Type::Promise(a2)) => unify_eq_r(
+            &a1,
+            &a2,
+            span,
+            subst,
+            did_change,
+            errors,
+            &path.variant("Promise"),
+        ),
 
         // Type variable case requires occurs check
         (Type::Var(v1), Type::Var(v2)) => {
@@ -204,37 +260,36 @@ pub fn unify_eq(
                 subst.insert(v1.clone(), Arc::new(Type::Var(v2.clone())));
                 *did_change = true;
             }
-            Ok(())
         }
 
         // Type variable case requires occurs check
         (Type::Var(v), _) => {
             if occurs_check(v, &t2) {
-                Err(TypeError::OccursCheckFailed(*span, path.to_string()))
+                errors.push(TypeError::OccursCheckFailed(*span, path.to_string()));
             } else {
                 subst.insert(v.clone(), t2);
                 *did_change = true;
-                Ok(())
             }
         }
         (_, Type::Var(v)) => {
             if occurs_check(v, &t1) {
-                Err(TypeError::OccursCheckFailed(*span, path.to_string()))
+                errors.push(TypeError::OccursCheckFailed(*span, path.to_string()));
             } else {
                 subst.insert(v.clone(), t1.clone());
                 *did_change = true;
-                Ok(())
             }
         }
 
         // ADTs
         (Type::ADT(adt1), Type::ADT(adt2)) => {
             if adt1.name != adt2.name {
-                return Err(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                errors.push(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                return;
             }
 
             if adt1.variants.len() != adt2.variants.len() {
-                return Err(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                errors.push(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                return;
             }
 
             for i in 0..adt1.variants.len() {
@@ -242,25 +297,35 @@ pub fn unify_eq(
                 let v2 = &adt2.variants[i];
 
                 if v1.name != v2.name {
-                    return Err(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                    errors.push(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                    return;
                 }
 
                 match (&v1.t, &v2.t) {
                     (None, None) => (),
                     (Some(vt1), Some(vt2)) => {
-                        unify_eq(vt1, vt2, span, subst, did_change, &path.variant(&v1.name))?;
+                        unify_eq_r(
+                            vt1,
+                            vt2,
+                            span,
+                            subst,
+                            did_change,
+                            errors,
+                            &path.variant(&v1.name),
+                        );
                     }
                     _ => {
-                        return Err(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                        errors.push(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                        return;
                     }
                 }
             }
-
-            return Ok(());
         }
 
         // Everything else fails
-        (_, _) => Err(TypeError::CannotUnify(*span, path.to_string(), t1, t2)),
+        (_, _) => {
+            errors.push(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+        }
     }
 }
 
@@ -282,16 +347,7 @@ pub fn unify_one_of(
         let mut test_subst = subst.clone();
         let mut test_did_change = *did_change;
 
-        if unify_eq(
-            &t1,
-            &t2,
-            span,
-            &mut test_subst,
-            &mut test_did_change,
-            &Path::Empty,
-        )
-        .is_ok()
-        {
+        if unify_eq(&t1, &t2, span, &mut test_subst, &mut test_did_change).is_ok() {
             successes.push((t2, test_subst, test_did_change));
         }
     }
@@ -441,15 +497,7 @@ mod tests {
         // Test case 1: α = Int
         let t1 = Arc::new(Type::Var(alpha));
         let t2 = Arc::new(Type::Int);
-        assert!(unify_eq(
-            &t1,
-            &t2,
-            &Span::default(),
-            &mut subst,
-            &mut did_change,
-            &Path::Empty,
-        )
-        .is_ok());
+        assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
         assert_eq!(
             apply_subst(&Arc::new(Type::Var(alpha)), &subst),
             Arc::new(Type::Int)
@@ -461,15 +509,7 @@ mod tests {
             Arc::new(Type::Var(beta)),
         ));
         let t2 = Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Bool)));
-        assert!(unify_eq(
-            &t1,
-            &t2,
-            &Span::default(),
-            &mut subst,
-            &mut did_change,
-            &Path::Empty
-        )
-        .is_ok());
+        assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
         assert_eq!(
             apply_subst(&Arc::new(Type::Var(alpha)), &subst),
             Arc::new(Type::Int)
@@ -491,15 +531,7 @@ mod tests {
         // Unify α = β
         let t1 = Arc::new(Type::Var(alpha));
         let t2 = Arc::new(Type::Var(beta));
-        assert!(unify_eq(
-            &t1,
-            &t2,
-            &Span::default(),
-            &mut subst,
-            &mut did_change,
-            &Path::Empty
-        )
-        .is_ok());
+        assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
 
         // Now α should be mapped to β
         assert_eq!(
@@ -535,8 +567,7 @@ mod tests {
             &g_type,
             &Span::default(),
             &mut subst,
-            &mut did_change,
-            &Path::Empty
+            &mut did_change
         )
         .is_ok());
 
@@ -586,8 +617,7 @@ mod tests {
             &f_input,
             &Span::default(),
             &mut subst,
-            &mut did_change,
-            &Path::Empty
+            &mut did_change
         )
         .is_ok());
 
@@ -597,8 +627,7 @@ mod tests {
             &Arc::new(Type::Int),
             &Span::default(),
             &mut subst,
-            &mut did_change,
-            &Path::Empty
+            &mut did_change
         )
         .is_ok());
 
@@ -650,8 +679,7 @@ mod tests {
             &g_type,
             &Span::default(),
             &mut subst,
-            &mut did_change,
-            &Path::Empty
+            &mut did_change
         )
         .is_ok());
 

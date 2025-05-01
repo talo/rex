@@ -652,7 +652,6 @@ mod tests {
         trace::{sprint_subst, sprint_type_env},
         types::TypeEnv,
         unify,
-        unify::Path,
     };
 
     use super::*;
@@ -776,15 +775,7 @@ mod tests {
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(_, t1, t2) => {
-                    unify::unify_eq(
-                        t1,
-                        t2,
-                        &Span::default(),
-                        &mut subst,
-                        &mut did_change,
-                        &Path::Empty,
-                    )
-                    .unwrap();
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change).unwrap();
                 }
                 _ => panic!("Expected equality constraint"),
             }
@@ -813,14 +804,9 @@ mod tests {
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(_, t1, t2) => unify::unify_eq(
-                    t1,
-                    t2,
-                    &Span::default(),
-                    &mut subst,
-                    &mut did_change,
-                    &Path::Empty,
-                ),
+                Constraint::Eq(_, t1, t2) => {
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)
+                }
                 _ => panic!("Expected equality constraint"),
             });
         assert!(result.is_err());
@@ -896,14 +882,9 @@ mod tests {
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(_, t1, t2) => unify::unify_eq(
-                    t1,
-                    t2,
-                    &Span::default(),
-                    &mut subst,
-                    &mut did_change,
-                    &Path::Empty,
-                ),
+                Constraint::Eq(_, t1, t2) => {
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)
+                }
                 _ => panic!("Expected equality constraint"),
             });
         assert!(result.is_err());
@@ -1260,7 +1241,7 @@ mod tests {
         // This should fail with a type error
         let mut constraint_system = ConstraintSystem::new();
         let mut errors = BTreeSet::new();
-        let result = Ok(generate_constraints(
+        let result: Result<Arc<Type>, Vec<TypeError>> = Ok(generate_constraints(
             &expr,
             &env,
             &mut constraint_system,
@@ -1272,25 +1253,22 @@ mod tests {
             let mut did_change = false;
             for constraint in constraint_system.constraints() {
                 match constraint {
-                    Constraint::Eq(_, t1, t2) => unify::unify_eq(
-                        t1,
-                        t2,
-                        &Span::default(),
-                        &mut subst,
-                        &mut did_change,
-                        &Path::Empty,
-                    )?,
+                    Constraint::Eq(_, t1, t2) => {
+                        unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)?
+                    }
                     _ => panic!("Expected equality constraint"),
                 }
             }
             Ok(unify::apply_subst(&ty, &subst))
         });
 
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TypeError::CannotUnify(_, _, _, _)
-        ));
+        match result {
+            Ok(_) => panic!("Expected an error"),
+            Err(es) => {
+                assert_eq!(es.len(), 1);
+                assert!(matches!(es[0], TypeError::CannotUnify(_, _, _, _)));
+            }
+        }
     }
 
     #[test]
@@ -1532,21 +1510,17 @@ mod tests {
         let result = constraint_system
             .constraints()
             .try_for_each(|constraint| match constraint {
-                Constraint::Eq(_, t1, t2) => unify::unify_eq(
-                    t1,
-                    t2,
-                    &Span::default(),
-                    &mut subst,
-                    &mut did_change,
-                    &Path::Empty,
-                ),
+                Constraint::Eq(_, t1, t2) => {
+                    unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)
+                }
                 Constraint::OneOf(_, t1, t2_possibilties) => unify::unify_one_of(
                     t1,
                     &t2_possibilties,
                     &Span::default(),
                     &mut subst,
                     &mut did_change,
-                ),
+                )
+                .map_err(|e| vec![e]),
             });
         assert!(result.is_err());
     }
