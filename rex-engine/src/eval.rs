@@ -956,6 +956,18 @@ pub mod test {
             .unwrap();
         assert_eq!(res_type, list!(result!(uint!(), string!())));
         assert_expr_eq!(res, l!(n!("Ok", Some(u!(4))), n!("Err", Some(s!("bad")))); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"map is_ok [Ok 3, Err "bad"]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(bool!()));
+        assert_expr_eq!(res, l!(b!(true), b!(false)));
+
+        let (res, res_type) = parse_infer_and_eval(r#"map is_err [Ok 3, Err "bad"]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(bool!()));
+        assert_expr_eq!(res, l!(b!(false), b!(true)));
     }
 
     #[tokio::test]
@@ -1071,6 +1083,18 @@ pub mod test {
             .unwrap();
         assert_eq!(res_type, list!(option!(uint!())));
         assert_expr_eq!(res, l!(n!("Some", Some(u!(4))), n!("None", None)); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"map is_some [Some 3, None]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(bool!()));
+        assert_expr_eq!(res, l!(b!(true), b!(false)));
+
+        let (res, res_type) = parse_infer_and_eval(r#"map is_none [Some 3, None]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(bool!()));
+        assert_expr_eq!(res, l!(b!(false), b!(true)));
     }
 
     #[tokio::test]

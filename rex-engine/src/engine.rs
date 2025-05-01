@@ -420,6 +420,8 @@ where
         // Result
         this.register_fn1("Ok", |_ctx: &Context<_>, x: A| Ok(Ok::<A, B>(x)));
         this.register_fn1("Err", |_ctx: &Context<_>, x: B| Ok(Err::<A, B>(x)));
+        this.register_fn1("is_ok", |_ctx, x: Result<A, E>| Ok(x.is_ok()));
+        this.register_fn1("is_err", |_ctx, x: Result<A, E>| Ok(x.is_err()));
         this.register_fn_async2("map", |ctx, f: Func<A, B>, x: Result<A, E>| {
             Box::pin(async move {
                 match x {
@@ -480,6 +482,8 @@ where
         // Option
         this.register_fn0("None", |_ctx: &Context<_>| Ok(None::<A>));
         this.register_fn1("Some", |_ctx: &Context<_>, x: A| Ok(Some(x)));
+        this.register_fn1("is_some", |_ctx, x: Option<A>| Ok(x.is_some()));
+        this.register_fn1("is_none", |_ctx, x: Option<A>| Ok(x.is_none()));
         this.register_fn_async2("map", |ctx, f: Func<A, B>, x: Option<A>| {
             Box::pin(async move {
                 match x {
