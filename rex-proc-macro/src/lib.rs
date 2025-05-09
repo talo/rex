@@ -126,7 +126,7 @@ fn fields_unnamed_to_adt_variant(
             }
         })
         .collect::<Vec<_>>();
-    if ts.len() == 0 {
+    if ts.is_empty() {
         quote!(
             ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),
@@ -183,7 +183,7 @@ fn fields_named_to_adt_variant(
             }
         })
         .collect::<Vec<_>>();
-    if docs_and_fields.len() == 0 {
+    if docs_and_fields.is_empty() {
         quote!(
             ::rex::type_system::types::ADTVariant {
                 name: String::from(#variant_name),

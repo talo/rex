@@ -32,7 +32,7 @@ where
     let scheme = if !unresolved_vars.is_empty() {
         let mut assignments = HashMap::new();
         for var in &unresolved_vars {
-            if let None = assignments.get(var) {
+            if !assignments.contains_key(var) {
                 assignments.insert(var.clone(), Arc::new(Type::Var(Id::new())));
             }
         }
@@ -47,12 +47,11 @@ where
                 panic!("Expected a type variable");
             }
         }
-        let for_all = TypeScheme {
+        TypeScheme {
             ids,
             ty: t,
             deps: BTreeSet::new(),
-        };
-        for_all
+        }
     } else {
         TypeScheme::from(t)
     };
@@ -307,7 +306,7 @@ where
                 Ok(re) => {
                     let matches: Vec<_> =
                         re.find_iter(&hay).map(|m| m.as_str().to_string()).collect();
-                    return Ok(matches);
+                    Ok(matches)
                 }
                 Err(err) => Err(err),
             },
@@ -318,7 +317,7 @@ where
         });
 
         this.register_fn2("zip", |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<B>| {
-            Ok(xs.into_iter().zip(ys.into_iter()).collect::<Vec<_>>())
+            Ok(xs.into_iter().zip(ys).collect::<Vec<_>>())
         });
 
         this.register_fn1("unzip", |_ctx: &Context<_>, zs: Vec<(A, B)>| {
@@ -529,7 +528,7 @@ where
                 match x {
                     Some(x) => Ok(x),
                     None => Err(Error::Custom {
-                        error: format!("unwrap called with None"),
+                        error: "unwrap called with None".to_string(),
                         trace: Default::default(),
                     }),
                 }
@@ -542,10 +541,10 @@ where
         this.register_fn1(
             "uuid",
             |_ctx: &Context<_>, x: String| -> Result<Uuid, Error> {
-                Ok(Uuid::from_str(&x).map_err(|_| Error::Custom {
+                Uuid::from_str(&x).map_err(|_| Error::Custom {
                     error: format!("Invalid UUID {:?}", x),
                     trace: Default::default(),
-                })?)
+                })
             },
         );
 
@@ -600,7 +599,7 @@ where
                     Box::new(move |_, args| {
                         let tuple_type = tuple_type.clone();
                         Box::pin(async move {
-                            match args.get(0) {
+                            match args.first() {
                                 Some(Expr::Tuple(_, elems)) if elems.len() == tuple_len => {
                                     Ok(elems[tuple_index].clone())
                                 }
@@ -652,8 +651,8 @@ where
                 // A different ADT with the same name is already registered
                 return Err(Error::ADTNameConflict {
                     name: full_adt_name.clone(),
-                    new: adt.clone(),
-                    existing: existing.clone(),
+                    new: Arc::new(adt.clone()),
+                    existing: Arc::new(existing.clone()),
                     trace: Default::default(),
                 });
             }
@@ -667,7 +666,7 @@ where
             );
         }
 
-        if adt.variants.len() == 0 {
+        if adt.variants.is_empty() {
             self.register_adt_variant(adt_type, &adt.name, &None, &full_adt_name, defaults, false)?;
         } else if adt.variants.len() == 1 && adt.variants[0].name == adt.name {
             // Only register accessors if there is exactly one variant
@@ -715,7 +714,7 @@ where
         // is because in the general case, each constructor may have a different number of
         // arguments, so we cannot consider them to be overloaded functions. Haskell has the
         // same restriction.
-        if self.ftable.contains(&constructor_name) {
+        if self.ftable.contains(constructor_name) {
             panic!("Duplicate constructor name: {}", constructor_name);
         }
 
@@ -728,7 +727,7 @@ where
                     fun_type = Arc::new(Type::Arrow(field.clone(), fun_type));
                 }
                 self.register_fn_core_with_name(
-                    &constructor_name,
+                    constructor_name,
                     fun_type,
                     Box::new(move |_, args| {
                         let base_name = base_name.clone();
@@ -755,7 +754,7 @@ where
                 let defaults: BTreeMap<String, FtableFn<State>> = (*defaults).clone();
                 let base_name1 = base_name.clone();
                 self.register_fn_core_with_name(
-                    &constructor_name,
+                    constructor_name,
                     fun_type,
                     Box::new(move |ctx, args| {
                         let base_name = base_name1.clone();
@@ -786,7 +785,7 @@ where
                 if let Some(t) = variant_type {
                     let fun_type = Arc::new(Type::Arrow(t.clone(), adt_type.clone()));
                     self.register_fn_core_with_name(
-                        &constructor_name,
+                        constructor_name,
                         fun_type,
                         Box::new(move |_, args| {
                             let base_name = base_name.clone();
@@ -805,7 +804,7 @@ where
                     Ok(())
                 } else {
                     self.register_fn_core_with_name(
-                        &constructor_name,
+                        constructor_name,
                         adt_type.clone(),
                         Box::new(move |_, _| {
                             let base_name = base_name.clone();

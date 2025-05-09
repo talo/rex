@@ -63,8 +63,8 @@ pub enum Error {
     #[error("Different ADTs found with same name {name:?}: new {new}, existing {existing}{trace}")]
     ADTNameConflict {
         name: String,
-        new: ADT,
-        existing: ADT,
+        new: Arc<ADT>,
+        existing: Arc<ADT>,
         trace: Trace,
     },
     #[error("Overloaded function {name:?} has {new} params; existing has {existing}{trace}")]
@@ -217,22 +217,22 @@ impl From<String> for Error {
     }
 }
 
-fn parse_error_msg(errors: &Vec<ParserErr>) -> String {
+fn parse_error_msg(errors: &[ParserErr]) -> String {
     let mut res = String::new();
     for (i, e) in errors.iter().enumerate() {
         if i > 0 {
-            res.push_str("\n");
+            res.push('\n');
         }
         res.push_str(&e.to_string());
     }
     res
 }
 
-fn type_error_msg(errors: &Vec<TypeError>) -> String {
+fn type_error_msg(errors: &[TypeError]) -> String {
     let mut res = String::new();
     for (i, e) in errors.iter().enumerate() {
         if i > 0 {
-            res.push_str("\n");
+            res.push('\n');
         }
         res.push_str(&e.to_string());
     }

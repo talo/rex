@@ -120,10 +120,10 @@ pub fn unify_eq(
 ) -> Result<(), Vec<TypeError>> {
     let mut errors: Vec<TypeError> = Vec::new();
     unify_eq_r(t1, t2, span, subst, did_change, &mut errors, &Path::Empty);
-    if errors.len() > 0 {
-        return Err(errors);
+    if !errors.is_empty() {
+        Err(errors)
     } else {
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -164,8 +164,8 @@ pub fn unify_eq_r(
 
         // Lists
         (Type::List(t1), Type::List(t2)) => unify_eq_r(
-            &t1,
-            &t2,
+            t1,
+            t2,
             span,
             subst,
             did_change,
@@ -206,24 +206,16 @@ pub fn unify_eq_r(
 
         // For function types, unify arguments and results
         (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
-            unify_eq_r(&a1, &a2, span, subst, did_change, errors, path);
-            unify_eq_r(&b1, &b2, span, subst, did_change, errors, path);
+            unify_eq_r(a1, a2, span, subst, did_change, errors, path);
+            unify_eq_r(b1, b2, span, subst, did_change, errors, path);
         }
 
         // Result
         (Type::Result(a1, b1), Type::Result(a2, b2)) => {
+            unify_eq_r(a1, a2, span, subst, did_change, errors, &path.variant("Ok"));
             unify_eq_r(
-                &a1,
-                &a2,
-                span,
-                subst,
-                did_change,
-                errors,
-                &path.variant("Ok"),
-            );
-            unify_eq_r(
-                &b1,
-                &b2,
+                b1,
+                b2,
                 span,
                 subst,
                 did_change,
@@ -234,8 +226,8 @@ pub fn unify_eq_r(
 
         // Option
         (Type::Option(a1), Type::Option(a2)) => unify_eq_r(
-            &a1,
-            &a2,
+            a1,
+            a2,
             span,
             subst,
             did_change,
@@ -245,8 +237,8 @@ pub fn unify_eq_r(
 
         // Promise
         (Type::Promise(a1), Type::Promise(a2)) => unify_eq_r(
-            &a1,
-            &a2,
+            a1,
+            a2,
             span,
             subst,
             did_change,
@@ -257,7 +249,7 @@ pub fn unify_eq_r(
         // Type variable case requires occurs check
         (Type::Var(v1), Type::Var(v2)) => {
             if v1 != v2 {
-                subst.insert(v1.clone(), Arc::new(Type::Var(v2.clone())));
+                subst.insert(*v1, Arc::new(Type::Var(*v2)));
                 *did_change = true;
             }
         }
@@ -267,7 +259,7 @@ pub fn unify_eq_r(
             if occurs_check(v, &t2) {
                 errors.push(TypeError::OccursCheckFailed(*span, path.to_string()));
             } else {
-                subst.insert(v.clone(), t2);
+                subst.insert(*v, t2);
                 *did_change = true;
             }
         }
@@ -275,7 +267,7 @@ pub fn unify_eq_r(
             if occurs_check(v, &t1) {
                 errors.push(TypeError::OccursCheckFailed(*span, path.to_string()));
             } else {
-                subst.insert(v.clone(), t1.clone());
+                subst.insert(*v, t1.clone());
                 *did_change = true;
             }
         }
@@ -361,7 +353,7 @@ pub fn unify_one_of(
         1 => {
             // Use the successful substitution
             *subst = successes[0].1.clone();
-            *did_change = successes[0].2.clone();
+            *did_change = successes[0].2;
             Ok(())
         }
         _ => Ok(()),
@@ -839,7 +831,7 @@ impl<'a> Path<'a> {
     }
 }
 
-impl<'a> fmt::Display for Path<'a> {
+impl fmt::Display for Path<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let mut items = Vec::new();
         Path::collect_vec(self, &mut items);

@@ -245,7 +245,7 @@ impl Type {
 
         match self {
             Type::UnresolvedVar(x) => Arc::new(Type::UnresolvedVar(x.clone())),
-            Type::Var(v) => Arc::new(Type::Var(v.clone())),
+            Type::Var(v) => Arc::new(Type::Var(*v)),
             Type::ADT(adt) => Arc::new(Type::ADT(ADT {
                 name: adt.name.clone(),
                 variants: adt
@@ -307,7 +307,7 @@ impl Display for TypeScheme {
 
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        TypeFormatter::new().fmt_type(self, f)
+        TypeFormatter::default().fmt_type(self, f)
     }
 }
 
@@ -316,14 +316,16 @@ pub struct TypeFormatter {
     next_var_no: u64,
 }
 
-impl TypeFormatter {
-    pub fn new() -> Self {
+impl Default for TypeFormatter {
+    fn default() -> Self {
         TypeFormatter {
             var_names: BTreeMap::new(),
             next_var_no: 1,
         }
     }
+}
 
+impl TypeFormatter {
     fn alloc_var_no(&mut self) -> u64 {
         let var_no = self.next_var_no;
         self.next_var_no += 1;
@@ -437,22 +439,20 @@ impl Dispatch for Type {
     fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
         match self {
             Type::Arrow(a, b) => {
-                args.len() >= 1 && a.maybe_compatible(&args[0]) && b.maybe_accepts_args(&args[1..])
+                !args.is_empty() && a.maybe_compatible(&args[0]) && b.maybe_accepts_args(&args[1..])
             }
-            _ => args.len() == 0,
+            _ => args.is_empty(),
         }
     }
 }
 
 impl Dispatch for Arc<Type> {
     fn num_params(&self) -> usize {
-        let t: &Type = &**self;
-        t.num_params()
+        Type::num_params(self)
     }
 
     fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
-        let t: &Type = &**self;
-        t.maybe_accepts_args(args)
+        Type::maybe_accepts_args(self, args)
     }
 }
 

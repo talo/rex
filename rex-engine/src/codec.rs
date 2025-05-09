@@ -248,7 +248,7 @@ where
 impl Decode for bool {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Bool(_, x) => Ok(*x as bool),
+            Expr::Bool(_, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
@@ -429,7 +429,7 @@ impl Decode for String {
 impl Decode for Uuid {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Uuid(_, u) => Ok(u.clone()),
+            Expr::Uuid(_, u) => Ok(*u),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
@@ -442,7 +442,7 @@ impl Decode for Uuid {
 impl Decode for DateTime<Utc> {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::DateTime(_, dt) => Ok(dt.clone()),
+            Expr::DateTime(_, dt) => Ok(*dt),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
@@ -477,7 +477,7 @@ impl Decode for serde_json::Value {
 impl Decode for () {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_span, xs) if xs.len() == 0 => Ok(()),
+            Expr::Tuple(_span, xs) if xs.is_empty() => Ok(()),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),

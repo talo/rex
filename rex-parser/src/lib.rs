@@ -98,7 +98,7 @@ impl Parser {
                     )),
                 }
 
-                if self.errors.len() > 0 {
+                if !self.errors.is_empty() {
                     Err(self.errors.clone())
                 } else {
                     Ok(expr)
@@ -220,7 +220,7 @@ impl Parser {
             Token::If(..) => self.parse_if_expr(),
             Token::Sub(..) => self.parse_neg_expr(),
             Token::Eof(span) => {
-                return Err(ParserErr::new(span, format!("unexpected EOF")));
+                return Err(ParserErr::new(span, "unexpected EOF".to_string()));
             }
             token => {
                 return Err(ParserErr::new(
@@ -476,7 +476,7 @@ impl Parser {
 
         let mut kvs = Vec::new();
         loop {
-            if let Token::BraceR(_, ..) = self.current_token() {
+            if let Token::BraceR(..) = self.current_token() {
                 break;
             }
 
@@ -578,14 +578,9 @@ impl Parser {
 
         // Parse the params.
         let mut params = VecDeque::new();
-        loop {
-            match self.current_token() {
-                Token::Ident(param, span, ..) => {
-                    self.next_token();
-                    params.push_back((span, param));
-                }
-                _ => break,
-            }
+        while let Token::Ident(param, span, ..) = self.current_token() {
+            self.next_token();
+            params.push_back((span, param));
         }
 
         // Parse the arrow.
@@ -638,15 +633,11 @@ impl Parser {
 
         // Parse the variable declarations.
         let mut decls = VecDeque::new();
-        loop {
-            // Variable name
-            let var = match self.current_token() {
-                Token::Ident(val, span, ..) => {
-                    self.next_token();
-                    (span, val)
-                }
-                _ => break,
-            };
+        // Variable name
+        while let Token::Ident(val, span, ..) = self.current_token() {
+            self.next_token();
+            let var = (span, val);
+
             // =
             match self.current_token() {
                 Token::Assign(_span, ..) => {
@@ -700,8 +691,7 @@ impl Parser {
                 Var::with_span(var_span, var),
                 Box::new(def),
                 Box::new(body),
-            )
-            .into();
+            );
             body_span_end = body.span().end;
         }
         // Adjust the outer most let-in expression to include the initial let

@@ -164,7 +164,7 @@ impl Expr {
             }
             Self::Dict(span, kvs) => {
                 *span = Span::default();
-                for (_k, v) in kvs {
+                for v in kvs.values_mut() {
                     v.reset_spans();
                 }
             }

@@ -38,7 +38,7 @@ impl TypeError {
 impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}: ", self.span())?;
-        if self.path().len() > 0 {
+        if !self.path().is_empty() {
             write!(f, "{}: ", self.path())?;
         }
         match self {
@@ -49,8 +49,8 @@ impl fmt::Display for TypeError {
                 write!(f, "Cannot unify {} with {}", t1, t2)
             }
             Self::IncompatibleCandidates(_, t1, t2_possibilities) => {
-                write!(f, "Cannot unify\n")?;
-                write!(f, "    {}\n", t1)?;
+                writeln!(f, "Cannot unify")?;
+                writeln!(f, "    {}", t1)?;
                 write!(f, "    with incompatible candidates")?;
                 for t2 in t2_possibilities.iter() {
                     write!(f, "\n    {}", t2)?;

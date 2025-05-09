@@ -111,8 +111,8 @@ impl Span {
 impl Default for Span {
     fn default() -> Self {
         Self {
-            begin: Position::new(::std::usize::MIN, ::std::usize::MIN),
-            end: Position::new(::std::usize::MAX, ::std::usize::MAX),
+            begin: Position::new(usize::MIN, usize::MIN),
+            end: Position::new(usize::MAX, usize::MAX),
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::BTreeMap, sync::Arc};
+use std::{borrow::Borrow, cmp::Ordering, collections::BTreeMap, sync::Arc};
 
 use futures::future;
 use rex_ast::expr::{Expr, Scope, Var};
@@ -44,7 +44,7 @@ impl<'a> Stack<'a> {
 
     pub fn collect_vec(mut stack: Option<&Stack>, spans: &mut Vec<Span>) {
         while let Some(s) = stack {
-            spans.push(s.span.clone());
+            spans.push(s.span);
             stack = s.parent;
         }
     }
@@ -83,7 +83,7 @@ where
         Expr::Lam(span, scope, param, body) => eval_lam(ctx, span, scope, param, body).await,
         Expr::Let(span, var, def, body) => eval_let(ctx, span, var, def, body, stack).await,
         Expr::Ite(span, cond, then, r#else) => eval_ite(ctx, span, cond, then, r#else, stack).await,
-        Expr::Curry(span, f, args) => Ok(Expr::Curry(span.clone(), f.clone(), args.clone())),
+        Expr::Curry(span, f, args) => Ok(Expr::Curry(*span, f.clone(), args.clone())),
     }
 }
 
@@ -101,7 +101,7 @@ where
         result.push(eval(ctx, v, stack));
     }
     Ok(Expr::Tuple(
-        span.clone(),
+        *span,
         future::join_all(result)
             .await
             .into_iter()
@@ -123,7 +123,7 @@ where
         result.push(eval(ctx, v, stack));
     }
     Ok(Expr::List(
-        span.clone(),
+        *span,
         future::join_all(result)
             .await
             .into_iter()
@@ -151,7 +151,7 @@ where
     for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
         result.insert(k.clone(), v?);
     }
-    Ok(Expr::Dict(span.clone(), result))
+    Ok(Expr::Dict(*span, result))
 }
 
 #[async_recursion::async_recursion]
@@ -216,7 +216,7 @@ where
     match f.borrow() {
         Expr::Lam(_span, scope, param, body) => {
             let ctx = ctx.with_scope(scope.insert(param.name.clone(), x));
-            eval(&ctx, &body, stack).await
+            eval(&ctx, body, stack).await
         }
         Expr::Curry(span, var, args) => {
             let mut args = args.clone();
@@ -230,39 +230,47 @@ where
                 })?;
 
             args.push(x.clone());
-            if entry.num_params < args.len() {
-                panic!("Too many arguments");
-            } else if entry.num_params == args.len() {
-                let mut candidates: Vec<&super::ftable::FtableFn<State>> = Vec::new();
-                for (f_type, f) in entry.items.iter() {
-                    if f_type.maybe_accepts_args(&args) {
-                        candidates.push(f);
+            match entry.num_params.cmp(&args.len()) {
+                Ordering::Less => {
+                    panic!("Too many arguments");
+                }
+                Ordering::Equal => {
+                    let mut candidates: Vec<&super::ftable::FtableFn<State>> = Vec::new();
+                    for (f_type, f) in entry.items.iter() {
+                        if f_type.maybe_accepts_args(&args) {
+                            candidates.push(f);
+                        }
+                    }
+
+                    if candidates.is_empty() {
+                        return Err(Error::Custom {
+                            error: format!("0 candidates for function {}", var.name),
+                            trace: Trace::from(stack),
+                        });
+                    }
+
+                    if candidates.len() > 1 {
+                        return Err(Error::Custom {
+                            error: format!(
+                                "{} candidates for function {}",
+                                candidates.len(),
+                                var.name
+                            ),
+                            trace: Trace::from(stack),
+                        });
+                    }
+
+                    let f = candidates[0];
+
+                    match f(ctx, &args).await {
+                        Ok(res) => Ok(res),
+                        Err(e) => Err(e.with_extra_trace(stack)),
                     }
                 }
-
-                if candidates.len() == 0 {
-                    return Err(Error::Custom {
-                        error: format!("0 candidates for function {}", var.name),
-                        trace: Trace::from(stack),
-                    });
+                Ordering::Greater => {
+                    // TODO(loong): fix the span.
+                    Ok(Expr::Curry(*span, var.clone(), args))
                 }
-
-                if candidates.len() > 1 {
-                    return Err(Error::Custom {
-                        error: format!("{} candidates for function {}", candidates.len(), var.name),
-                        trace: Trace::from(stack),
-                    });
-                }
-
-                let f = candidates[0];
-
-                match f(ctx, &args).await {
-                    Ok(res) => Ok(res),
-                    Err(e) => Err(e.with_extra_trace(stack)),
-                }
-            } else {
-                // TODO(loong): fix the span.
-                Ok(Expr::Curry(span.clone(), var.clone(), args))
             }
         }
         _ => Err(Error::Custom {
@@ -287,7 +295,7 @@ where
         scope.insert_mut(entry.0.clone(), entry.1.clone());
     }
     Ok(Expr::Lam(
-        span.clone(),
+        *span,
         scope,
         param.clone(),
         Box::new(body.clone()),

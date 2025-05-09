@@ -73,7 +73,7 @@ pub fn json_to_expr(
         // (Type::Var(_), _) => unimplemented!(),
         // (Type::ForAll(_, _, _), _) => unimplemented!(),
         (Type::ADT(adt), _) => {
-            if adt.variants.len() == 0 {
+            if adt.variants.is_empty() {
                 match json {
                     Value::Null => Ok(Expr::Named(Span::default(), adt.name.clone(), None)),
                     _ => Err(type_error(json, want)),
@@ -99,19 +99,16 @@ pub fn json_to_expr(
                     if let (true, None, Some(discriminant)) =
                         (is_int_enum, &variant.t, variant.discriminant)
                     {
-                        match json {
-                            Value::Number(n) => {
-                                if let Some(n) = n.as_i64() {
-                                    if n == discriminant {
-                                        return Ok(Expr::Named(
-                                            Span::default(),
-                                            variant.name.clone(),
-                                            None,
-                                        ));
-                                    }
+                        if let Value::Number(n) = json {
+                            if let Some(n) = n.as_i64() {
+                                if n == discriminant {
+                                    return Ok(Expr::Named(
+                                        Span::default(),
+                                        variant.name.clone(),
+                                        None,
+                                    ));
                                 }
                             }
-                            _ => {}
                         }
                     } else {
                         match &variant.t {
@@ -165,16 +162,12 @@ pub fn json_to_expr(
             }
         }
         (Type::Option(inner), _) => match json {
-            Value::Null => {
-                return Ok(Expr::Named(Span::default(), "None".to_string(), None));
-            }
-            _ => {
-                return Ok(Expr::Named(
-                    Span::default(),
-                    "Some".to_string(),
-                    Some(Box::new(json_to_expr(json, inner, opts)?)),
-                ));
-            }
+            Value::Null => Ok(Expr::Named(Span::default(), "None".to_string(), None)),
+            _ => Ok(Expr::Named(
+                Span::default(),
+                "Some".to_string(),
+                Some(Box::new(json_to_expr(json, inner, opts)?)),
+            )),
         },
         (Type::List(item_type), Value::Array(json_items)) => {
             let mut exprs: Vec<Expr> = Vec::new();
@@ -259,8 +252,8 @@ pub fn expr_to_json(
         // (Type::Var(_), _) => unimplemented!(),
         // (Type::ForAll(_, _, _), _) => unimplemented!(),
         (Type::ADT(adt), _) => {
-            if adt.variants.len() == 0 {
-                return Ok(Value::Null);
+            if adt.variants.is_empty() {
+                Ok(Value::Null)
             } else if adt.variants.len() == 1
                 && adt.name == "serde_json::Value"
                 && adt.variants[0].name == "serde_json::Value"

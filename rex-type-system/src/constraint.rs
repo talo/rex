@@ -13,20 +13,13 @@ use crate::{
     unify::{self, Subst},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ConstraintSystem {
     pub local_constraints: Vec<Constraint>,
     pub global_constraints: Vec<Constraint>,
 }
 
 impl ConstraintSystem {
-    pub fn new() -> Self {
-        Self {
-            local_constraints: vec![],
-            global_constraints: vec![],
-        }
-    }
-
     pub fn with_global_constraints(global_constraints: Vec<Constraint>) -> Self {
         Self {
             local_constraints: vec![],
@@ -380,9 +373,7 @@ pub fn generate_constraints(
             new_env.insert(var.name.clone(), HashSet::from([type_scheme]));
 
             // Generate constraints for the body with the new environment
-            let result_type = generate_constraints(body, &new_env, constraint_system, errors);
-
-            result_type
+            generate_constraints(body, &new_env, constraint_system, errors)
         }
 
         Expr::Ite(span, cond, then_branch, else_branch) => {
@@ -519,7 +510,7 @@ fn instantiate(
     span: &Span,
     constraint_system: &mut ConstraintSystem,
 ) -> Arc<Type> {
-    if scheme.ids.len() == 0 {
+    if scheme.ids.is_empty() {
         return scheme.ty.clone();
     }
 
@@ -532,7 +523,7 @@ fn instantiate(
     }
 
     // Create fresh vars for dependencies
-    let mut new_constraint_sytem = ConstraintSystem::new();
+    let mut new_constraint_sytem = ConstraintSystem::default();
     for dep_id in scheme.deps.iter() {
         let fresh_dep_id = Id::new();
         // Add equality constraint between old and new var
@@ -540,8 +531,8 @@ fn instantiate(
 
         for constraint in constraint_system.constraints() {
             match constraint {
-                Constraint::Eq(_, x1, t2) => match &**x1 {
-                    Type::Var(t1) => {
+                Constraint::Eq(_, x1, t2) => {
+                    if let Type::Var(t1) = &**x1 {
                         if t1 == dep_id {
                             new_constraint_sytem.add_local_constraint(Constraint::Eq(
                                 *span,
@@ -550,10 +541,9 @@ fn instantiate(
                             ));
                         }
                     }
-                    _ => {}
-                },
-                Constraint::OneOf(_, x1, ts) => match &**x1 {
-                    Type::Var(t1) => {
+                }
+                Constraint::OneOf(_, x1, ts) => {
+                    if let Type::Var(t1) = &**x1 {
                         if t1 == dep_id {
                             new_constraint_sytem.add_local_constraint(Constraint::OneOf(
                                 *span,
@@ -562,8 +552,7 @@ fn instantiate(
                             ));
                         }
                     }
-                    _ => {}
-                },
+                }
             }
         }
     }
@@ -571,15 +560,10 @@ fn instantiate(
     new_constraint_sytem.apply_subst(&subst);
     constraint_system.extend(new_constraint_sytem);
 
-    inst_helper(&scheme.ty, span, &mut subst, constraint_system)
+    inst_helper(&scheme.ty, &mut subst)
 }
 
-fn inst_helper(
-    ty: &Arc<Type>,
-    span: &Span,
-    subst: &mut Subst,
-    constraint_system: &mut ConstraintSystem,
-) -> Arc<Type> {
+fn inst_helper(ty: &Arc<Type>, subst: &mut Subst) -> Arc<Type> {
     match &**ty {
         Type::UnresolvedVar(_) => todo!("instantiate/inst_helper should return a result"),
         Type::Var(id) => match subst.get(id) {
@@ -595,39 +579,24 @@ fn inst_helper(
                 .map(|v| ADTVariant {
                     docs: v.docs.clone(),
                     name: v.name.clone(),
-                    t: v.t
-                        .as_ref()
-                        .map(|t| inst_helper(t, span, subst, constraint_system)),
+                    t: v.t.as_ref().map(|t| inst_helper(t, subst)),
                     t_docs: v.t_docs.clone(),
                     discriminant: v.discriminant,
                 })
                 .collect(),
         })),
-        Type::Arrow(a, b) => Arc::new(Type::Arrow(
-            inst_helper(a, span, subst, constraint_system),
-            inst_helper(b, span, subst, constraint_system),
-        )),
-        Type::Result(t, e) => Arc::new(Type::Result(
-            inst_helper(t, span, subst, constraint_system),
-            inst_helper(e, span, subst, constraint_system),
-        )),
-        Type::Option(t) => Arc::new(Type::Option(inst_helper(t, span, subst, constraint_system))),
-        Type::Promise(t) => Arc::new(Type::Promise(inst_helper(
-            t,
-            span,
-            subst,
-            constraint_system,
-        ))),
-        Type::List(t) => Arc::new(Type::List(inst_helper(t, span, subst, constraint_system))),
+        Type::Arrow(a, b) => Arc::new(Type::Arrow(inst_helper(a, subst), inst_helper(b, subst))),
+        Type::Result(t, e) => Arc::new(Type::Result(inst_helper(t, subst), inst_helper(e, subst))),
+        Type::Option(t) => Arc::new(Type::Option(inst_helper(t, subst))),
+        Type::Promise(t) => Arc::new(Type::Promise(inst_helper(t, subst))),
+        Type::List(t) => Arc::new(Type::List(inst_helper(t, subst))),
         Type::Dict(kts) => Arc::new(Type::Dict(
             kts.iter()
-                .map(|(k, t)| (k.clone(), inst_helper(t, span, subst, constraint_system)))
+                .map(|(k, t)| (k.clone(), inst_helper(t, subst)))
                 .collect(),
         )),
         Type::Tuple(ts) => Arc::new(Type::Tuple(
-            ts.iter()
-                .map(|t| inst_helper(t, span, subst, constraint_system))
-                .collect(),
+            ts.iter().map(|t| inst_helper(t, subst)).collect(),
         )),
 
         Type::Bool
@@ -730,7 +699,7 @@ mod tests {
             deps: BTreeSet::new(),
         };
 
-        let inst_ty = instantiate(&scheme, &Span::default(), &mut ConstraintSystem::new());
+        let inst_ty = instantiate(&scheme, &Span::default(), &mut ConstraintSystem::default());
 
         // Should become γ -> β where γ is fresh
         match &*inst_ty {
@@ -764,7 +733,7 @@ mod tests {
         insert_type(&mut env, "two", Arc::new(Type::Int));
         insert_type(&mut env, "three", Arc::new(Type::Int));
 
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -793,7 +762,7 @@ mod tests {
 
         insert_type(&mut env, "true", Arc::new(Type::Bool));
 
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
         let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -813,7 +782,7 @@ mod tests {
 
         // Test empty list
         let expr = Expr::List(Span::default(), vec![]);
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -871,7 +840,7 @@ mod tests {
         insert_type(&mut env, "int_val", Arc::new(Type::Int));
         insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
 
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
         let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -934,7 +903,7 @@ mod tests {
             ],
         );
 
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -974,7 +943,7 @@ mod tests {
 
         insert_type(&mut env, "one", Arc::new(Type::Int));
 
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
         let result_type = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -1026,7 +995,7 @@ mod tests {
         insert_type(&mut env, "int_val", Arc::new(Type::Int));
         insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
 
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -1061,7 +1030,7 @@ mod tests {
         insert_type(&mut env, "two", Arc::new(Type::Int));
 
         // Generate constraints
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
         let result_type = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -1165,7 +1134,7 @@ mod tests {
         insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
         insert_type(&mut env, "int_val", Arc::new(Type::Int));
 
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -1239,7 +1208,7 @@ mod tests {
         );
 
         // This should fail with a type error
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
         let result: Result<Arc<Type>, Vec<TypeError>> = Ok(generate_constraints(
             &expr,

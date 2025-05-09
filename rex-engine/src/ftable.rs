@@ -118,7 +118,7 @@ where
     }
 }
 
-impl<'r, Gx, State> Fx<'r, State> for Gx
+impl<Gx, State> Fx<'_, State> for Gx
 where
     for<'q> Gx: Fn(
             &'q Context<State>,
@@ -147,12 +147,21 @@ pub struct Ftable<State>(pub HashMap<String, Entry<State>>)
 where
     State: Clone + Sync + 'static;
 
+impl<State> Default for Ftable<State>
+where
+    State: Clone + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
 impl<State> Ftable<State>
 where
     State: Clone + Send + Sync + 'static,
 {
     pub fn new() -> Self {
-        Self(Default::default())
+        Default::default()
     }
 
     pub fn contains(&self, n: &str) -> bool {
@@ -227,7 +236,7 @@ where
     }
 }
 
-pub fn decode_arg<A>(args: &Vec<Expr>, i: usize) -> Result<A, Error>
+pub fn decode_arg<A>(args: &[Expr], i: usize) -> Result<A, Error>
 where
     A: Decode,
 {
@@ -245,6 +254,7 @@ macro_rules! define_polymorphic_types {
             #[derive(Clone, Debug)]
             pub struct $ty(pub ::rex_ast::expr::Expr);
 
+            #[allow(clippy::from_over_into)]
             impl Into<::rex_ast::expr::Expr> for $ty {
                 fn into(self) -> ::rex_ast::expr::Expr {
                     self.0

@@ -1,5 +1,3 @@
-use regex;
-
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 

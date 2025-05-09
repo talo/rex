@@ -44,12 +44,12 @@ where
         })?;
 
         let (ftable, type_env) = builder.build();
-        let mut constraint_system = ConstraintSystem::new();
+        let mut constraint_system = ConstraintSystem::default();
 
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&expr, &type_env, &mut constraint_system, &mut errors);
         let subst = unify::unify_constraints(&constraint_system, &mut errors);
-        if errors.len() > 0 {
+        if !errors.is_empty() {
             // Sort by span and path first, so the errors appear in the same order the parts
             // of the input file they correspond do. The default order for an enum produced by
             // #[derive(Ord)] sorts by type first, which is not the best choice for this case.
