@@ -15,8 +15,11 @@ pub fn sprint_subst(subst: &Subst) -> String {
 pub fn sprint_type_env(env: &TypeEnv) -> String {
     let mut s = String::new();
     s.push_str("{\n");
-    for (k, v) in env {
-        s.push_str(&format!("  {}: {}\n", k, v));
+    for (k, ts) in env {
+        s.push_str(&format!("  {}:\n", k));
+        for t in ts {
+            s.push_str(&format!("    {}\n", t));
+        }
     }
     s.push('}');
     s

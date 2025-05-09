@@ -109,6 +109,19 @@ impl Encode for DateTime<Utc> {
     }
 }
 
+impl Encode for serde_json::Value {
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Named(
+            span,
+            "serde_json::Value".to_string(),
+            Some(Box::new(Expr::String(
+                span,
+                serde_json::to_string(&self).map_err(|e| Error::from(e.to_string()))?,
+            ))),
+        ))
+    }
+}
+
 impl Encode for () {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
         Ok(Expr::Tuple(span, vec![]))
@@ -235,10 +248,11 @@ where
 impl Decode for bool {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Bool(_, x) => Ok(*x as bool),
+            Expr::Bool(_, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -251,6 +265,7 @@ impl Decode for u8 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -263,6 +278,7 @@ impl Decode for u16 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -275,6 +291,7 @@ impl Decode for u32 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -286,6 +303,7 @@ impl Decode for u64 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -298,6 +316,7 @@ impl Decode for u128 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Uint),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -310,6 +329,7 @@ impl Decode for i8 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -322,6 +342,7 @@ impl Decode for i16 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -334,6 +355,7 @@ impl Decode for i32 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -346,6 +368,7 @@ impl Decode for i64 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -358,6 +381,7 @@ impl Decode for i128 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -370,6 +394,7 @@ impl Decode for f32 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Float),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -382,6 +407,7 @@ impl Decode for f64 {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Float),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -394,6 +420,7 @@ impl Decode for String {
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -402,10 +429,11 @@ impl Decode for String {
 impl Decode for Uuid {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Uuid(_, u) => Ok(u.clone()),
+            Expr::Uuid(_, u) => Ok(*u),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -414,10 +442,33 @@ impl Decode for Uuid {
 impl Decode for DateTime<Utc> {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::DateTime(_, dt) => Ok(dt.clone()),
+            Expr::DateTime(_, dt) => Ok(*dt),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
+            }),
+        }
+    }
+}
+
+impl Decode for serde_json::Value {
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        match v {
+            Expr::Named(_, n, Some(inner)) if n == "serde_json::Value" => match &**inner {
+                Expr::String(_, s) => {
+                    Ok(serde_json::from_str(s).map_err(|e| Error::from(e.to_string()))?)
+                }
+                _ => Err(Error::ExpectedTypeGotValue {
+                    expected: Arc::new(Self::to_type()),
+                    got: v.clone(),
+                    trace: Default::default(),
+                }),
+            },
+            _ => Err(Error::ExpectedTypeGotValue {
+                expected: Arc::new(Self::to_type()),
+                got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -426,10 +477,11 @@ impl Decode for DateTime<Utc> {
 impl Decode for () {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
-            Expr::Tuple(_span, xs) if xs.len() == 0 => Ok(()),
+            Expr::Tuple(_span, xs) if xs.is_empty() => Ok(()),
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -445,6 +497,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -463,6 +516,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -484,6 +538,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -507,6 +562,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -528,6 +584,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Int),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -545,6 +602,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Result(Arc::new(T::to_type()), Arc::new(E::to_type()))),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }
@@ -561,6 +619,7 @@ where
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Type::Option(Arc::new(T::to_type()))),
                 got: v.clone(),
+                trace: Default::default(),
             }),
         }
     }

@@ -1,16 +1,8 @@
-#![allow(unused_variables)]
-#![allow(dead_code)]
-#![allow(unused_mut)]
-#![allow(unused_assignments)]
-#![allow(unused_imports)]
-#![allow(unused_macros)]
-#![allow(non_upper_case_globals)]
-
 use std::{collections::HashMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
-use rex_type_system::types::{Dispatch, ToType, Type};
+use rex_type_system::types::{Dispatch, ToType};
 
 use crate::{
     codec::{Decode, Encode},
@@ -52,7 +44,7 @@ macro_rules! impl_register_fn {
                         let mut r = f(ctx $(, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*)?)?
                             .try_encode(Span::default())?; // FIXME(loong): assign a proper span
                         while i < args.len() {
-                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }]).await?;
+                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }], None).await?;
                         }
                         Ok(r)
                     })
@@ -92,7 +84,7 @@ macro_rules! impl_register_fn_async {
                             .await?
                             .try_encode(Span::default())?; // FIXME(loong): assign a proper span
                         while i < args.len() {
-                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }]).await?;
+                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }], None).await?;
                         }
                         Ok(r)
                     })
@@ -126,7 +118,7 @@ where
     }
 }
 
-impl<'r, Gx, State> Fx<'r, State> for Gx
+impl<Gx, State> Fx<'_, State> for Gx
 where
     for<'q> Gx: Fn(
             &'q Context<State>,
@@ -155,12 +147,21 @@ pub struct Ftable<State>(pub HashMap<String, Entry<State>>)
 where
     State: Clone + Sync + 'static;
 
+impl<State> Default for Ftable<State>
+where
+    State: Clone + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
 impl<State> Ftable<State>
 where
     State: Clone + Send + Sync + 'static,
 {
     pub fn new() -> Self {
-        Self(Default::default())
+        Default::default()
     }
 
     pub fn contains(&self, n: &str) -> bool {
@@ -182,6 +183,7 @@ where
                         name: n,
                         new: num_params,
                         existing: entry.num_params,
+                        trace: Default::default(),
                     });
                 }
                 entry.items.push((t, f));
@@ -234,12 +236,15 @@ where
     }
 }
 
-pub fn decode_arg<A>(args: &Vec<Expr>, i: usize) -> Result<A, Error>
+pub fn decode_arg<A>(args: &[Expr], i: usize) -> Result<A, Error>
 where
     A: Decode,
 {
     args.get(i)
-        .ok_or(Error::MissingArgument { argument: i })
+        .ok_or(Error::MissingArgument {
+            argument: i,
+            trace: Default::default(),
+        })
         .and_then(|a0| A::try_decode(a0))
 }
 
@@ -249,6 +254,7 @@ macro_rules! define_polymorphic_types {
             #[derive(Clone, Debug)]
             pub struct $ty(pub ::rex_ast::expr::Expr);
 
+            #[allow(clippy::from_over_into)]
             impl Into<::rex_ast::expr::Expr> for $ty {
                 fn into(self) -> ::rex_ast::expr::Expr {
                     self.0

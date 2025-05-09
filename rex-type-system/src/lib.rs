@@ -1,6 +1,7 @@
 //! Rex uses a constraint-based Hindley-Milner type system.
 
 pub mod constraint;
+pub mod error;
 pub mod macros;
 pub mod trace;
 pub mod types;

@@ -213,9 +213,6 @@ Some limitations:
   parameters. This is because our syntax makes it impossible to differentiate
   between calls to a function with fewer parameters, and calls to a function
   with more parameters that are meant to result in currying.
-* We do not allow polymorphic functions to be overloaded. This is because
-  eventually we want to move away from overloading and instead move towards type
-  classes (this is the "right" way to support overloading).
 
 ## Contribute
 

@@ -1,160 +1,287 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
+    fmt,
     sync::Arc,
 };
 
 use rex_ast::id::Id;
+use rex_lexer::span::Span;
 
 use crate::{
     constraint::{Constraint, ConstraintSystem},
-    types::{ADTVariant, Type, ADT},
+    error::TypeError,
+    types::{ADTVariant, Type, TypeScheme, ADT},
 };
 
 pub type Subst = HashMap<Id, Arc<Type>>;
 
 // NOTE(loong): We do not support overloaded parametric polymorphism.
-pub fn unify_constraints(constraint_system: &ConstraintSystem) -> Result<Subst, String> {
+pub fn unify_constraints(
+    zconstraint_system: &ConstraintSystem,
+    errors: &mut BTreeSet<TypeError>,
+) -> Subst {
     let mut subst = Subst::new();
+
+    let mut eq_constraints: Vec<Constraint> = Vec::new();
+    let mut one_of_constraints: Vec<Constraint> = Vec::new();
+
+    for constraint in zconstraint_system.constraints() {
+        match constraint {
+            Constraint::Eq(..) => {
+                eq_constraints.push(constraint.clone());
+            }
+            Constraint::OneOf(..) => {
+                one_of_constraints.push(constraint.clone());
+            }
+        }
+    }
+
     // Loop until no more progress is made in resolving. We often need multiple iterations
     // because unifications that happen in later contraints may enable unifications in earlier
     // ones.
     loop {
         let mut did_change = false;
-        for constraint in constraint_system.constraints() {
-            match constraint {
-                Constraint::Eq(t1, t2) => {
-                    unify_eq(t1, t2, &mut subst, &mut did_change)?;
-                }
-                Constraint::OneOf(..) => {}
-            }
-        }
-        for constraint in constraint_system.constraints() {
-            match constraint {
-                Constraint::Eq(..) => {}
-                Constraint::OneOf(t1, t2_possibilties) => {
-                    // TODO(loong): doing the naive thing of ? short-circuiting this
-                    // result does not work. Because it will cause issues for unused
-                    // overloaded type variables. This is because we are resolving
-                    // all constraints, not just the ones that are actually used by
-                    // the expression.
-                    unify_one_of(t1, t2_possibilties, &mut subst, &mut did_change)?;
-                }
-            }
-        }
+
+        eq_constraints = unify_eq_constraints(eq_constraints, &mut subst, &mut did_change, errors);
+        one_of_constraints =
+            unify_one_of_constraints(one_of_constraints, &mut subst, &mut did_change, errors);
 
         if !did_change {
             break;
         }
     }
-    Ok(subst)
+
+    subst
+}
+
+fn unify_eq_constraints(
+    constraints: Vec<Constraint>,
+    subst: &mut Subst,
+    did_change: &mut bool,
+    errors: &mut BTreeSet<TypeError>,
+) -> Vec<Constraint> {
+    let mut keep: Vec<Constraint> = Vec::new();
+
+    for constraint in constraints.into_iter() {
+        match &constraint {
+            Constraint::Eq(span, t1, t2) => match unify_eq(t1, t2, span, subst, did_change) {
+                Ok(()) => {
+                    keep.push(constraint);
+                }
+                Err(es) => {
+                    errors.extend(es);
+                }
+            },
+            Constraint::OneOf(..) => {}
+        }
+    }
+
+    keep
+}
+
+fn unify_one_of_constraints(
+    constraints: Vec<Constraint>,
+    subst: &mut Subst,
+    did_change: &mut bool,
+    errors: &mut BTreeSet<TypeError>,
+) -> Vec<Constraint> {
+    let mut keep: Vec<Constraint> = Vec::new();
+
+    for constraint in constraints.into_iter() {
+        match &constraint {
+            Constraint::Eq(..) => {}
+            Constraint::OneOf(span, t1, t2_possibilties) => {
+                // TODO(loong): doing the naive thing of ? short-circuiting this
+                // result does not work. Because it will cause issues for unused
+                // overloaded type variables. This is because we are resolving
+                // all constraints, not just the ones that are actually used by
+                // the expression.
+                match unify_one_of(t1, t2_possibilties, span, subst, did_change) {
+                    Ok(()) => {
+                        keep.push(constraint);
+                    }
+                    Err(e) => {
+                        errors.insert(e);
+                    }
+                }
+            }
+        }
+    }
+
+    keep
 }
 
 pub fn unify_eq(
     t1: &Arc<Type>,
     t2: &Arc<Type>,
+    span: &Span,
     subst: &mut Subst,
     did_change: &mut bool,
-) -> Result<(), String> {
+) -> Result<(), Vec<TypeError>> {
+    let mut errors: Vec<TypeError> = Vec::new();
+    unify_eq_r(t1, t2, span, subst, did_change, &mut errors, &Path::Empty);
+    if !errors.is_empty() {
+        Err(errors)
+    } else {
+        Ok(())
+    }
+}
+
+pub fn unify_eq_r(
+    t1: &Arc<Type>,
+    t2: &Arc<Type>,
+    span: &Span,
+    subst: &mut Subst,
+    did_change: &mut bool,
+    errors: &mut Vec<TypeError>,
+    path: &Path<'_>,
+) {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
     let t2 = apply_subst(t2, subst);
 
     match (&*t1, &*t2) {
         // Base types must match exactly
-        (Type::Bool, Type::Bool) => Ok(()),
-        (Type::Uint, Type::Uint) => Ok(()),
-        (Type::Int, Type::Int) => Ok(()),
-        (Type::Float, Type::Float) => Ok(()),
-        (Type::String, Type::String) => Ok(()),
-        (Type::Uuid, Type::Uuid) => Ok(()),
-        (Type::DateTime, Type::DateTime) => Ok(()),
+        (Type::Bool, Type::Bool) => {}
+        (Type::Uint, Type::Uint) => {}
+        (Type::Int, Type::Int) => {}
+        (Type::Float, Type::Float) => {}
+        (Type::String, Type::String) => {}
+        (Type::Uuid, Type::Uuid) => {}
+        (Type::DateTime, Type::DateTime) => {}
 
         // Tuples
         (Type::Tuple(ts1), Type::Tuple(ts2)) => {
             if ts1.len() != ts2.len() {
-                return Err("Tuple lengths do not match".to_string());
+                errors.push(TypeError::TupleLengthMismatch(*span, path.to_string()));
+                return;
             }
 
-            for (t1, t2) in ts1.iter().zip(ts2.iter()) {
-                unify_eq(t1, t2, subst, did_change)?;
+            for (i, (t1, t2)) in ts1.iter().zip(ts2.iter()).enumerate() {
+                unify_eq_r(t1, t2, span, subst, did_change, errors, &path.index(i));
             }
-
-            Ok(())
         }
 
         // Lists
-        (Type::List(t1), Type::List(t2)) => unify_eq(&t1, &t2, subst, did_change),
+        (Type::List(t1), Type::List(t2)) => unify_eq_r(
+            t1,
+            t2,
+            span,
+            subst,
+            did_change,
+            errors,
+            &path.variant("item"),
+        ),
 
         // Dictionaries
         (Type::Dict(d1), Type::Dict(d2)) => {
             if d1.len() != d2.len() {
-                return Err(missing_keys_error(d1, d2));
+                errors.push(TypeError::DictKeysMismatch(
+                    *span,
+                    path.to_string(),
+                    missing_keys_vec(d1, d2),
+                ));
+                return;
             }
             for (key, entry1) in d1.iter() {
                 if let Some(entry2) = d2.get(key) {
-                    unify_eq(entry1, entry2, subst, did_change)?;
+                    unify_eq_r(
+                        entry1,
+                        entry2,
+                        span,
+                        subst,
+                        did_change,
+                        errors,
+                        &path.property(key),
+                    );
                 } else {
-                    return Err(missing_keys_error(d1, d2));
+                    errors.push(TypeError::DictKeysMismatch(
+                        *span,
+                        path.to_string(),
+                        missing_keys_vec(d1, d2),
+                    ));
                 }
             }
-            Ok(())
         }
 
         // For function types, unify arguments and results
         (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
-            unify_eq(&a1, &a2, subst, did_change)?;
-            unify_eq(&b1, &b2, subst, did_change)
+            unify_eq_r(a1, a2, span, subst, did_change, errors, path);
+            unify_eq_r(b1, b2, span, subst, did_change, errors, path);
         }
 
         // Result
         (Type::Result(a1, b1), Type::Result(a2, b2)) => {
-            unify_eq(&a1, &a2, subst, did_change)?;
-            unify_eq(&b1, &b2, subst, did_change)
+            unify_eq_r(a1, a2, span, subst, did_change, errors, &path.variant("Ok"));
+            unify_eq_r(
+                b1,
+                b2,
+                span,
+                subst,
+                did_change,
+                errors,
+                &path.variant("Err"),
+            );
         }
 
         // Option
-        (Type::Option(a1), Type::Option(a2)) => unify_eq(&a1, &a2, subst, did_change),
+        (Type::Option(a1), Type::Option(a2)) => unify_eq_r(
+            a1,
+            a2,
+            span,
+            subst,
+            did_change,
+            errors,
+            &path.variant("Some"),
+        ),
 
         // Promise
-        (Type::Promise(a1), Type::Promise(a2)) => unify_eq(&a1, &a2, subst, did_change),
+        (Type::Promise(a1), Type::Promise(a2)) => unify_eq_r(
+            a1,
+            a2,
+            span,
+            subst,
+            did_change,
+            errors,
+            &path.variant("Promise"),
+        ),
 
         // Type variable case requires occurs check
         (Type::Var(v1), Type::Var(v2)) => {
             if v1 != v2 {
-                subst.insert(v1.clone(), Arc::new(Type::Var(v2.clone())));
+                subst.insert(*v1, Arc::new(Type::Var(*v2)));
                 *did_change = true;
             }
-            Ok(())
         }
 
         // Type variable case requires occurs check
         (Type::Var(v), _) => {
             if occurs_check(v, &t2) {
-                Err("Occurs check failed".to_string())
+                errors.push(TypeError::OccursCheckFailed(*span, path.to_string()));
             } else {
-                subst.insert(v.clone(), t2);
+                subst.insert(*v, t2);
                 *did_change = true;
-                Ok(())
             }
         }
         (_, Type::Var(v)) => {
             if occurs_check(v, &t1) {
-                Err("Occurs check failed".to_string())
+                errors.push(TypeError::OccursCheckFailed(*span, path.to_string()));
             } else {
-                subst.insert(v.clone(), t1.clone());
+                subst.insert(*v, t1.clone());
                 *did_change = true;
-                Ok(())
             }
         }
 
         // ADTs
         (Type::ADT(adt1), Type::ADT(adt2)) => {
             if adt1.name != adt2.name {
-                return Err(format!("Cannot unify {} with {}", t1, t2));
+                errors.push(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                return;
             }
 
             if adt1.variants.len() != adt2.variants.len() {
-                return Err(format!("Cannot unify {} with {}", t1, t2));
+                errors.push(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                return;
             }
 
             for i in 0..adt1.variants.len() {
@@ -162,34 +289,45 @@ pub fn unify_eq(
                 let v2 = &adt2.variants[i];
 
                 if v1.name != v2.name {
-                    return Err(format!("Cannot unify {} with {}", t1, t2));
+                    errors.push(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                    return;
                 }
 
                 match (&v1.t, &v2.t) {
                     (None, None) => (),
                     (Some(vt1), Some(vt2)) => {
-                        unify_eq(vt1, vt2, subst, did_change)?;
+                        unify_eq_r(
+                            vt1,
+                            vt2,
+                            span,
+                            subst,
+                            did_change,
+                            errors,
+                            &path.variant(&v1.name),
+                        );
                     }
                     _ => {
-                        return Err(format!("Cannot unify {} with {}", t1, t2));
+                        errors.push(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+                        return;
                     }
                 }
             }
-
-            return Ok(());
         }
 
         // Everything else fails
-        (t1, t2) => Err(format!("Cannot unify {} with {}", t1, t2)),
+        (_, _) => {
+            errors.push(TypeError::CannotUnify(*span, path.to_string(), t1, t2));
+        }
     }
 }
 
 pub fn unify_one_of(
     t1: &Arc<Type>,
-    t2_possibilities: &HashSet<Arc<Type>>,
+    t2_possibilities: &BTreeSet<Arc<Type>>,
+    span: &Span,
     subst: &mut Subst,
     did_change: &mut bool,
-) -> Result<(), String> {
+) -> Result<(), TypeError> {
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
 
@@ -201,25 +339,21 @@ pub fn unify_one_of(
         let mut test_subst = subst.clone();
         let mut test_did_change = *did_change;
 
-        if unify_eq(&t1, &t2, &mut test_subst, &mut test_did_change).is_ok() {
+        if unify_eq(&t1, &t2, span, &mut test_subst, &mut test_did_change).is_ok() {
             successes.push((t2, test_subst, test_did_change));
         }
     }
 
     match successes.len() {
-        0 => Err(format!(
-            "Cannot unify {} with incompatible candidates [{}]",
-            t1,
-            t2_possibilities
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+        0 => Err(TypeError::IncompatibleCandidates(
+            *span,
+            t1.clone(),
+            BTreeSet::from_iter(t2_possibilities.iter().cloned()),
         )),
         1 => {
             // Use the successful substitution
             *subst = successes[0].1.clone();
-            *did_change = successes[0].2.clone();
+            *did_change = successes[0].2;
             Ok(())
         }
         _ => Ok(()),
@@ -236,10 +370,6 @@ pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
                 t.clone()
             }
         }
-        Type::ForAll(id, ty, deps) => {
-            Arc::new(Type::ForAll(*id, apply_subst(ty, subst), deps.clone()))
-        }
-
         Type::ADT(adt) => Arc::new(Type::ADT(ADT {
             docs: adt.docs.clone(),
             name: adt.name.clone(),
@@ -279,20 +409,23 @@ pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
     }
 }
 
+pub fn occurs_check_type_scheme(var: &Id, scheme: &TypeScheme) -> bool {
+    // If we're looking for the same variable that's quantified,
+    // then it doesn't occur freely (it's bound)
+
+    for id in scheme.ids.iter() {
+        if id == var {
+            return false;
+        }
+    }
+
+    occurs_check(var, &scheme.ty)
+}
+
 pub fn occurs_check(var: &Id, t: &Arc<Type>) -> bool {
     match &**t {
         Type::UnresolvedVar(_) => false, // TODO(loong): should this function return a result?
         Type::Var(v) => v == var,
-        Type::ForAll(id, ty, _deps) => {
-            // If we're looking for the same variable that's quantified,
-            // then it doesn't occur freely (it's bound)
-            if id == var {
-                false
-            } else {
-                occurs_check(var, ty)
-            }
-        }
-
         Type::ADT(adt) => adt.variants.iter().any(|v| match &v.t {
             Some(t) => occurs_check(var, t),
             None => false,
@@ -315,10 +448,10 @@ pub fn occurs_check(var: &Id, t: &Arc<Type>) -> bool {
     }
 }
 
-fn missing_keys_error(
+fn missing_keys_vec(
     d1: &BTreeMap<String, Arc<Type>>,
     d2: &BTreeMap<String, Arc<Type>>,
-) -> String {
+) -> Vec<String> {
     let mut missing_keys: Vec<String> = Vec::new();
     for k in d1.keys() {
         if !d2.contains_key(k) {
@@ -333,7 +466,7 @@ fn missing_keys_error(
     }
 
     missing_keys.sort();
-    format!("Missing keys: {:?}", missing_keys)
+    missing_keys
 }
 
 // Test cases
@@ -356,7 +489,7 @@ mod tests {
         // Test case 1: α = Int
         let t1 = Arc::new(Type::Var(alpha));
         let t2 = Arc::new(Type::Int);
-        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
         assert_eq!(
             apply_subst(&Arc::new(Type::Var(alpha)), &subst),
             Arc::new(Type::Int)
@@ -368,7 +501,7 @@ mod tests {
             Arc::new(Type::Var(beta)),
         ));
         let t2 = Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Bool)));
-        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
         assert_eq!(
             apply_subst(&Arc::new(Type::Var(alpha)), &subst),
             Arc::new(Type::Int)
@@ -390,7 +523,7 @@ mod tests {
         // Unify α = β
         let t1 = Arc::new(Type::Var(alpha));
         let t2 = Arc::new(Type::Var(beta));
-        assert!(unify_eq(&t1, &t2, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
 
         // Now α should be mapped to β
         assert_eq!(
@@ -421,7 +554,14 @@ mod tests {
         ));
 
         // Unify f with g directly
-        assert!(unify_eq(&f_type, &g_type, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(
+            &f_type,
+            &g_type,
+            &Span::default(),
+            &mut subst,
+            &mut did_change
+        )
+        .is_ok());
 
         // After unification:
         let final_f = apply_subst(&f_type, &subst);
@@ -464,14 +604,22 @@ mod tests {
         // Now unify g's output with f's input
         let g_output = Arc::new(Type::Var(gamma)); // γ
         let f_input = Arc::new(Type::Var(alpha)); // α
-        assert!(unify_eq(&g_output, &f_input, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(
+            &g_output,
+            &f_input,
+            &Span::default(),
+            &mut subst,
+            &mut did_change
+        )
+        .is_ok());
 
         // Let's make g take an Int
         assert!(unify_eq(
             &Arc::new(Type::Var(gamma)),
             &Arc::new(Type::Int),
+            &Span::default(),
             &mut subst,
-            &mut did_change,
+            &mut did_change
         )
         .is_ok());
 
@@ -518,7 +666,14 @@ mod tests {
         ));
 
         // Unify f with g
-        assert!(unify_eq(&f_type, &g_type, &mut subst, &mut did_change).is_ok());
+        assert!(unify_eq(
+            &f_type,
+            &g_type,
+            &Span::default(),
+            &mut subst,
+            &mut did_change
+        )
+        .is_ok());
 
         // After unification:
         let final_f = apply_subst(&f_type, &subst);
@@ -596,27 +751,111 @@ mod tests {
 
         // ForAll cases - would have failed before our fix
         // Case 1: The variable we're looking for is bound by the ForAll
-        assert!(!occurs_check(
+        assert!(!occurs_check_type_scheme(
             &var,
-            &Arc::new(Type::ForAll(
-                alpha,
-                Arc::new(Type::Var(alpha)),
-                BTreeSet::new()
-            ))
+            &TypeScheme {
+                ids: vec![alpha],
+                ty: Arc::new(Type::Var(alpha)),
+                deps: BTreeSet::new(),
+            }
         ));
 
         // Case 2: The variable we're looking for occurs freely in the body
         let var2 = beta;
-        assert!(occurs_check(
+        assert!(occurs_check_type_scheme(
             &var2,
-            &Arc::new(Type::ForAll(
-                alpha,
-                Arc::new(Type::Arrow(
+            &TypeScheme {
+                ids: vec![alpha],
+                ty: Arc::new(Type::Arrow(
                     Arc::new(Type::Var(beta)),
                     Arc::new(Type::Var(alpha))
                 )),
-                BTreeSet::new()
-            ))
+                deps: BTreeSet::new()
+            }
         ));
+    }
+}
+
+#[derive(Clone)]
+pub enum PathItem<'a> {
+    Property(&'a str),
+    Variant(&'a str),
+    Index(usize),
+}
+
+pub enum Path<'a> {
+    Empty,
+    Property(&'a str, &'a Path<'a>),
+    Variant(&'a str, &'a Path<'a>),
+    Index(usize, &'a Path<'a>),
+}
+
+impl<'a> Path<'a> {
+    pub fn property(&'a self, name: &'a str) -> Self {
+        Path::Property(name, self)
+    }
+
+    pub fn variant(&'a self, name: &'a str) -> Self {
+        Path::Variant(name, self)
+    }
+
+    pub fn index(&'a self, index: usize) -> Self {
+        Path::Index(index, self)
+    }
+
+    pub fn collect_vec<'b>(mut path: &'b Path<'b>, items: &mut Vec<&'b Path<'b>>) {
+        loop {
+            match path {
+                Path::Empty => break,
+                Path::Property(_, parent) => {
+                    items.push(path);
+                    path = parent;
+                }
+                Path::Variant(_, parent) => {
+                    items.push(path);
+                    path = parent;
+                }
+                Path::Index(_, parent) => {
+                    items.push(path);
+                    path = parent;
+                }
+            }
+        }
+    }
+
+    pub fn string_for(path: &Path) -> Option<String> {
+        match path {
+            Path::Empty => None,
+            _ => Some(path.to_string()),
+        }
+    }
+}
+
+impl fmt::Display for Path<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        let mut items = Vec::new();
+        Path::collect_vec(self, &mut items);
+        for (i, item) in items.iter().rev().enumerate() {
+            if i == 0 {
+                write!(f, "In property ")?;
+            }
+            match item {
+                Path::Property(name, _) => {
+                    if i > 0 {
+                        write!(f, ".")?;
+                    }
+                    write!(f, "{}", name)?
+                }
+                Path::Variant(name, _) => {
+                    if i > 0 {
+                        write!(f, "#")?;
+                    }
+                    write!(f, "{}", name)?
+                }
+                Path::Index(i, _) => write!(f, "[{}]", i)?,
+                Path::Empty => {}
+            }
+        }
+        Ok(())
     }
 }

@@ -164,7 +164,7 @@ impl Expr {
             }
             Self::Dict(span, kvs) => {
                 *span = Span::default();
-                for (_k, v) in kvs {
+                for v in kvs.values_mut() {
                     v.reset_spans();
                 }
             }
@@ -218,7 +218,7 @@ impl Display for Expr {
             Self::Uint(_span, x) => x.fmt(f),
             Self::Int(_span, x) => x.fmt(f),
             Self::Float(_span, x) => x.fmt(f),
-            Self::String(_span, x) => x.fmt(f),
+            Self::String(_span, x) => write!(f, "{:?}", x),
             Self::Uuid(_span, x) => x.fmt(f),
             Self::DateTime(_span, x) => x.fmt(f),
             Self::List(_span, xs) => {

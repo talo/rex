@@ -6,18 +6,16 @@ use rex_lexer::{
     Token, Tokens,
 };
 
-use crate::{
-    error::{Error, ParserErr},
-    op::Operator,
-};
+use crate::{error::ParserErr, op::Operator};
 
 pub mod error;
 pub mod op;
 
 pub struct Parser {
-    pub token_cursor: usize,
-    pub tokens: Tokens,
-    pub errors: Vec<ParserErr>,
+    token_cursor: usize,
+    tokens: Vec<Token>,
+    eof: Span,
+    errors: Vec<ParserErr>,
 }
 
 impl Parser {
@@ -25,39 +23,42 @@ impl Parser {
         let mut parser = Parser {
             token_cursor: 0,
             tokens: tokens
+                .items
                 .into_iter()
                 .filter_map(|token| match token {
                     Token::Whitespace(..) | Token::WhitespaceNewline(..) => None,
                     token => Some(token),
                 })
                 .collect(),
+            eof: tokens.eof,
             errors: Vec::new(),
         };
+        // println!("tokens = {:#?}", parser.tokens);
         parser.strip_comments();
         parser
     }
 
-    pub fn current_token(&self) -> Option<Token> {
+    fn current_token(&self) -> Token {
         if self.token_cursor < self.tokens.len() {
-            Some(self.tokens[self.token_cursor].clone())
+            self.tokens[self.token_cursor].clone()
         } else {
-            None
+            Token::Eof(self.eof)
         }
     }
 
-    pub fn peek_token(&self, n: usize) -> Option<Token> {
+    fn peek_token(&self, n: usize) -> Token {
         if self.token_cursor + n < self.tokens.len() {
-            Some(self.tokens[self.token_cursor + n].clone())
+            self.tokens[self.token_cursor + n].clone()
         } else {
-            None
+            Token::Eof(self.eof)
         }
     }
 
-    pub fn next_token(&mut self) {
+    fn next_token(&mut self) {
         self.token_cursor += 1;
     }
 
-    pub fn strip_comments(&mut self) {
+    fn strip_comments(&mut self) {
         let mut cursor = 0;
 
         while cursor < self.tokens.len() {
@@ -80,28 +81,50 @@ impl Parser {
         }
     }
 
-    pub fn parse_expr(&mut self) -> Result<Expr, Error> {
-        let lhs_expr = self.parse_unary_expr()?;
-        let expr = self.parse_binary_expr(lhs_expr);
-        if let Err(err) = &expr {
-            self.errors.push(format!("{}", err).into());
-        }
-        if self.errors.is_empty() {
-            expr
-        } else {
-            Err(Error::Parser(self.errors.clone()))
+    fn record_error(&mut self, e: ParserErr) {
+        self.errors.push(e);
+    }
+
+    pub fn parse_program(&mut self) -> Result<Expr, Vec<ParserErr>> {
+        match self.parse_expr() {
+            Ok(expr) => {
+                // Make sure there's no trailing tokens. The whole program
+                // should be one expression.
+                match self.current_token() {
+                    Token::Eof(..) => {}
+                    token => self.record_error(ParserErr::new(
+                        *token.span(),
+                        format!("unexpected {}", token),
+                    )),
+                }
+
+                if !self.errors.is_empty() {
+                    Err(self.errors.clone())
+                } else {
+                    Ok(expr)
+                }
+            }
+            Err(e) => {
+                self.record_error(e);
+                Err(self.errors.clone())
+            }
         }
     }
 
-    pub fn parse_binary_expr(&mut self, lhs_expr: Expr) -> Result<Expr, Error> {
+    fn parse_expr(&mut self) -> Result<Expr, ParserErr> {
+        let lhs_expr = self.parse_unary_expr()?;
+        self.parse_binary_expr(lhs_expr)
+    }
+
+    fn parse_binary_expr(&mut self, lhs_expr: Expr) -> Result<Expr, ParserErr> {
         let lhs_expr_span = lhs_expr.span();
 
         // Get the next token.
         let token = match self.current_token() {
-            Some(token) => token,
             // Having no next token should finish the parsing of the binary
             // expression.
-            None => return Ok(lhs_expr),
+            Token::Eof(..) => return Ok(lhs_expr),
+            token => token,
         };
         let prec = token.precedence();
 
@@ -113,10 +136,12 @@ impl Parser {
             Token::Div(..) => Operator::Div,
             Token::Dot(..) => Operator::Dot,
             Token::Eq(..) => Operator::Eq,
+            Token::Ne(..) => Operator::Ne,
             Token::Ge(..) => Operator::Ge,
             Token::Gt(..) => Operator::Gt,
             Token::Le(..) => Operator::Le,
             Token::Lt(..) => Operator::Lt,
+            Token::Mod(..) => Operator::Mod,
             Token::Mul(..) => Operator::Mul,
             Token::Or(..) => Operator::Or,
             Token::Sub(..) => Operator::Sub,
@@ -134,25 +159,26 @@ impl Parser {
         let rhs_expr_span = *rhs_expr.span();
 
         let next_binary_expr_takes_precedence = match self.current_token() {
+            // No more tokens
+            Token::Eof(..) => false,
             // Next token has lower precedence
-            Some(token) if prec > token.precedence() => false,
+            token if prec > token.precedence() => false,
             // Next token has the same precedence
-            Some(token) if prec == token.precedence() => match token {
+            token if prec == token.precedence() => match token {
                 // But it is left-associative
                 Token::Add(..)
                 | Token::And(..)
                 | Token::Concat(..)
                 | Token::Div(..)
                 | Token::Mul(..)
+                | Token::Mod(..)
                 | Token::Or(..)
                 | Token::Sub(..) => false,
                 // But it is right-associative
                 _ => true,
             },
             // Next token has higher precedence
-            Some(_) => true,
-            // No more tokens
-            None => false,
+            _ => true,
         };
 
         let rhs_expr = if next_binary_expr_takes_precedence {
@@ -178,52 +204,47 @@ impl Parser {
         ))
     }
 
-    pub fn parse_unary_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_unary_expr(&mut self) -> Result<Expr, ParserErr> {
+        // println!("parse_unary_expr: self.current_token() = {:#?}", self.current_token());
         let mut call_base_expr = match self.current_token() {
-            Some(Token::ParenL(..)) => self.parse_paren_expr(),
-            Some(Token::BracketL(..)) => self.parse_bracket_expr(),
-            Some(Token::BraceL(..)) => self.parse_brace_expr(),
-            Some(Token::Bool(..)) => self.parse_literal_bool_expr(),
-            Some(Token::Float(..)) => self.parse_literal_float_expr(),
-            Some(Token::Int(..)) => self.parse_literal_int_expr(),
-            Some(Token::String(..)) => self.parse_literal_str_expr(),
-            Some(Token::Ident(..)) => self.parse_ident_expr(),
-            Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
-            Some(Token::Let(..)) => self.parse_let_expr(),
-            Some(Token::If(..)) => self.parse_if_expr(),
-            Some(Token::Sub(..)) => self.parse_neg_expr(),
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            Token::ParenL(..) => self.parse_paren_expr(),
+            Token::BracketL(..) => self.parse_bracket_expr(),
+            Token::BraceL(..) => self.parse_brace_expr(),
+            Token::Bool(..) => self.parse_literal_bool_expr(),
+            Token::Float(..) => self.parse_literal_float_expr(),
+            Token::Int(..) => self.parse_literal_int_expr(),
+            Token::String(..) => self.parse_literal_str_expr(),
+            Token::Ident(..) => self.parse_ident_expr(),
+            Token::BackSlash(..) => self.parse_lambda_expr(),
+            Token::Let(..) => self.parse_let_expr(),
+            Token::If(..) => self.parse_if_expr(),
+            Token::Sub(..) => self.parse_neg_expr(),
+            Token::Eof(span) => {
+                return Err(ParserErr::new(span, "unexpected EOF".to_string()));
+            }
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("unexpected {}", token),
                 ));
-                return Err(Error::Parser(self.errors.clone()));
-            }
-            None => {
-                self.errors.push(ParserErr::new(
-                    Span::new(0, 0, 0, 0),
-                    format!("unexpected EOF"),
-                ));
-                return Err(Error::Parser(self.errors.clone()));
             }
         }?;
         let call_base_expr_span = *call_base_expr.span();
 
         let mut call_arg_exprs = VecDeque::new();
         loop {
-            let token = self.current_token();
-            let call_arg_expr = match token {
-                Some(Token::ParenL(..)) => self.parse_paren_expr(),
-                Some(Token::BracketL(..)) => self.parse_bracket_expr(),
-                Some(Token::BraceL(..)) => self.parse_brace_expr(),
-                Some(Token::Bool(..)) => self.parse_literal_bool_expr(),
-                Some(Token::Float(..)) => self.parse_literal_float_expr(),
-                Some(Token::Int(..)) => self.parse_literal_int_expr(),
-                Some(Token::String(..)) => self.parse_literal_str_expr(),
-                Some(Token::Ident(..)) => self.parse_ident_expr(),
-                Some(Token::BackSlash(..)) => self.parse_lambda_expr(),
-                Some(Token::Let(..)) => self.parse_let_expr(),
-                Some(Token::If(..)) => self.parse_if_expr(),
+            let call_arg_expr = match self.current_token() {
+                Token::ParenL(..) => self.parse_paren_expr(),
+                Token::BracketL(..) => self.parse_bracket_expr(),
+                Token::BraceL(..) => self.parse_brace_expr(),
+                Token::Bool(..) => self.parse_literal_bool_expr(),
+                Token::Float(..) => self.parse_literal_float_expr(),
+                Token::Int(..) => self.parse_literal_int_expr(),
+                Token::String(..) => self.parse_literal_str_expr(),
+                Token::Ident(..) => self.parse_ident_expr(),
+                Token::BackSlash(..) => self.parse_lambda_expr(),
+                Token::Let(..) => self.parse_let_expr(),
+                Token::If(..) => self.parse_if_expr(),
                 _ => break,
             }?;
             call_arg_exprs.push_back(call_arg_expr);
@@ -240,29 +261,24 @@ impl Parser {
         Ok(call_base_expr)
     }
 
-    pub fn parse_paren_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_paren_expr(&mut self) -> Result<Expr, ParserErr> {
         // Eat the left parenthesis.
-        let token = self.current_token();
-        let span_begin = match token {
-            Some(Token::ParenL(span, ..)) => {
+        let span_begin = match self.current_token() {
+            Token::ParenL(span, ..) => {
                 self.next_token();
                 span
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `(` got {}", token),
                 ));
-                return Err(Error::Parser(self.errors.clone()));
-            }
-            _ => {
-                return Err(vec!["expected `(` got EOF".to_string().into()].into());
             }
         };
 
         // Parse the inner expression.
         let mut expr = match self.current_token() {
-            Some(Token::ParenR(span, ..)) => {
+            Token::ParenR(span, ..) => {
                 self.next_token();
                 // Empty tuple
                 return Ok(Expr::Tuple(
@@ -270,56 +286,60 @@ impl Parser {
                     vec![],
                 ));
             }
-            Some(Token::Add(span, ..)) => {
+            Token::Add(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "+"))
             }
-            Some(Token::And(span, ..)) => {
+            Token::And(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "&&"))
             }
-            Some(Token::Concat(span, ..)) => {
+            Token::Concat(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "++"))
             }
-            Some(Token::Div(span, ..)) => {
+            Token::Div(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "/"))
             }
-            Some(Token::Dot(span, ..)) => {
+            Token::Dot(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "."))
             }
-            Some(Token::Eq(span, ..)) => {
+            Token::Eq(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "=="))
             }
-            Some(Token::Ge(span, ..)) => {
+            Token::Ge(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, ">="))
             }
-            Some(Token::Gt(span, ..)) => {
+            Token::Gt(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, ">"))
             }
-            Some(Token::Le(span, ..)) => {
+            Token::Le(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "<="))
             }
-            Some(Token::Lt(span, ..)) => {
+            Token::Lt(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "<"))
             }
-            Some(Token::Mul(span, ..)) => {
+            Token::Mod(span, ..) => {
+                self.next_token();
+                Expr::Var(Var::with_span(span, "%"))
+            }
+            Token::Mul(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "*"))
             }
-            Some(Token::Or(span, ..)) => {
+            Token::Or(span, ..) => {
                 self.next_token();
                 Expr::Var(Var::with_span(span, "||"))
             }
-            Some(Token::Sub(span, ..)) => {
-                if let Some(Token::ParenR(..)) = self.peek_token(1) {
+            Token::Sub(span, ..) => {
+                if let Token::ParenR(..) = self.peek_token(1) {
                     // In the case of the `-` operator we need to explicitly
                     // check for the closing right parenthesis, because it is
                     // valid to have an expressions like `(- 69)`. This is
@@ -340,18 +360,17 @@ impl Parser {
         };
 
         // Eat the right parenthesis.
-        let token = self.current_token();
-        let span_end = match token {
-            Some(Token::ParenR(span, ..)) => {
+        let span_end = match self.current_token() {
+            Token::ParenR(span, ..) => {
                 self.next_token();
                 span
             }
-            Some(Token::Comma(..)) => {
+            Token::Comma(..) => {
                 // parse inner expressions
                 return self.parse_tuple(span_begin, expr);
             }
-            _ => {
-                self.errors.push("expected `)`".into());
+            token => {
+                self.record_error(ParserErr::new(*token.span(), "expected `)`"));
                 return Ok(expr);
             }
         };
@@ -361,14 +380,13 @@ impl Parser {
         Ok(expr)
     }
 
-    pub fn parse_tuple(&mut self, span_begin: Span, first_item: Expr) -> Result<Expr, Error> {
+    fn parse_tuple(&mut self, span_begin: Span, first_item: Expr) -> Result<Expr, ParserErr> {
         let mut items = vec![first_item];
         loop {
             // eat the comma
-            let token = self.current_token();
-            match token {
-                Some(Token::Comma(..)) => self.next_token(),
-                Some(Token::ParenR(end_span)) => {
+            match self.current_token() {
+                Token::Comma(..) => self.next_token(),
+                Token::ParenR(end_span) => {
                     self.next_token();
                     return Ok(Expr::Tuple(
                         Span::from_begin_end(span_begin.begin, end_span.end),
@@ -380,46 +398,34 @@ impl Parser {
         }
     }
 
-    pub fn parse_bracket_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_bracket_expr(&mut self) -> Result<Expr, ParserErr> {
         // Eat the left bracket.
-        let token = self.current_token();
-        let span_begin = match token {
-            Some(Token::BracketL(span, ..)) => {
+        let span_begin = match self.current_token() {
+            Token::BracketL(span, ..) => {
                 self.next_token();
                 span.begin
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `[` got {}", token),
                 ));
-                return Err(self.errors.clone().into());
-            }
-            _ => {
-                self.errors.push("expected `[`".into());
-                return Err(self.errors.clone().into());
             }
         };
 
         let mut exprs = Vec::new();
         loop {
-            if let Some(Token::BracketR(..)) = self.current_token() {
+            if let Token::BracketR(..) = self.current_token() {
                 break;
             }
 
             // Parse the next expression.
-            let expr = self.parse_expr()?;
-            let span_expr = *expr.span();
-            exprs.push(expr);
+            exprs.push(self.parse_expr()?);
             // Eat the comma.
-            let token = self.current_token();
-            match token {
-                Some(Token::Comma(..)) => self.next_token(),
-                None => {
-                    self.errors.push(ParserErr::new(
-                        Span::from_begin_end(span_begin, span_expr.end),
-                        "expected `,` or `]`".to_string(),
-                    ));
+            match self.current_token() {
+                Token::Comma(..) => self.next_token(),
+                Token::Eof(span) => {
+                    self.record_error(ParserErr::new(span, "expected `,` or `]`"));
                     break;
                 }
                 _ => {
@@ -429,27 +435,19 @@ impl Parser {
         }
 
         // Eat the right bracket.
-        let token = self.current_token();
-        let span_end = match token {
-            Some(Token::BracketR(span, ..)) => {
+        let span_end = match self.current_token() {
+            Token::BracketR(span, ..) => {
                 self.next_token();
                 span.end
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                self.record_error(ParserErr::new(
                     *token.span(),
                     format!("expected `]` got {}", token),
                 ));
 
                 return Ok(Expr::List(
-                    Span::from_begin_end(span_begin, Position::new(0, 0)),
-                    exprs,
-                ));
-            }
-            _ => {
-                self.errors.push("expected `]`".into());
-                return Ok(Expr::List(
-                    Span::from_begin_end(span_begin, Position::new(0, 0)),
+                    Span::from_begin_end(span_begin, token.span().end),
                     exprs,
                 ));
             }
@@ -461,30 +459,24 @@ impl Parser {
         ))
     }
 
-    pub fn parse_brace_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_brace_expr(&mut self) -> Result<Expr, ParserErr> {
         // Eat the left brace.
-        let token = self.current_token();
-        let span_begin = match token {
-            Some(Token::BraceL(span, ..)) => {
+        let span_begin = match self.current_token() {
+            Token::BraceL(span, ..) => {
                 self.next_token();
                 span.begin
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `[` got {}", token),
                 ));
-                return Err(self.errors.clone().into());
-            }
-            _ => {
-                self.errors.push("expected `[`".into());
-                return Err(self.errors.clone().into());
             }
         };
 
         let mut kvs = Vec::new();
         loop {
-            if let Some(Token::BraceR(_, ..)) = self.current_token() {
+            if let Token::BraceR(..) = self.current_token() {
                 break;
             }
 
@@ -494,30 +486,20 @@ impl Parser {
                 _ => unreachable!(),
             };
             // Eat the =.
-            let token = self.current_token();
-            match token {
-                Some(Token::Assign(..)) => self.next_token(),
-                _ => {
-                    self.errors.push(ParserErr::new(
-                        Span::from_begin_end(span_begin, var.span.end),
-                        "expected `=`".to_string(),
-                    ));
+            match self.current_token() {
+                Token::Assign(..) => self.next_token(),
+                token => {
+                    self.record_error(ParserErr::new(*token.span(), "expected `=`"));
                     break;
                 }
             };
             // Parse the expression.
-            let expr = self.parse_expr()?;
-            let span_expr = *expr.span();
-            kvs.push((var.name, expr));
+            kvs.push((var.name, self.parse_expr()?));
             // Eat the comma.
-            let token = self.current_token();
-            match token {
-                Some(Token::Comma(..)) => self.next_token(),
-                None => {
-                    self.errors.push(ParserErr::new(
-                        Span::from_begin_end(span_begin, span_expr.end),
-                        "expected `,` or `}}`".to_string(),
-                    ));
+            match self.current_token() {
+                Token::Comma(..) => self.next_token(),
+                Token::Eof(span) => {
+                    self.record_error(ParserErr::new(span, "expected `,` or `}}`"));
                     break;
                 }
                 _ => {
@@ -527,25 +509,17 @@ impl Parser {
         }
 
         // Eat the right brace.
-        let token = self.current_token();
-        let span_end = match token {
-            Some(Token::BraceR(span, ..)) => {
+        let span_end = match self.current_token() {
+            Token::BraceR(span, ..) => {
                 self.next_token();
                 span.end
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                self.record_error(ParserErr::new(
                     *token.span(),
                     format!("expected `}}` got {}", token),
                 ));
 
-                return Ok(Expr::Dict(
-                    Span::from_begin_end(span_begin, Position::new(0, 0)),
-                    kvs.into_iter().collect(),
-                ));
-            }
-            _ => {
-                self.errors.push("expected `}}`".into());
                 return Ok(Expr::Dict(
                     Span::from_begin_end(span_begin, Position::new(0, 0)),
                     kvs.into_iter().collect(),
@@ -559,24 +533,18 @@ impl Parser {
         ))
     }
 
-    pub fn parse_neg_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_neg_expr(&mut self) -> Result<Expr, ParserErr> {
         // Eat the minus.
-        let token = self.current_token();
-        let span_token = match token {
-            Some(Token::Sub(span, ..)) => {
+        let span_token = match self.current_token() {
+            Token::Sub(span, ..) => {
                 self.next_token();
                 span
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `-` got {}", token),
                 ));
-                return Err(self.errors.clone().into());
-            }
-            _ => {
-                self.errors.push("expected `-`".into());
-                return Err(self.errors.clone().into());
             }
         };
 
@@ -593,57 +561,39 @@ impl Parser {
     }
 
     //
-    pub fn parse_lambda_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_lambda_expr(&mut self) -> Result<Expr, ParserErr> {
         // Eat the backslash.
-        let token = self.current_token();
-        let span_begin = match token {
-            Some(Token::BackSlash(span, ..)) => {
+        let span_begin = match self.current_token() {
+            Token::BackSlash(span, ..) => {
                 self.next_token();
                 span.begin
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `\\` got {}", token),
                 ));
-                return Err(self.errors.clone().into());
-            }
-            _ => {
-                self.errors.push("expected `\\`".into());
-                return Err(self.errors.clone().into());
             }
         };
 
         // Parse the params.
         let mut params = VecDeque::new();
-        loop {
-            let token = self.current_token();
-            match token {
-                Some(Token::Ident(param, span, ..)) => {
-                    self.next_token();
-                    params.push_back((span, param));
-                }
-                _ => break,
-            }
+        while let Token::Ident(param, span, ..) = self.current_token() {
+            self.next_token();
+            params.push_back((span, param));
         }
 
         // Parse the arrow.
-        let token = self.current_token();
-        let _span_arrow = match token {
-            Some(Token::ArrowR(span, ..)) => {
+        let _span_arrow = match self.current_token() {
+            Token::ArrowR(span, ..) => {
                 self.next_token();
                 span
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `->` got {}", token),
                 ));
-                return Err(self.errors.clone().into());
-            }
-            _ => {
-                self.errors.push("expected `->`".into());
-                return Err(self.errors.clone().into());
             }
         };
 
@@ -666,98 +616,69 @@ impl Parser {
     }
 
     //
-    pub fn parse_let_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_let_expr(&mut self) -> Result<Expr, ParserErr> {
         // Eat the `let` token
-        let token = self.current_token();
-        let span_begin = match token {
-            Some(Token::Let(span, ..)) => {
+        let span_begin = match self.current_token() {
+            Token::Let(span, ..) => {
                 self.next_token();
                 span.begin
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `let` got {}", token),
                 ));
-                return Err(self.errors.clone().into());
-            }
-            _ => {
-                self.errors.push("expected `let`".into());
-                return Err(self.errors.clone().into());
             }
         };
 
         // Parse the variable declarations.
         let mut decls = VecDeque::new();
-        loop {
-            // Variable name
-            let token = self.current_token();
-            let var = match token {
-                Some(Token::Ident(val, span, ..)) => {
-                    self.next_token();
-                    (span, val)
-                }
-                _ => break,
-            };
+        // Variable name
+        while let Token::Ident(val, span, ..) = self.current_token() {
+            self.next_token();
+            let var = (span, val);
+
             // =
-            let token = self.current_token();
-            match token {
-                Some(Token::Assign(_span, ..)) => {
+            match self.current_token() {
+                Token::Assign(_span, ..) => {
                     self.next_token();
                 }
-                Some(token) => {
-                    self.errors.push(ParserErr::new(
+                token => {
+                    return Err(ParserErr::new(
                         *token.span(),
                         format!("expected `=` got {}", token),
                     ));
-                    return Err(self.errors.clone().into());
-                }
-                _ => {
-                    self.errors.push("expected `=`".into());
-                    return Err(self.errors.clone().into());
                 }
             }
             // Parse the variable definition
             decls.push_back((var, self.parse_expr()?));
             // Parse `,` or `in`
-            let token = self.current_token();
-            match token {
-                Some(Token::Comma(_span, ..)) => {
+            match self.current_token() {
+                Token::Comma(_span, ..) => {
                     self.next_token();
                     continue;
                 }
-                Some(Token::In(..)) => break,
-                Some(token) => {
-                    self.errors.push(ParserErr::new(
+                Token::In(..) => break,
+                token => {
+                    return Err(ParserErr::new(
                         *token.span(),
                         format!("expected `,` or `in` got {}", token),
                     ));
-                    return Err(self.errors.clone().into());
-                }
-                _ => {
-                    self.errors.push("expected `,` or `in`".into());
-                    return Err(self.errors.clone().into());
                 }
             }
         }
 
         // Parse the `in` token
-        let token = self.current_token();
-        let _span_arrow = match token {
-            Some(Token::In(span, ..)) => {
+        let _span_arrow = match self.current_token() {
+            Token::In(span, ..) => {
                 self.next_token();
                 span
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `in` got {}", token),
                 ));
-                return Err(self.errors.clone().into());
-            }
-            _ => {
-                self.errors.push("expected `in`".into());
-                return Err(self.errors.clone().into());
             }
         };
 
@@ -770,8 +691,7 @@ impl Parser {
                 Var::with_span(var_span, var),
                 Box::new(def),
                 Box::new(body),
-            )
-            .into();
+            );
             body_span_end = body.span().end;
         }
         // Adjust the outer most let-in expression to include the initial let
@@ -782,24 +702,18 @@ impl Parser {
     }
 
     //
-    pub fn parse_if_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_if_expr(&mut self) -> Result<Expr, ParserErr> {
         // Eat the `if` token
-        let token = self.current_token();
-        let span_begin = match token {
-            Some(Token::If(span, ..)) => {
+        let span_begin = match self.current_token() {
+            Token::If(span, ..) => {
                 self.next_token();
                 span.begin
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `if` got {}", token),
                 ));
-                return Err(self.errors.clone().into());
-            }
-            _ => {
-                self.errors.push("expected `if`".into());
-                return Err(self.errors.clone().into());
             }
         };
 
@@ -807,22 +721,16 @@ impl Parser {
         let cond = self.parse_expr()?;
 
         // Parse the `then` token
-        let token = self.current_token();
-        let _span_arrow = match token {
-            Some(Token::Then(span, ..)) => {
+        let _span_arrow = match self.current_token() {
+            Token::Then(span, ..) => {
                 self.next_token();
                 span
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `then` got {}", token),
                 ));
-                return Err(self.errors.clone().into());
-            }
-            _ => {
-                self.errors.push("expected `then`".into());
-                return Err(self.errors.clone().into());
             }
         };
 
@@ -830,22 +738,16 @@ impl Parser {
         let then = self.parse_expr()?;
 
         // Parse the `else` token
-        let token = self.current_token();
-        let _span_arrow = match token {
-            Some(Token::Else(span, ..)) => {
+        let _span_arrow = match self.current_token() {
+            Token::Else(span, ..) => {
                 self.next_token();
                 span
             }
-            Some(token) => {
-                self.errors.push(ParserErr::new(
+            token => {
+                return Err(ParserErr::new(
                     *token.span(),
                     format!("expected `else` got {}", token),
                 ));
-                return Err(self.errors.clone().into());
-            }
-            _ => {
-                self.errors.push("expected `else`".into());
-                return Err(self.errors.clone().into());
             }
         };
 
@@ -862,114 +764,74 @@ impl Parser {
     }
 
     //
-    pub fn parse_literal_bool_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_literal_bool_expr(&mut self) -> Result<Expr, ParserErr> {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Bool(val, span, ..)) => Ok(Expr::Bool(span, val)),
-            Some(token) => {
-                self.errors.push(ParserErr::new(
-                    *token.span(),
-                    format!("expected `bool` got {}", token),
-                ));
-                Err(self.errors.clone().into())
-            }
-            _ => {
-                self.errors.push("expected `bool`".into());
-                Err(self.errors.clone().into())
-            }
+            Token::Bool(val, span, ..) => Ok(Expr::Bool(span, val)),
+            token => Err(ParserErr::new(
+                *token.span(),
+                format!("expected `bool` got {}", token),
+            )),
         }
     }
 
     //
-    pub fn parse_literal_float_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_literal_float_expr(&mut self) -> Result<Expr, ParserErr> {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Float(val, span, ..)) => Ok(Expr::Float(span, val)),
-            Some(token) => {
-                self.errors.push(ParserErr::new(
-                    *token.span(),
-                    format!("expected `float` got {}", token),
-                ));
-                Err(self.errors.clone().into())
-            }
-            _ => {
-                self.errors.push("expected `float`".into());
-                Err(self.errors.clone().into())
-            }
+            Token::Float(val, span, ..) => Ok(Expr::Float(span, val)),
+            token => Err(ParserErr::new(
+                *token.span(),
+                format!("expected `float` got {}", token),
+            )),
         }
     }
 
     //
-    pub fn parse_literal_int_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_literal_int_expr(&mut self) -> Result<Expr, ParserErr> {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Int(val, span, ..)) => Ok(Expr::Uint(span, val)),
-            Some(token) => {
-                self.errors.push(ParserErr::new(
-                    *token.span(),
-                    format!("expected `int` got {}", token),
-                ));
-                Err(self.errors.clone().into())
-            }
-            _ => {
-                self.errors.push("expected `int`".into());
-                Err(self.errors.clone().into())
-            }
+            Token::Int(val, span, ..) => Ok(Expr::Uint(span, val)),
+            token => Err(ParserErr::new(
+                *token.span(),
+                format!("expected `int` got {}", token),
+            )),
         }
     }
 
     //
-    pub fn parse_literal_str_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_literal_str_expr(&mut self) -> Result<Expr, ParserErr> {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::String(val, span, ..)) => Ok(Expr::String(span, val)),
-            Some(token) => {
-                self.errors.push(ParserErr::new(
-                    *token.span(),
-                    format!("expected `str` got {}", token),
-                ));
-                Err(self.errors.clone().into())
-            }
-            _ => {
-                self.errors.push("expected `str`".into());
-                Err(self.errors.clone().into())
-            }
+            Token::String(val, span, ..) => Ok(Expr::String(span, val)),
+            token => Err(ParserErr::new(
+                *token.span(),
+                format!("expected `str` got {}", token),
+            )),
         }
     }
 
     //
-    pub fn parse_ident_expr(&mut self) -> Result<Expr, Error> {
+    fn parse_ident_expr(&mut self) -> Result<Expr, ParserErr> {
         let token = self.current_token();
         self.next_token();
         match token {
-            Some(Token::Ident(name, span, ..)) => Ok(Expr::Var(Var::with_span(span, name))),
-            Some(token) => {
-                self.errors.push(ParserErr::new(
-                    *token.span(),
-                    format!("expected `ident` got {}", token),
-                ));
-                Err(self.errors.clone().into())
-            }
-            _ => {
-                self.errors.push("expected `ident`".into());
-                Err(self.errors.clone().into())
-            }
-        }
-    }
-
-    pub fn print_errors(&self) {
-        for err in self.errors.iter() {
-            println!("{}", err);
+            Token::Ident(name, span, ..) => Ok(Expr::Var(Var::with_span(span, name))),
+            token => Err(ParserErr::new(
+                *token.span(),
+                format!("expected `ident` got {}", token),
+            )),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::error::ParserErr;
     use rex_ast::{app, assert_expr_eq, b, f, tup, u, v};
     use rex_lexer::{span, Token};
 
@@ -978,22 +840,22 @@ mod tests {
     #[test]
     fn test_parse_comment() {
         let mut parser = Parser::new(Token::tokenize("true {- this is a boolean -}").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        assert_expr_eq!(expr, b!(span!(1:1 - 1:4); true));
+        let expr = parser.parse_program().unwrap();
+        assert_expr_eq!(expr, b!(span!(1:1 - 1:5); true));
 
         let mut parser = Parser::new(Token::tokenize("{- this is a boolean -} false").unwrap());
-        let expr = parser.parse_expr().unwrap();
-        assert_expr_eq!(expr, b!(span!(1:25 - 1:29); false));
+        let expr = parser.parse_program().unwrap();
+        assert_expr_eq!(expr, b!(span!(1:25 - 1:30); false));
 
         let mut parser = Parser::new(Token::tokenize("(3.54 {- this is a float -}, {- this is an int -} 42, false {- this is a boolean -})").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_program().unwrap();
         assert_expr_eq!(
             expr,
             tup!(
-                span!(1:1 - 1:84);
-                f!(span!(1:2 - 1:5); 3.54),
-                u!(span!(1:51 - 1:52); 42),
-                b!(span!(1:55 - 1:59); false),
+                span!(1:1 - 1:85);
+                f!(span!(1:2 - 1:6); 3.54),
+                u!(span!(1:51 - 1:53); 42),
+                b!(span!(1:55 - 1:60); false),
             )
         );
     }
@@ -1001,43 +863,43 @@ mod tests {
     #[test]
     fn test_add() {
         let mut parser = Parser::new(Token::tokenize("1 + 2").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_program().unwrap();
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:5);
+                span!(1:1 - 1:6);
                 app!(
-                    span!(1:1 - 1:3);
-                    v!(span!(1:3 - 1:3); "+"),
-                    u!(span!(1:1 - 1:1); 1)
+                    span!(1:1 - 1:4);
+                    v!(span!(1:3 - 1:4); "+"),
+                    u!(span!(1:1 - 1:2); 1)
                 ),
-                u!(span!(1:5 - 1:5); 2)
+                u!(span!(1:5 - 1:6); 2)
             )
         );
 
         let mut parser = Parser::new(Token::tokenize("(6.9 + 3.14)").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_program().unwrap();
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:12);
+                span!(1:1 - 1:13);
                 app!(
-                    span!(1:2 - 1:6);
-                    v!(span!(1:6 - 1:6); "+"),
-                    f!(span!(1:2 - 1:4); 6.9)
+                    span!(1:2 - 1:7);
+                    v!(span!(1:6 - 1:7); "+"),
+                    f!(span!(1:2 - 1:5); 6.9)
                 ),
-                f!(span!(1:8 - 1:11); 3.14)
+                f!(span!(1:8 - 1:12); 3.14)
             )
         );
 
         let mut parser = Parser::new(Token::tokenize("(+) 420").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_program().unwrap();
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:7);
-                v!(span!(1:1 - 1:3); "+"),
-                u!(span!(1:5 - 1:7); 420)
+                span!(1:1 - 1:8);
+                v!(span!(1:1 - 1:4); "+"),
+                u!(span!(1:5 - 1:8); 420)
             )
         );
     }
@@ -1045,43 +907,43 @@ mod tests {
     #[test]
     fn test_sub() {
         let mut parser = Parser::new(Token::tokenize("1 - 2").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_program().unwrap();
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:5);
+                span!(1:1 - 1:6);
                 app!(
-                    span!(1:1 - 1:3);
-                    v!(span!(1:3 - 1:3); "-"),
-                    u!(span!(1:1 - 1:1); 1)
+                    span!(1:1 - 1:4);
+                    v!(span!(1:3 - 1:4); "-"),
+                    u!(span!(1:1 - 1:2); 1)
                 ),
-                u!(span!(1:5 - 1:5); 2)
+                u!(span!(1:5 - 1:6); 2)
             )
         );
 
         let mut parser = Parser::new(Token::tokenize("(6.9 - 3.14)").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_program().unwrap();
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:12);
+                span!(1:1 - 1:13);
                 app!(
-                    span!(1:2 - 1:6);
-                    v!(span!(1:6 - 1:6); "-"),
-                    f!(span!(1:2 - 1:4); 6.9)
+                    span!(1:2 - 1:7);
+                    v!(span!(1:6 - 1:7); "-"),
+                    f!(span!(1:2 - 1:5); 6.9)
                 ),
-                f!(span!(1:8 - 1:11); 3.14)
+                f!(span!(1:8 - 1:12); 3.14)
             )
         );
 
         let mut parser = Parser::new(Token::tokenize("(-) 4.20").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_program().unwrap();
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:8);
-                v!(span!(1:1 - 1:3); "-"),
-                f!(span!(1:5 - 1:8); 4.20)
+                span!(1:1 - 1:9);
+                v!(span!(1:1 - 1:4); "-"),
+                f!(span!(1:5 - 1:9); 4.20)
             )
         );
     }
@@ -1089,36 +951,96 @@ mod tests {
     #[test]
     fn test_negate() {
         let mut parser = Parser::new(Token::tokenize("-1").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_program().unwrap();
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:2);
-                v!(span!(1:1 - 1:1); "negate"),
-                u!(span!(1:2 - 1:2); 1)
+                span!(1:1 - 1:3);
+                v!(span!(1:1 - 1:2); "negate"),
+                u!(span!(1:2 - 1:3); 1)
             )
         );
 
         let mut parser = Parser::new(Token::tokenize("(-1)").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_program().unwrap();
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:4);
-                v!(span!(1:2 - 1:2); "negate"),
-                u!(span!(1:3 - 1:3); 1)
+                span!(1:1 - 1:5);
+                v!(span!(1:2 - 1:3); "negate"),
+                u!(span!(1:3 - 1:4); 1)
             )
         );
 
         let mut parser = Parser::new(Token::tokenize("(- 6.9)").unwrap());
-        let expr = parser.parse_expr().unwrap();
+        let expr = parser.parse_program().unwrap();
         assert_expr_eq!(
             expr,
             app!(
-                span!(1:1 - 1:7);
-                v!(span!(1:2 - 1:2); "negate"),
-                f!(span!(1:4 - 1:6); 6.9)
+                span!(1:1 - 1:8);
+                v!(span!(1:2 - 1:3); "negate"),
+                f!(span!(1:4 - 1:7); 6.9)
             )
+        );
+    }
+
+    #[test]
+    fn test_errors() {
+        let mut parser = Parser::new(Token::tokenize("1 + 2 + in + 3").unwrap());
+        let res = parser.parse_program();
+        assert_eq!(
+            res,
+            Err(vec![ParserErr::new(
+                Span::new(1, 9, 1, 11),
+                "unexpected in"
+            )])
+        );
+
+        let mut parser = Parser::new(Token::tokenize("1 + 2 in + 3").unwrap());
+        let res = parser.parse_program();
+        assert_eq!(
+            res,
+            Err(vec![ParserErr::new(Span::new(1, 7, 1, 9), "unexpected in")])
+        );
+
+        let mut parser = Parser::new(Token::tokenize("get 0 [    ").unwrap());
+        let res = parser.parse_program();
+        assert_eq!(
+            res,
+            Err(vec![ParserErr::new(
+                Span::new(1, 12, 1, 12),
+                "unexpected EOF"
+            )])
+        );
+
+        let mut parser = Parser::new(Token::tokenize("elem0 [  ").unwrap());
+        let res = parser.parse_program();
+        assert_eq!(
+            res,
+            Err(vec![ParserErr::new(
+                Span::new(1, 10, 1, 10),
+                "unexpected EOF"
+            )])
+        );
+
+        let mut parser = Parser::new(
+            Token::tokenize(
+                "
+            { a = 1, b }
+            { a = 1, b = 2, c }
+            { a = 1, b = 3, c = 3, d }
+            ",
+            )
+            .unwrap(),
+        );
+        let res = parser.parse_program();
+        assert_eq!(
+            res,
+            Err(vec![
+                ParserErr::new(Span::new(2, 24, 2, 25), "expected `=`"),
+                ParserErr::new(Span::new(3, 31, 3, 32), "expected `=`"),
+                ParserErr::new(Span::new(4, 38, 4, 39), "expected `=`")
+            ])
         );
     }
 }

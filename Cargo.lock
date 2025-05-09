@@ -744,6 +744,7 @@ dependencies = [
  "rex-lexer",
  "rpds",
  "serde",
+ "serde_json",
  "thiserror",
  "uuid",
 ]

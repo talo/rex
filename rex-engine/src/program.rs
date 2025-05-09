@@ -8,8 +8,13 @@ use rex_lexer::LexicalError;
 use rex_lexer::Token;
 use rex_parser::Parser;
 use rex_type_system::unify::Subst;
-use rex_type_system::{constraint::generate_constraints, types::Type, unify};
-use std::sync::Arc;
+use rex_type_system::{
+    constraint::{generate_constraints, ConstraintSystem},
+    types::Type,
+    unify,
+    // error::TypeError,
+};
+use std::{collections::BTreeSet, sync::Arc};
 
 pub struct Program<State>
 where
@@ -27,19 +32,35 @@ where
 {
     pub fn compile(builder: Builder<State>, code: &str) -> Result<Self, Error> {
         let tokens = Token::tokenize(code).map_err(|e| match e {
-            LexicalError::UnexpectedToken(s) => Error::UnexpectedToken(s),
+            LexicalError::UnexpectedToken(s) => Error::UnexpectedToken {
+                span: s,
+                trace: Default::default(),
+            },
         })?;
         let mut parser = Parser::new(tokens);
-        let expr = parser.parse_expr().map_err(|e| match e {
-            rex_parser::error::Error::Parser(e) => Error::Parser(e),
+        let expr = parser.parse_program().map_err(|es| Error::Parser {
+            errors: es,
+            trace: Default::default(),
         })?;
 
-        let (mut constraint_system, ftable, type_env) = builder.build();
+        let (ftable, type_env) = builder.build();
+        let mut constraint_system = ConstraintSystem::default();
 
-        let ty = generate_constraints(&expr, &type_env, &mut constraint_system)
-            .map_err(|e| Error::TypeInference(e))?;
-        let subst =
-            unify::unify_constraints(&constraint_system).map_err(|e| Error::TypeInference(e))?;
+        let mut errors = BTreeSet::new();
+        let ty = generate_constraints(&expr, &type_env, &mut constraint_system, &mut errors);
+        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        if !errors.is_empty() {
+            // Sort by span and path first, so the errors appear in the same order the parts
+            // of the input file they correspond do. The default order for an enum produced by
+            // #[derive(Ord)] sorts by type first, which is not the best choice for this case.
+            let mut errors = errors.into_iter().collect::<Vec<_>>();
+            errors.sort_by(|a, b| (a.span(), a.path(), a).cmp(&(b.span(), b.path(), b)));
+
+            return Err(Error::TypeInference {
+                errors,
+                trace: Default::default(),
+            });
+        }
 
         let res_type = unify::apply_subst(&ty, &subst);
         Ok(Program {
@@ -58,6 +79,7 @@ where
                 state: Arc::new(state),
             },
             &self.expr,
+            None,
         )
         .await
     }
