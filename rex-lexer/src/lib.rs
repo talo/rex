@@ -279,7 +279,6 @@ impl Token {
             r"(?P<LambdaR>->)|",
             r"(?P<ParenL>\()|",
             r"(?P<ParenR>\))|",
-            r"(?P<Pipe>\|)|",
             r"(?P<Question>\?)|",
             r"(?P<SemiColon>;)|",
             r"(?P<Whitespace>( |\t))|",
@@ -299,6 +298,7 @@ impl Token {
             r"(?P<GreaterThanEq>>=)|",
             r"(?P<Mul>\*)|",
             r"(?P<Or>\|\|)|",
+            r"(?P<Pipe>\|)|",
             r"(?P<Sub>-)|",
             // Literals (with word boundaries for bool and null)
             r"(?P<Bool>\b(true|false)\b)|",

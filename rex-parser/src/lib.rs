@@ -216,6 +216,8 @@ impl Parser {
             Token::Lt(..) => Operator::Lt,
             Token::Mul(..) => Operator::Mul,
             Token::Sub(..) => Operator::Sub,
+            Token::And(..) => Operator::And,
+            Token::Or(..) => Operator::Or,
             _ => {
                 return Ok(lhs_expr);
             }
