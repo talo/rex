@@ -183,13 +183,14 @@ pub fn json_to_expr(
             }
             Ok(Expr::List(Span::default(), exprs))
         }
-        (Type::Dict(type_entries), Value::Object(json_entries))
-            if type_entries.len() == json_entries.len() =>
-        {
+        (Type::Dict(type_entries), Value::Object(json_entries)) => {
             let mut expr_entries: BTreeMap<String, Expr> = BTreeMap::new();
             for (k, t) in type_entries.iter() {
-                let json_entry = json_entries.get(k).ok_or_else(|| type_error(json, want))?;
-                expr_entries.insert(k.clone(), json_to_expr(&json_entry, t, opts)?);
+                let expr = match json_entries.get(k) {
+                    Some(v) => json_to_expr(v, t, opts)?,
+                    None => json_to_expr(&serde_json::Value::Null, t, opts)?,
+                };
+                expr_entries.insert(k.clone(), expr);
             }
             Ok(Expr::Dict(Span::default(), expr_entries))
         }

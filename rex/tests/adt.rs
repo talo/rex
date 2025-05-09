@@ -364,7 +364,27 @@ async fn test_field_optional() {
         ))
     );
 
-    compare(value, &expected_type, &expected_encoding);
+    compare(value.clone(), &expected_type, &expected_encoding);
+    compare_from_json(
+        value.clone(),
+        &expected_encoding,
+        "{\"a\":\"Hello\",\"b\":42,\"c\":null}",
+    );
+    compare_from_json(
+        value.clone(),
+        &expected_encoding,
+        "{\"a\":\"Hello\",\"b\":42,\"c\":null,\"x\":4}",
+    );
+    compare_from_json(
+        value.clone(),
+        &expected_encoding,
+        "{\"a\":\"Hello\",\"b\":42}",
+    );
+    compare_from_json(
+        value.clone(),
+        &expected_encoding,
+        "{\"a\":\"Hello\",\"b\":42,\"x\":4}",
+    );
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
@@ -875,5 +895,29 @@ where
 
     let json_encoding =
         json_to_expr(&json_expected, &Arc::new(T::to_type()), &Default::default()).unwrap();
-    assert_expr_eq!(actual_encoding, json_encoding);
+    assert_expr_eq!(actual_encoding, json_encoding; ignore span);
+}
+
+fn compare_from_json<T>(orig_value: T, expected_encoding: &Expr, json: &str)
+where
+    T: ToType
+        + Encode
+        + Decode
+        + Serialize
+        + for<'a> Deserialize<'a>
+        + Clone
+        + PartialEq
+        + std::fmt::Debug,
+{
+    let deserialized_value = serde_json::from_str::<T>(json).unwrap();
+    assert_eq!(deserialized_value, orig_value);
+
+    let deserialized_json = serde_json::from_str::<serde_json::Value>(json).unwrap();
+    let actual_encoding = json_to_expr(
+        &deserialized_json,
+        &Arc::new(T::to_type()),
+        &Default::default(),
+    )
+    .unwrap();
+    assert_expr_eq!(actual_encoding, expected_encoding; ignore span);
 }
