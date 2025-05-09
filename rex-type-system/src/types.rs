@@ -612,6 +612,22 @@ impl ToType for DateTime<Utc> {
     }
 }
 
+impl ToType for serde_json::Value {
+    fn to_type() -> Type {
+        Type::ADT(ADT {
+            name: "serde_json::Value".to_string(),
+            docs: None,
+            variants: vec![ADTVariant {
+                name: "serde_json::Value".to_string(),
+                t: Some(Arc::new(Type::String)),
+                docs: None,
+                t_docs: None,
+                discriminant: None,
+            }],
+        })
+    }
+}
+
 impl<B> ToType for fn() -> B
 where
     B: ToType,

@@ -109,6 +109,19 @@ impl Encode for DateTime<Utc> {
     }
 }
 
+impl Encode for serde_json::Value {
+    fn try_encode(self, span: Span) -> Result<Expr, Error> {
+        Ok(Expr::Named(
+            span,
+            "serde_json::Value".to_string(),
+            Some(Box::new(Expr::String(
+                span,
+                serde_json::to_string(&self).map_err(|e| Error::from(e.to_string()))?,
+            ))),
+        ))
+    }
+}
+
 impl Encode for () {
     fn try_encode(self, span: Span) -> Result<Expr, Error> {
         Ok(Expr::Tuple(span, vec![]))
@@ -430,6 +443,28 @@ impl Decode for DateTime<Utc> {
     fn try_decode(v: &Expr) -> Result<Self, Error> {
         match v {
             Expr::DateTime(_, dt) => Ok(dt.clone()),
+            _ => Err(Error::ExpectedTypeGotValue {
+                expected: Arc::new(Self::to_type()),
+                got: v.clone(),
+                trace: Default::default(),
+            }),
+        }
+    }
+}
+
+impl Decode for serde_json::Value {
+    fn try_decode(v: &Expr) -> Result<Self, Error> {
+        match v {
+            Expr::Named(_, n, Some(inner)) if n == "serde_json::Value" => match &**inner {
+                Expr::String(_, s) => {
+                    Ok(serde_json::from_str(s).map_err(|e| Error::from(e.to_string()))?)
+                }
+                _ => Err(Error::ExpectedTypeGotValue {
+                    expected: Arc::new(Self::to_type()),
+                    got: v.clone(),
+                    trace: Default::default(),
+                }),
+            },
             _ => Err(Error::ExpectedTypeGotValue {
                 expected: Arc::new(Self::to_type()),
                 got: v.clone(),

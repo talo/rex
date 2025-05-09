@@ -1,5 +1,10 @@
 use crate::{
-    ast::expr::Expr, engine::error::Error as EngineError, lexer::span::Span,
+    ast::expr::Expr,
+    engine::{
+        codec::{Decode, Encode},
+        error::Error as EngineError,
+    },
+    lexer::span::Span,
     type_system::types::Type,
 };
 use serde_json::{Map, Number, Value};
@@ -73,6 +78,11 @@ pub fn json_to_expr(
                     Value::Null => Ok(Expr::Named(Span::default(), adt.name.clone(), None)),
                     _ => Err(type_error(json, want)),
                 }
+            } else if adt.variants.len() == 1
+                && adt.name == "serde_json::Value"
+                && adt.variants[0].name == "serde_json::Value"
+            {
+                json.clone().try_encode(Span::default())
             } else if adt.variants.len() == 1 {
                 if let Some(variant_t) = &adt.variants[0].t {
                     Ok(Expr::Named(
@@ -250,6 +260,11 @@ pub fn expr_to_json(
         (Type::ADT(adt), _) => {
             if adt.variants.len() == 0 {
                 return Ok(Value::Null);
+            } else if adt.variants.len() == 1
+                && adt.name == "serde_json::Value"
+                && adt.variants[0].name == "serde_json::Value"
+            {
+                serde_json::Value::try_decode(expr)
             } else if adt.variants.len() == 1 {
                 match expr {
                     Expr::Named(_, n, Some(inner_expr)) if n == &adt.variants[0].name => {

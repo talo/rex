@@ -16,6 +16,7 @@ use rex::{
     Rex,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::Arc;
 use uuid::{uuid, Uuid};
 
@@ -64,10 +65,8 @@ async fn test_struct() {
     "#,
     )
     .unwrap();
-    println!("program.res_type = {}", program.res_type);
     assert_eq!(program.res_type, tuple!(uint!(), string!()));
     let res = program.run(()).await.unwrap();
-    println!("res = {}", res);
     assert_expr_eq!(res, tup!(u!(42), s!("Hello")); ignore span);
 }
 
@@ -812,6 +811,45 @@ async fn test_enum_mixed() {
         res,
         l!(expected_encoding1, expected_encoding2, expected_encoding3);
         ignore span);
+}
+
+#[tokio::test]
+async fn test_json_field() {
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    pub struct Foo {
+        pub data: serde_json::Value,
+    }
+
+    let value = Foo {
+        data: json!({ "a": 1, "b": 2 }),
+    };
+
+    let expected_type = Arc::new(Type::ADT(adt! {
+        Foo = Foo {
+            data: Arc::new(Type::ADT(ADT {
+                name: "serde_json::Value".to_string(),
+                docs: None,
+                variants: vec![
+                    ADTVariant {
+                        name: "serde_json::Value".to_string(),
+                        t: Some(Arc::new(Type::String)),
+                        docs: None,
+                        t_docs: None,
+                        discriminant: None,
+                    }
+                ]
+            }))
+        }
+    }));
+
+    let expected_encoding = n!(
+        "Foo",
+        Some(d!(
+            data = n!("serde_json::Value", Some(s!("{\"a\":1,\"b\":2}")))
+        ))
+    );
+
+    compare(value, &expected_type, &expected_encoding);
 }
 
 fn compare<T>(orig_value: T, expected_type: &Arc<Type>, expected_encoding: &Expr)
