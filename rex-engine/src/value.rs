@@ -471,7 +471,7 @@ impl TryFrom<Value> for serde_json::Value {
                         .map(serde_json::Value::try_from)
                         .collect::<Result<_, _>>()?,
                 ),
-                None => serde_json::Value::Null,
+                None => serde_json::Value::String(xs.name.clone()),
             }),
             Value::Id(_) => Err(serde_json::Error::custom("cannot serialize id to JSON")),
             Value::Function(_) => Err(serde_json::Error::custom(
