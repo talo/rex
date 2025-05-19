@@ -1,5 +1,3 @@
-use regex;
-
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 
@@ -53,6 +51,7 @@ pub enum Token {
     Gt(Span),
     Le(Span),
     Lt(Span),
+    Mod(Span),
     Mul(Span),
     Or(Span),
     Sub(Span),
@@ -92,6 +91,9 @@ pub enum Token {
 
     // Idents
     Ident(String, Span),
+
+    // Eof
+    Eof(Span),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -101,7 +103,7 @@ pub enum LexicalError {
 }
 
 impl Token {
-    pub fn tokenize(input: &str) -> Result<Vec<Token>, LexicalError> {
+    pub fn tokenize(input: &str) -> Result<Tokens, LexicalError> {
         let mut line = 1;
         let mut column = 1;
         let mut tokens = Vec::new();
@@ -110,7 +112,7 @@ impl Token {
             let begin_line = line;
             let begin_column = column;
             column += capture[0].to_string().chars().count();
-            let span = Span::new(begin_line, begin_column, line, column - 1);
+            let span = Span::new(begin_line, begin_column, line, column);
             if &capture[0] == "\n" {
                 line += 1;
                 column = 1;
@@ -205,6 +207,8 @@ impl Token {
                     Token::Le(span)
                 } else if capture.name("LessThan").is_some() {
                     Token::Lt(span)
+                } else if capture.name("Mod").is_some() {
+                    Token::Mod(span)
                 } else if capture.name("Mul").is_some() {
                     Token::Mul(span)
                 } else if capture.name("Or").is_some() {
@@ -243,10 +247,13 @@ impl Token {
         }
 
         // Filter whitespace
-        Ok(tokens
-            .into_iter()
-            .filter(|token| !matches!(*token, Token::Whitespace(..)))
-            .collect())
+        Ok(Tokens {
+            items: tokens
+                .into_iter()
+                .filter(|token| !matches!(*token, Token::Whitespace(..)))
+                .collect(),
+            eof: Span::new(line, column, line, column),
+        })
     }
 
     /// Get the regular expression that can capture all Tokens. The regular
@@ -296,10 +303,11 @@ impl Token {
             r"(?P<Equal>==)|",
             r"(?P<Assign>=)|", // Must come after `==`
             r"(?P<NotEqual>!=)|",
-            r"(?P<LessThan><)|",
             r"(?P<LessThanEq><=)|",
-            r"(?P<GreaterThan>>)|",
+            r"(?P<LessThan><)|",
             r"(?P<GreaterThanEq>>=)|",
+            r"(?P<GreaterThan>>)|",
+            r"(?P<Mod>%)|",
             r"(?P<Mul>\*)|",
             r"(?P<Or>\|\|)|",
             r"(?P<Sub>-)|",
@@ -326,7 +334,7 @@ impl Token {
             And(..) => Precedence(2),
             Eq(..) | Ne(..) | Lt(..) | Le(..) | Gt(..) | Ge(..) => Precedence(3),
             Add(..) | Sub(..) | Concat(..) => Precedence(4),
-            Mul(..) | Div(..) => Precedence(5),
+            Mul(..) | Div(..) | Mod(..) => Precedence(5),
             Dot(..) => Precedence(6),
             Ident(..) => Precedence::highest(),
             _ => Precedence::lowest(),
@@ -388,6 +396,7 @@ impl Spanned for Token {
             Gt(span, ..) => span,
             Le(span, ..) => span,
             Lt(span, ..) => span,
+            Mod(span, ..) => span,
             Mul(span, ..) => span,
             Or(span, ..) => span,
             Sub(span, ..) => span,
@@ -401,6 +410,9 @@ impl Spanned for Token {
 
             // Idents
             Ident(_, span, ..) => span,
+
+            // Eof
+            Eof(span) => span,
         }
     }
 
@@ -453,6 +465,7 @@ impl Spanned for Token {
             Gt(span, ..) => span,
             Le(span, ..) => span,
             Lt(span, ..) => span,
+            Mod(span, ..) => span,
             Mul(span, ..) => span,
             Or(span, ..) => span,
             Sub(span, ..) => span,
@@ -466,6 +479,9 @@ impl Spanned for Token {
 
             // Idents
             Ident(_, span, ..) => span,
+
+            // Eof
+            Eof(span) => span,
         }
     }
 }
@@ -520,6 +536,7 @@ impl Display for Token {
             Ge(..) => write!(f, ">="),
             Lt(..) => write!(f, "<"),
             Le(..) => write!(f, "<="),
+            Mod(..) => write!(f, "%"),
             Mul(..) => write!(f, "*"),
             Or(..) => write!(f, "||"),
             Sub(..) => write!(f, "-"),
@@ -533,8 +550,14 @@ impl Display for Token {
 
             // Idents
             Ident(ident, ..) => write!(f, "{}", ident),
+
+            // Eof
+            Eof(..) => write!(f, "EOF"),
         }
     }
 }
 
-pub type Tokens = Vec<Token>;
+pub struct Tokens {
+    pub items: Vec<Token>,
+    pub eof: Span,
+}

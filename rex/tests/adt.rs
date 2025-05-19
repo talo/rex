@@ -16,6 +16,7 @@ use rex::{
     Rex,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::Arc;
 use uuid::{uuid, Uuid};
 
@@ -64,10 +65,8 @@ async fn test_struct() {
     "#,
     )
     .unwrap();
-    println!("program.res_type = {}", program.res_type);
     assert_eq!(program.res_type, tuple!(uint!(), string!()));
     let res = program.run(()).await.unwrap();
-    println!("res = {}", res);
     assert_expr_eq!(res, tup!(u!(42), s!("Hello")); ignore span);
 }
 
@@ -124,7 +123,7 @@ async fn test_struct_single_unnamed_field() {
     builder
         .register_adt(&Arc::new(Foo::to_type()), None, None)
         .unwrap();
-    let program = Program::compile(builder, r#"Foo "Hello" }"#).unwrap();
+    let program = Program::compile(builder, r#"Foo "Hello""#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding; ignore span);
@@ -148,7 +147,7 @@ async fn test_struct_unnamed_fields() {
     builder
         .register_adt(&Arc::new(Foo::to_type()), None, None)
         .unwrap();
-    let program = Program::compile(builder, r#"Foo 42 "Hello" }"#).unwrap();
+    let program = Program::compile(builder, r#"Foo 42 "Hello""#).unwrap();
     assert_eq!(program.res_type, expected_type);
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, expected_encoding; ignore span);
@@ -365,7 +364,27 @@ async fn test_field_optional() {
         ))
     );
 
-    compare(value, &expected_type, &expected_encoding);
+    compare(value.clone(), &expected_type, &expected_encoding);
+    compare_from_json(
+        value.clone(),
+        &expected_encoding,
+        "{\"a\":\"Hello\",\"b\":42,\"c\":null}",
+    );
+    compare_from_json(
+        value.clone(),
+        &expected_encoding,
+        "{\"a\":\"Hello\",\"b\":42,\"c\":null,\"x\":4}",
+    );
+    compare_from_json(
+        value.clone(),
+        &expected_encoding,
+        "{\"a\":\"Hello\",\"b\":42}",
+    );
+    compare_from_json(
+        value.clone(),
+        &expected_encoding,
+        "{\"a\":\"Hello\",\"b\":42,\"x\":4}",
+    );
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
@@ -814,6 +833,45 @@ async fn test_enum_mixed() {
         ignore span);
 }
 
+#[tokio::test]
+async fn test_json_field() {
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    pub struct Foo {
+        pub data: serde_json::Value,
+    }
+
+    let value = Foo {
+        data: json!({ "a": 1, "b": 2 }),
+    };
+
+    let expected_type = Arc::new(Type::ADT(adt! {
+        Foo = Foo {
+            data: Arc::new(Type::ADT(ADT {
+                name: "serde_json::Value".to_string(),
+                docs: None,
+                variants: vec![
+                    ADTVariant {
+                        name: "serde_json::Value".to_string(),
+                        t: Some(Arc::new(Type::String)),
+                        docs: None,
+                        t_docs: None,
+                        discriminant: None,
+                    }
+                ]
+            }))
+        }
+    }));
+
+    let expected_encoding = n!(
+        "Foo",
+        Some(d!(
+            data = n!("serde_json::Value", Some(s!("{\"a\":1,\"b\":2}")))
+        ))
+    );
+
+    compare(value, &expected_type, &expected_encoding);
+}
+
 fn compare<T>(orig_value: T, expected_type: &Arc<Type>, expected_encoding: &Expr)
 where
     T: ToType + Encode + Decode + Serialize + Clone + PartialEq + std::fmt::Debug,
@@ -837,5 +895,29 @@ where
 
     let json_encoding =
         json_to_expr(&json_expected, &Arc::new(T::to_type()), &Default::default()).unwrap();
-    assert_expr_eq!(actual_encoding, json_encoding);
+    assert_expr_eq!(actual_encoding, json_encoding; ignore span);
+}
+
+fn compare_from_json<T>(orig_value: T, expected_encoding: &Expr, json: &str)
+where
+    T: ToType
+        + Encode
+        + Decode
+        + Serialize
+        + for<'a> Deserialize<'a>
+        + Clone
+        + PartialEq
+        + std::fmt::Debug,
+{
+    let deserialized_value = serde_json::from_str::<T>(json).unwrap();
+    assert_eq!(deserialized_value, orig_value);
+
+    let deserialized_json = serde_json::from_str::<serde_json::Value>(json).unwrap();
+    let actual_encoding = json_to_expr(
+        &deserialized_json,
+        &Arc::new(T::to_type()),
+        &Default::default(),
+    )
+    .unwrap();
+    assert_expr_eq!(actual_encoding, expected_encoding; ignore span);
 }

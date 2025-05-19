@@ -46,12 +46,21 @@ pub async fn main() -> anyhow::Result<()> {
                 .context("reading input file")?;
 
             let builder = Builder::with_prelude().unwrap();
-            let program = Program::compile(builder, &input_content).unwrap();
+            let program = match Program::compile(builder, &input_content) {
+                Ok(program) => program,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            };
             let res = program.run(()).await;
 
             match res {
                 Ok(val) => println!("{}", val),
-                Err(e) => println!("Error:\n  evaluating\n\nCaused by:\n  {}", e,),
+                Err(e) => {
+                    eprintln!("Error:\n  evaluating\n\nCaused by:\n  {}", e,);
+                    std::process::exit(1);
+                }
             }
         }
     }

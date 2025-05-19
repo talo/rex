@@ -24,6 +24,7 @@ async fn test_function_overload_param_count_mismatch() {
             name: "map".to_string(),
             new: 3,
             existing: 2,
+            trace: Default::default(),
         })
     );
 }
@@ -44,6 +45,7 @@ async fn test_accessor_overload_param_count_mismatch() {
             name: "map".to_string(),
             new: 1,
             existing: 2,
+            trace: Default::default(),
         })
     );
 }
@@ -103,7 +105,7 @@ async fn test_map_adt() {
     let program = Program::compile(
         builder,
         r#"
-        map (λx → Foo { a = x, b = 'Hello' }) (range 1 4)
+        map (λx → Foo { a = x, b = 'Hello' }) (list_range 1 4 None)
         "#,
     )
     .unwrap();

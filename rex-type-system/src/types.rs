@@ -8,14 +8,38 @@ use chrono::{DateTime, Utc};
 use rex_ast::{expr::Expr, id::Id};
 use uuid::Uuid;
 
-pub type TypeEnv = HashMap<String, Arc<Type>>;
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+pub struct TypeScheme {
+    pub ids: Vec<Id>,
+    pub ty: Arc<Type>,
+    pub deps: BTreeSet<Id>,
+}
 
-#[derive(Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
+impl TypeScheme {
+    pub fn maybe_overlaps_with(&self, other: &TypeScheme) -> bool {
+        // We can ignore type variables hwere, since any two variables are considered
+        // potentially overlapping
+        self.ty.maybe_overlaps_with(&other.ty)
+    }
+}
+
+impl From<Arc<Type>> for TypeScheme {
+    fn from(t: Arc<Type>) -> Self {
+        TypeScheme {
+            ids: vec![],
+            ty: t,
+            deps: BTreeSet::new(),
+        }
+    }
+}
+
+pub type TypeEnv = HashMap<String, HashSet<TypeScheme>>;
+
+#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Type {
     UnresolvedVar(String),
     Var(Id),
-    ForAll(Id, Arc<Type>, BTreeSet<Id>),
 
     ADT(ADT),
     Arrow(Arc<Type>, Arc<Type>),
@@ -81,7 +105,6 @@ impl Type {
         match self {
             Type::UnresolvedVar(_) => true,
             Type::Var(_) => true,
-            Type::ForAll(_, _, _) => true,
             Type::ADT(adt) => match other {
                 Expr::Named(_, n, _) => {
                     for variant in adt.variants.iter() {
@@ -130,6 +153,70 @@ impl Type {
         }
     }
 
+    pub fn maybe_overlaps_with(&self, other: &Type) -> bool {
+        // This function is conservative; we only we return false if we're certain
+        // there's no match.
+        if matches!(other, Type::Var(..)) {
+            return true; // could refer to anything
+        }
+        if matches!(other, Type::UnresolvedVar(..)) {
+            return true; // could refer to anything
+        }
+
+        match self {
+            Type::UnresolvedVar(_) => true,
+            Type::Var(_) => true,
+            Type::ADT(adt1) => match other {
+                Type::ADT(adt2) => adt1.name == adt2.name,
+                _ => false,
+            },
+            Type::Arrow(arg1, res1) => match other {
+                Type::Arrow(arg2, res2) => {
+                    arg1.maybe_overlaps_with(arg2) && res1.maybe_overlaps_with(res2)
+                }
+                _ => false,
+            },
+            Type::Result(ok1, err1) => match other {
+                Type::Result(ok2, err2) => {
+                    ok1.maybe_overlaps_with(ok2) && err1.maybe_overlaps_with(err2)
+                }
+                _ => false,
+            },
+            Type::Option(lhs) => match other {
+                Type::Option(rhs) => lhs.maybe_overlaps_with(rhs),
+                _ => false,
+            },
+            Type::Promise(lhs) => match other {
+                Type::Promise(rhs) => lhs.maybe_overlaps_with(rhs),
+                _ => false,
+            },
+            Type::List(lhs) => match other {
+                Type::List(rhs) => lhs.maybe_overlaps_with(rhs),
+                _ => false,
+            },
+            Type::Dict(_) => {
+                true // TODO
+            }
+            Type::Tuple(lhs) => match other {
+                Type::Tuple(rhs) => {
+                    lhs.len() == rhs.len()
+                        && lhs
+                            .iter()
+                            .zip(rhs.iter())
+                            .all(|(l, r)| l.maybe_overlaps_with(r))
+                }
+                _ => false,
+            },
+            Type::Bool => matches!(other, Type::Bool),
+            Type::Uint => matches!(other, Type::Uint),
+            Type::Int => matches!(other, Type::Int),
+            Type::Float => matches!(other, Type::Float),
+            Type::String => matches!(other, Type::String),
+            Type::Uuid => matches!(other, Type::Uuid),
+            Type::DateTime => matches!(other, Type::DateTime),
+        }
+    }
+
     pub fn for_each<F>(&self, mut f: F) -> Arc<Type>
     where
         F: FnMut(&Type),
@@ -158,10 +245,7 @@ impl Type {
 
         match self {
             Type::UnresolvedVar(x) => Arc::new(Type::UnresolvedVar(x.clone())),
-            Type::Var(v) => Arc::new(Type::Var(v.clone())),
-            Type::ForAll(id, t, ids) => {
-                Arc::new(Type::ForAll(id.clone(), t.transform_ref(f), ids.clone()))
-            }
+            Type::Var(v) => Arc::new(Type::Var(*v)),
             Type::ADT(adt) => Arc::new(Type::ADT(ADT {
                 name: adt.name.clone(),
                 variants: adt
@@ -199,9 +283,73 @@ impl Type {
     }
 }
 
+impl Display for TypeScheme {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for x in self.ids.iter() {
+            "∀τ".fmt(f)?;
+            x.fmt(f)?;
+            ". ".fmt(f)?;
+        }
+        self.ty.fmt(f)?;
+        if !self.deps.is_empty() {
+            " with {".fmt(f)?;
+            for (i, dep) in self.deps.iter().enumerate() {
+                dep.fmt(f)?;
+                if i + 1 < self.deps.len() {
+                    ", ".fmt(f)?;
+                }
+            }
+            '}'.fmt(f)?;
+        }
+        Ok(())
+    }
+}
+
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
+        TypeFormatter::default().fmt_type(self, f)
+    }
+}
+
+pub struct TypeFormatter {
+    var_names: BTreeMap<Id, String>,
+    next_var_no: u64,
+}
+
+impl Default for TypeFormatter {
+    fn default() -> Self {
+        TypeFormatter {
+            var_names: BTreeMap::new(),
+            next_var_no: 1,
+        }
+    }
+}
+
+impl TypeFormatter {
+    fn alloc_var_no(&mut self) -> u64 {
+        let var_no = self.next_var_no;
+        self.next_var_no += 1;
+        var_no
+    }
+
+    fn get_var_name(&mut self, id: &Id) -> String {
+        match self.var_names.get(id) {
+            Some(name) => name.clone(),
+            None => {
+                let var_no = self.alloc_var_no();
+                let var_name = format!("τ{}", var_no);
+                self.var_names.insert(*id, var_name.clone());
+                var_name
+            }
+        }
+    }
+
+    pub fn fmt_var(&mut self, id: &Id, f: &mut Formatter<'_>) -> fmt::Result {
+        self.get_var_name(id).fmt(f)
+    }
+
+    pub fn fmt_type(&mut self, t: &Type, f: &mut Formatter<'_>) -> fmt::Result {
+        match t {
             Type::Bool => "bool".fmt(f),
             Type::Uint => "uint".fmt(f),
             Type::Int => "int".fmt(f),
@@ -210,26 +358,26 @@ impl Display for Type {
             Type::Uuid => "uuid".fmt(f),
             Type::DateTime => "datetime".fmt(f),
             Type::Option(x) => {
-                "Option (".fmt(f)?;
-                x.fmt(f)?;
-                ')'.fmt(f)
+                "Option<".fmt(f)?;
+                self.fmt_type(x, f)?;
+                '>'.fmt(f)
             }
             Type::Promise(x) => {
-                "Promise (".fmt(f)?;
-                x.fmt(f)?;
-                ')'.fmt(f)
+                "Promise<".fmt(f)?;
+                self.fmt_type(x, f)?;
+                '>'.fmt(f)
             }
             Type::Result(a, b) => {
-                "Result (".fmt(f)?;
-                a.fmt(f)?;
-                ") (".fmt(f)?;
-                b.fmt(f)?;
-                ')'.fmt(f)
+                "Result<".fmt(f)?;
+                self.fmt_type(a, f)?;
+                ", ".fmt(f)?;
+                self.fmt_type(b, f)?;
+                '>'.fmt(f)
             }
             Type::Tuple(xs) => {
                 '('.fmt(f)?;
                 for (i, x) in xs.iter().enumerate() {
-                    x.fmt(f)?;
+                    self.fmt_type(x, f)?;
                     if i + 1 < xs.len() {
                         ", ".fmt(f)?;
                     }
@@ -241,7 +389,7 @@ impl Display for Type {
                 for (i, (k, v)) in xs.iter().enumerate() {
                     k.fmt(f)?;
                     " = ".fmt(f)?;
-                    v.fmt(f)?;
+                    self.fmt_type(v, f)?;
                     if i + 1 < xs.len() {
                         ", ".fmt(f)?;
                     }
@@ -252,45 +400,25 @@ impl Display for Type {
                 match a.as_ref() {
                     Type::Arrow(_, _) => {
                         '('.fmt(f)?;
-                        a.fmt(f)?;
+                        self.fmt_type(a, f)?;
                         ')'.fmt(f)?;
                     }
-                    _ => a.fmt(f)?,
+                    _ => self.fmt_type(a, f)?,
                 }
                 " → ".fmt(f)?;
-                b.fmt(f)
+                self.fmt_type(b, f)
             }
             Type::UnresolvedVar(x) => {
                 'τ'.fmt(f)?;
                 x.fmt(f)
             }
-            Type::Var(x) => {
-                'τ'.fmt(f)?;
-                x.fmt(f)
-            }
-            Type::ForAll(x, t, deps) => {
-                "∀τ".fmt(f)?;
-                x.fmt(f)?;
-                ". ".fmt(f)?;
-                t.fmt(f)?;
-                if !deps.is_empty() {
-                    " with {".fmt(f)?;
-                    for (i, dep) in deps.iter().enumerate() {
-                        dep.fmt(f)?;
-                        if i + 1 < deps.len() {
-                            ", ".fmt(f)?;
-                        }
-                    }
-                    '}'.fmt(f)?;
-                }
-                Ok(())
-            }
+            Type::Var(x) => self.fmt_var(x, f),
             Type::List(x) => {
                 '['.fmt(f)?;
-                x.fmt(f)?;
+                self.fmt_type(x, f)?;
                 ']'.fmt(f)
             }
-            Type::ADT(x) => x.fmt(f),
+            Type::ADT(x) => x.name.fmt(f), // Only show name
         }
     }
 }
@@ -311,26 +439,26 @@ impl Dispatch for Type {
     fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
         match self {
             Type::Arrow(a, b) => {
-                args.len() >= 1 && a.maybe_compatible(&args[0]) && b.maybe_accepts_args(&args[1..])
+                !args.is_empty() && a.maybe_compatible(&args[0]) && b.maybe_accepts_args(&args[1..])
             }
-            _ => args.len() == 0,
+            _ => args.is_empty(),
         }
     }
 }
 
 impl Dispatch for Arc<Type> {
     fn num_params(&self) -> usize {
-        let t: &Type = &**self;
-        t.num_params()
+        Type::num_params(self)
     }
 
     fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
-        let t: &Type = &**self;
-        t.maybe_accepts_args(args)
+        Type::maybe_accepts_args(self, args)
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub struct ADT {
     pub name: String,
@@ -354,7 +482,9 @@ impl Display for ADT {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub struct ADTVariant {
     pub name: String,
@@ -479,6 +609,22 @@ impl ToType for Uuid {
 impl ToType for DateTime<Utc> {
     fn to_type() -> Type {
         Type::DateTime
+    }
+}
+
+impl ToType for serde_json::Value {
+    fn to_type() -> Type {
+        Type::ADT(ADT {
+            name: "serde_json::Value".to_string(),
+            docs: None,
+            variants: vec![ADTVariant {
+                name: "serde_json::Value".to_string(),
+                t: Some(Arc::new(Type::String)),
+                docs: None,
+                t_docs: None,
+                discriminant: None,
+            }],
+        })
     }
 }
 
