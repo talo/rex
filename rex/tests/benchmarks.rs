@@ -107,6 +107,42 @@ async fn benchmark_simple() {
 }
 
 #[tokio::test]
+async fn benchmark_large_lists() {
+    let builder: Builder<()> = Builder::with_prelude().unwrap();
+
+    let t1 = Utc::now();
+    let program = Program::compile(
+        builder,
+        r#"
+        let
+            cartesian_product1 = \a b -> map (\x -> map (\y -> (x, y)) b) a,
+            cartesian_product2 = \a b -> map (\x -> map (\y -> (x, y)) b) a,
+            n = 20 {- 100 -},
+        in
+            len (cartesian_product2
+                (list_range 0 n None)
+                (cartesian_product1
+                    (list_range 0 n None)
+                    (list_range 0 n None)))
+        "#,
+    )
+    .unwrap();
+
+    let t2 = Utc::now();
+    let compile_time: TimeDelta = t2 - t1;
+    println!("compile_time = {} ms", compile_time.num_milliseconds());
+
+    let res = program.run(()).await.unwrap();
+    let t3 = Utc::now();
+
+    let eval_time: TimeDelta = t3 - t2;
+    println!("eval_time = {} ms", eval_time.num_milliseconds());
+
+    println!();
+    println!("res = {}", res);
+}
+
+#[tokio::test]
 async fn benchmark_map_large_function() {
     let builder: Builder<()> = Builder::with_prelude().unwrap();
 

@@ -75,9 +75,15 @@ where
         | Expr::DateTime(..)
         | Expr::Named(..)
         | Expr::Promise(..) => Ok(expr.clone()),
-        Expr::Tuple(span, tuple) => eval_tuple(ctx, span, tuple, stack).await,
-        Expr::List(span, list) => eval_list(ctx, span, list, stack).await,
-        Expr::Dict(span, dict) => eval_dict(ctx, span, dict, stack).await,
+        Expr::Tuple(span, tuple) => Ok(eval_tuple(ctx, span, tuple, stack)
+            .await?
+            .unwrap_or_else(|| expr.clone())),
+        Expr::List(span, list) => Ok(eval_list(ctx, span, list, stack)
+            .await?
+            .unwrap_or_else(|| expr.clone())),
+        Expr::Dict(span, dict) => Ok(eval_dict(ctx, span, dict, stack)
+            .await?
+            .unwrap_or_else(|| expr.clone())),
         Expr::Var(var) => eval_var(ctx, var, stack).await,
         Expr::App(span, f, x) => eval_app(ctx, span, f, x, stack).await,
         Expr::Lam(span, scope, param, body) => eval_lam(ctx, span, scope, param, body).await,
@@ -90,45 +96,66 @@ where
 pub async fn eval_tuple<State>(
     ctx: &Context<State>,
     span: &Span,
-    tuple: &Vec<Arc<Expr>>,
+    tuple: &[Arc<Expr>],
     stack: Option<&Stack<'_>>,
-) -> Result<Arc<Expr>, Error>
+) -> Result<Option<Arc<Expr>>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
-    let mut result = Vec::with_capacity(tuple.len());
-    for v in tuple {
-        result.push(eval(ctx, v, stack));
+    // Evaluate all elements of the tuple in parallel
+    let futures = tuple
+        .iter()
+        .map(|v| eval(ctx, v, stack))
+        .collect::<Vec<_>>();
+    let results = future::join_all(futures)
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Check if any of the eval calls returned a different value to what was passed in.
+    // If they are all the same, just return the original expression, instead of wasting
+    // memory by keeping an identical copy.
+    if expr_list_ptr_eq(tuple, &results) {
+        return Ok(None);
     }
-    Ok(Arc::new(Expr::Tuple(
-        *span,
-        future::join_all(result)
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?,
-    )))
+
+    Ok(Some(Arc::new(Expr::Tuple(*span, results))))
 }
 
 pub async fn eval_list<State>(
     ctx: &Context<State>,
     span: &Span,
-    list: &Vec<Arc<Expr>>,
+    list: &[Arc<Expr>],
     stack: Option<&Stack<'_>>,
-) -> Result<Arc<Expr>, Error>
+) -> Result<Option<Arc<Expr>>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
-    let mut result = Vec::with_capacity(list.len());
-    for v in list {
-        result.push(eval(ctx, v, stack));
+    // Evaluate all elements of the list in parallel
+    let futures = list.iter().map(|v| eval(ctx, v, stack)).collect::<Vec<_>>();
+    let results = future::join_all(futures)
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Check if any of the eval calls returned a different value to what was passed in.
+    // If they are all the same, just return the original expression, instead of wasting
+    // memory by keeping an identical copy.
+    if expr_list_ptr_eq(list, &results) {
+        return Ok(None);
     }
-    Ok(Arc::new(Expr::List(
-        *span,
-        future::join_all(result)
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?,
-    )))
+
+    Ok(Some(Arc::new(Expr::List(*span, results))))
+}
+
+fn expr_list_ptr_eq(vals: &[Arc<Expr>], results: &[Arc<Expr>]) -> bool {
+    if vals.len() != results.len() {
+        false
+    } else {
+        vals.iter()
+            .zip(results.iter())
+            .all(|(a, b)| Arc::ptr_eq(a, b))
+    }
 }
 
 pub async fn eval_dict<State>(
@@ -136,7 +163,7 @@ pub async fn eval_dict<State>(
     span: &Span,
     dict: &BTreeMap<String, Arc<Expr>>,
     stack: Option<&Stack<'_>>,
-) -> Result<Arc<Expr>, Error>
+) -> Result<Option<Arc<Expr>>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -144,14 +171,28 @@ where
     let mut vals = Vec::with_capacity(dict.len());
     for (k, v) in dict {
         keys.push(k);
-        vals.push(eval(ctx, v, stack));
+        vals.push(v.clone());
+    }
+
+    // Evaluate all entries in the dictionary in parallel
+    let futures = vals.iter().map(|v| eval(ctx, v, stack)).collect::<Vec<_>>();
+    let results = future::join_all(futures)
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Check if any of the eval calls returned a different value to what was passed in.
+    // If they are all the same, just return the original expression, instead of wasting
+    // memory by keeping an identical copy.
+    if expr_list_ptr_eq(&vals, &results) {
+        return Ok(None);
     }
 
     let mut result = BTreeMap::new();
-    for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
-        result.insert(k.clone(), v?);
+    for (k, v) in keys.into_iter().zip(results) {
+        result.insert(k.clone(), v);
     }
-    Ok(Arc::new(Expr::Dict(*span, result)))
+    Ok(Some(Arc::new(Expr::Dict(*span, result))))
 }
 
 #[async_recursion::async_recursion]
@@ -725,6 +766,13 @@ pub mod test {
         .unwrap();
         assert_eq!(res_type, tuple!(float!(), uint!(), int!(), bool!()));
         assert_expr_eq!(res, tup!(f!(21.666), u!(80), i!(420), b!(true)); ignore span);
+
+        // Check logic for tuple eval where some elements eval to the same value, some different
+        let (res, res_type) = parse_infer_and_eval(r#"(1, 2 + 3, 4, 5 + 6)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, tuple!(uint!(), uint!(), uint!(), uint!()));
+        assert_expr_eq!(res, tup!(u!(1), u!(5), u!(4), u!(11)); ignore span);
     }
 
     #[tokio::test]
@@ -756,6 +804,13 @@ pub mod test {
         let (res, res_type) = parse_infer_and_eval(r#"[420, 69, 555,]"#).await.unwrap();
         assert_eq!(res_type, list!(uint!()));
         assert_expr_eq!(res, l!(u!(420), u!(69), u!(555)); ignore span);
+
+        // Check logic for list eval where some elements eval to the same value, some different
+        let (res, res_type) = parse_infer_and_eval(r#"[1, 2 + 3, 4, 5 + 6]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(1), u!(5), u!(4), u!(11)); ignore span);
     }
 
     #[tokio::test]
@@ -788,6 +843,16 @@ pub mod test {
             .unwrap();
         assert_eq!(res_type, dict! { a: uint!(), b: float!(), c: string!() });
         assert_expr_eq!(res, d!(a = u!(420), b = f!(3.14), c = s!("hello")); ignore span);
+
+        // Check logic for list eval where some elements eval to the same value, some different
+        let (res, res_type) = parse_infer_and_eval(r#"{a = 1, b = 2 + 3, c = 4, d = 5 + 6 }"#)
+            .await
+            .unwrap();
+        assert_eq!(
+            res_type,
+            dict! { a: uint!(), b: uint!(), c: uint!(), d: uint!() }
+        );
+        assert_expr_eq!(res, d!(a = u!(1), b = u!(5), c = u!(4), d = u!(11)); ignore span);
     }
 
     #[tokio::test]
