@@ -99,8 +99,8 @@ pub type FtableFn<State> = Box<dyn for<'r> Fx<'r, State>>;
 pub trait Fx<'r, State>:
     Fn(
         &'r Context<State>,
-        &'r Vec<Expr>,
-    ) -> Pin<Box<dyn Future<Output = Result<Expr, Error>> + Send + 'r>>
+        &'r Vec<Arc<Expr>>,
+    ) -> Pin<Box<dyn Future<Output = Result<Arc<Expr>, Error>> + Send + 'r>>
     + Send
     + Sync
 where
@@ -122,8 +122,8 @@ impl<Gx, State> Fx<'_, State> for Gx
 where
     for<'q> Gx: Fn(
             &'q Context<State>,
-            &'q Vec<Expr>,
-        ) -> Pin<Box<dyn Future<Output = Result<Expr, Error>> + Send + 'q>>
+            &'q Vec<Arc<Expr>>,
+        ) -> Pin<Box<dyn Future<Output = Result<Arc<Expr>, Error>> + Send + 'q>>
         + Clone
         + Send
         + Sync
@@ -236,7 +236,7 @@ where
     }
 }
 
-pub fn decode_arg<A>(args: &[Expr], i: usize) -> Result<A, Error>
+pub fn decode_arg<A>(args: &[Arc<Expr>], i: usize) -> Result<A, Error>
 where
     A: Decode,
 {
@@ -252,60 +252,36 @@ macro_rules! define_polymorphic_types {
     ($($ty:ident),*) => {
         $(
             #[derive(Clone, Debug)]
-            pub struct $ty(pub ::rex_ast::expr::Expr);
+            pub struct $ty(pub ::std::sync::Arc<::rex_ast::expr::Expr>);
 
             #[allow(clippy::from_over_into)]
-            impl Into<::rex_ast::expr::Expr> for $ty {
-                fn into(self) -> ::rex_ast::expr::Expr {
+            impl Into<::std::sync::Arc<::rex_ast::expr::Expr>> for $ty {
+                fn into(self) -> ::std::sync::Arc<::rex_ast::expr::Expr> {
                     self.0
                 }
             }
 
-            impl From<::rex_ast::expr::Expr> for $ty {
-                fn from(e: ::rex_ast::expr::Expr) -> Self {
+            impl From<::std::sync::Arc<::rex_ast::expr::Expr>> for $ty {
+                fn from(e: ::std::sync::Arc<::rex_ast::expr::Expr>) -> Self {
                     Self(e)
                 }
             }
 
-            impl ::std::borrow::Borrow<::rex_ast::expr::Expr> for $ty {
-                fn borrow(&self) -> &::rex_ast::expr::Expr {
+            impl ::std::borrow::Borrow<::std::sync::Arc<::rex_ast::expr::Expr>> for $ty {
+                fn borrow(&self) -> &::std::sync::Arc<::rex_ast::expr::Expr> {
                     &self.0
                 }
             }
 
-            impl ::std::borrow::Borrow<::rex_ast::expr::Expr> for &$ty {
-                fn borrow(&self) -> &::rex_ast::expr::Expr {
+            impl ::std::borrow::Borrow<::std::sync::Arc<::rex_ast::expr::Expr>> for &$ty {
+                fn borrow(&self) -> &::std::sync::Arc<::rex_ast::expr::Expr> {
                     &self.0
                 }
             }
 
-            impl ::std::borrow::Borrow<::rex_ast::expr::Expr> for &mut $ty {
-                fn borrow(&self) -> &::rex_ast::expr::Expr {
+            impl AsRef<::std::sync::Arc<::rex_ast::expr::Expr>> for $ty {
+                fn as_ref(&self) -> &::std::sync::Arc<::rex_ast::expr::Expr> {
                     &self.0
-                }
-            }
-
-            impl ::std::borrow::BorrowMut<::rex_ast::expr::Expr> for $ty {
-                fn borrow_mut(&mut self) -> &mut ::rex_ast::expr::Expr {
-                    &mut self.0
-                }
-            }
-
-            impl ::std::borrow::BorrowMut<::rex_ast::expr::Expr> for &mut $ty {
-                fn borrow_mut(&mut self) -> &mut ::rex_ast::expr::Expr {
-                    &mut self.0
-                }
-            }
-
-            impl AsRef<::rex_ast::expr::Expr> for $ty {
-                fn as_ref(&self) -> &::rex_ast::expr::Expr {
-                    &self.0
-                }
-            }
-
-            impl AsMut<::rex_ast::expr::Expr> for $ty {
-                fn as_mut(&mut self) -> &mut ::rex_ast::expr::Expr {
-                    &mut self.0
                 }
             }
 
@@ -316,13 +292,13 @@ macro_rules! define_polymorphic_types {
             }
 
             impl Encode for $ty {
-                fn try_encode(self, _span: Span) -> Result<::rex_ast::expr::Expr, Error> {
-                    Ok(self.0)
+                fn try_encode(self, _span: Span) -> Result<::std::sync::Arc<::rex_ast::expr::Expr>, Error> {
+                    Ok(self.0.clone())
                 }
             }
 
             impl Decode for $ty {
-                fn try_decode(v: &::rex_ast::expr::Expr) -> Result<Self, Error> {
+                fn try_decode(v: &::std::sync::Arc<::rex_ast::expr::Expr>) -> Result<Self, Error> {
                     Ok(Self(v.clone()))
                 }
             }

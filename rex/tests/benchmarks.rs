@@ -106,6 +106,57 @@ async fn benchmark_simple() {
     println!("res = {}", res);
 }
 
+#[tokio::test]
+async fn benchmark_map_large_function() {
+    let builder: Builder<()> = Builder::with_prelude().unwrap();
+
+    let list_size = 10; // 10000;
+    let function_count = 10;
+    let mut source = String::new();
+    source.push_str("let\n    g = \\x -> let\n");
+    for i in 0..function_count {
+        source.push_str(&format!(
+            "
+        f{i} = let a = \\x ->
+            if x == 1 then 1
+            else if x == 2 then 2
+            else if x == 3 then 3
+            else if x == 4 then 4
+            else if x == 5 then 5
+            else if x == 6 then 6
+            else if x == 7 then 7
+            else if x == 8 then 8
+            else x
+        in
+            \\y -> (a y),"
+        ));
+    }
+    source.push_str(&format!(
+        "
+        in
+            f1 x
+    in
+        len (map g (list_range 0 {list_size} None))
+    "
+    ));
+
+    let t1 = Utc::now();
+    let program = Program::compile(builder, &source).unwrap();
+
+    let t2 = Utc::now();
+    let compile_time: TimeDelta = t2 - t1;
+    println!("compile_time = {} ms", compile_time.num_milliseconds());
+
+    let res = program.run(()).await.unwrap();
+    let t3 = Utc::now();
+
+    let eval_time: TimeDelta = t3 - t2;
+    println!("eval_time = {} ms", eval_time.num_milliseconds());
+
+    println!();
+    println!("res = {}", res);
+}
+
 struct Params {
     adts: usize,
     variants: usize,

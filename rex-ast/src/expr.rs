@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     fmt::{self, Display, Formatter},
+    sync::Arc,
 };
 
 use rex_lexer::span::{Position, Span};
@@ -9,7 +10,7 @@ use rpds::HashTrieMapSync;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-pub type Scope = HashTrieMapSync<String, Expr>;
+pub type Scope = HashTrieMapSync<String, Arc<Expr>>;
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -33,8 +34,11 @@ impl Var {
         }
     }
 
-    pub fn reset_span(&mut self) {
-        self.span = Span::default();
+    pub fn reset_spans(&self) -> Var {
+        Var {
+            span: Span::default(),
+            name: self.name.clone(),
+        }
     }
 }
 
@@ -51,7 +55,7 @@ impl Display for Var {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Expr {
     Bool(Span, bool),     // true
@@ -62,23 +66,23 @@ pub enum Expr {
     Uuid(Span, Uuid),
     DateTime(Span, DateTime<Utc>),
 
-    Tuple(Span, Vec<Expr>),                 // (e1, e2, e3)
-    List(Span, Vec<Expr>),                  // [e1, e2, e3]
-    Dict(Span, BTreeMap<String, Expr>),     // {k1 = v1, k2 = v2}
-    Named(Span, String, Option<Box<Expr>>), //  MyVariant1 {k1 = v1, k2 = v2}
+    Tuple(Span, Vec<Arc<Expr>>),             // (e1, e2, e3)
+    List(Span, Vec<Arc<Expr>>),              // [e1, e2, e3]
+    Dict(Span, BTreeMap<String, Arc<Expr>>), // {k1 = v1, k2 = v2}
+    Named(Span, String, Option<Arc<Expr>>),  //  MyVariant1 {k1 = v1, k2 = v2}
     Promise(Span, Uuid),
     Var(Var),                                   // x
-    App(Span, Box<Expr>, Box<Expr>),            // f x
-    Lam(Span, Scope, Var, Box<Expr>),           // λx → e
-    Let(Span, Var, Box<Expr>, Box<Expr>),       // let x = e1 in e2
-    Ite(Span, Box<Expr>, Box<Expr>, Box<Expr>), // if e1 then e2 else e3
+    App(Span, Arc<Expr>, Arc<Expr>),            // f x
+    Lam(Span, Scope, Var, Arc<Expr>),           // λx → e
+    Let(Span, Var, Arc<Expr>, Arc<Expr>),       // let x = e1 in e2
+    Ite(Span, Arc<Expr>, Arc<Expr>, Arc<Expr>), // if e1 then e2 else e3
 
     // NOTE(loong): this cannot actually be expressed in code. It is the result
     // of an application to a multi-argument function from the ftable. We can
     // probably simplify evaluation massively by having the FtableFn calls be
     // responsible for capturing arguments and returning curried functions.
     // Right now this is handled by the engine and it causes some confusion.
-    Curry(Span, Var, Vec<Expr>), // f x y z {- for currying external functions -}
+    Curry(Span, Var, Vec<Arc<Expr>>), // f x y z {- for currying external functions -}
 }
 
 impl Expr {
@@ -128,85 +132,109 @@ impl Expr {
         }
     }
 
-    pub fn set_span_begin_end(&mut self, begin: Position, end: Position) {
-        self.span_mut().begin = begin;
-        self.span_mut().end = end;
+    pub fn with_span_begin_end(&self, begin: Position, end: Position) -> Expr {
+        self.with_span(Span::from_begin_end(begin, end))
     }
 
-    pub fn set_span_begin(&mut self, begin: Position) {
-        self.span_mut().begin = begin;
+    pub fn with_span_begin(&self, begin: Position) -> Expr {
+        let end = self.span().end;
+        self.with_span(Span::from_begin_end(begin, end))
     }
 
-    pub fn set_span_end(&mut self, end: Position) {
-        self.span_mut().end = end;
+    pub fn with_span_end(&self, end: Position) -> Expr {
+        let begin = self.span().begin;
+        self.with_span(Span::from_begin_end(begin, end))
     }
 
-    pub fn reset_spans(&mut self) {
+    pub fn with_span(&self, span: Span) -> Expr {
         match self {
-            Self::Bool(span, ..) => *span = Span::default(),
-            Self::Uint(span, ..) => *span = Span::default(),
-            Self::Int(span, ..) => *span = Span::default(),
-            Self::Float(span, ..) => *span = Span::default(),
-            Self::String(span, ..) => *span = Span::default(),
-            Self::Uuid(span, ..) => *span = Span::default(),
-            Self::DateTime(span, ..) => *span = Span::default(),
-            Self::Tuple(span, elems) => {
-                *span = Span::default();
-                for elem in elems {
-                    elem.reset_spans();
-                }
+            Expr::Bool(_, x) => Expr::Bool(span, *x),
+            Expr::Uint(_, x) => Expr::Uint(span, *x),
+            Expr::Int(_, x) => Expr::Int(span, *x),
+            Expr::Float(_, x) => Expr::Float(span, *x),
+            Expr::String(_, x) => Expr::String(span, x.clone()),
+            Expr::Uuid(_, x) => Expr::Uuid(span, *x),
+            Expr::DateTime(_, x) => Expr::DateTime(span, *x),
+            Expr::Tuple(_, elems) => Expr::Tuple(span, elems.clone()),
+            Expr::List(_, elems) => Expr::List(span, elems.clone()),
+            Expr::Dict(_, kvs) => Expr::Dict(
+                span,
+                BTreeMap::from_iter(kvs.iter().map(|(k, v)| (k.clone(), v.clone()))),
+            ),
+            Expr::Named(_, name, inner) => Expr::Named(span, name.clone(), inner.as_ref().cloned()),
+            Expr::Promise(_, x) => Expr::Promise(span, *x),
+            Expr::Var(var) => Expr::Var(Var::with_span(span, &var.name)),
+            Expr::App(_, f, x) => Expr::App(span, f.clone(), x.clone()),
+            Expr::Lam(_, scope, param, body) => {
+                Expr::Lam(span, scope.clone(), param.clone(), body.clone())
             }
-            Self::List(span, elems) => {
-                *span = Span::default();
-                for elem in elems {
-                    elem.reset_spans();
-                }
+            Expr::Let(_, var, def, body) => Expr::Let(span, var.clone(), def.clone(), body.clone()),
+            Expr::Ite(_, cond, then, r#else) => {
+                Expr::Ite(span, cond.clone(), then.clone(), r#else.clone())
             }
-            Self::Dict(span, kvs) => {
-                *span = Span::default();
-                for v in kvs.values_mut() {
-                    v.reset_spans();
-                }
-            }
-            Self::Named(span, _name, inner) => {
-                *span = Span::default();
-                if let Some(inner) = inner {
-                    inner.reset_spans();
-                }
-            }
-            Self::Promise(span, ..) => {
-                *span = Span::default();
-            }
-            Self::Var(var) => var.reset_span(),
-            Self::App(span, g, x) => {
-                *span = Span::default();
-                g.reset_spans();
-                x.reset_spans();
-            }
-            Self::Lam(span, _scope, param, body) => {
-                *span = Span::default();
-                param.reset_span();
-                body.reset_spans();
-            }
-            Self::Let(span, var, def, body) => {
-                *span = Span::default();
-                var.reset_span();
-                def.reset_spans();
-                body.reset_spans();
-            }
-            Self::Ite(span, cond, then, r#else) => {
-                *span = Span::default();
-                cond.reset_spans();
-                then.reset_spans();
-                r#else.reset_spans();
-            }
-            Self::Curry(span, g, args) => {
-                *span = Span::default();
-                g.reset_span();
-                for arg in args {
-                    arg.reset_spans();
-                }
-            }
+            Expr::Curry(_, f, args) => Expr::Curry(span, f.clone(), args.clone()),
+        }
+    }
+
+    pub fn reset_spans(&self) -> Expr {
+        match self {
+            Expr::Bool(_, x) => Expr::Bool(Span::default(), *x),
+            Expr::Uint(_, x) => Expr::Uint(Span::default(), *x),
+            Expr::Int(_, x) => Expr::Int(Span::default(), *x),
+            Expr::Float(_, x) => Expr::Float(Span::default(), *x),
+            Expr::String(_, x) => Expr::String(Span::default(), x.clone()),
+            Expr::Uuid(_, x) => Expr::Uuid(Span::default(), *x),
+            Expr::DateTime(_, x) => Expr::DateTime(Span::default(), *x),
+            Expr::Tuple(_, elems) => Expr::Tuple(
+                Span::default(),
+                elems.iter().map(|x| Arc::new(x.reset_spans())).collect(),
+            ),
+            Expr::List(_, elems) => Expr::List(
+                Span::default(),
+                elems.iter().map(|x| Arc::new(x.reset_spans())).collect(),
+            ),
+            Expr::Dict(_, kvs) => Expr::Dict(
+                Span::default(),
+                BTreeMap::from_iter(
+                    kvs.iter()
+                        .map(|(k, v)| (k.clone(), Arc::new(v.reset_spans()))),
+                ),
+            ),
+            Expr::Named(_, name, inner) => Expr::Named(
+                Span::default(),
+                name.clone(),
+                inner.as_ref().map(|x| Arc::new(x.reset_spans())),
+            ),
+            Expr::Promise(_, x) => Expr::Promise(Span::default(), *x),
+            Expr::Var(var) => Expr::Var(var.reset_spans()),
+            Expr::App(_, f, x) => Expr::App(
+                Span::default(),
+                Arc::new(f.reset_spans()),
+                Arc::new(x.reset_spans()),
+            ),
+            Expr::Lam(_, scope, param, body) => Expr::Lam(
+                Span::default(),
+                scope.clone(),
+                param.reset_spans(),
+                Arc::new(body.reset_spans()),
+            ),
+            Expr::Let(_, var, def, body) => Expr::Let(
+                Span::default(),
+                var.reset_spans(),
+                Arc::new(def.reset_spans()),
+                Arc::new(body.reset_spans()),
+            ),
+            Expr::Ite(_, cond, then, r#else) => Expr::Ite(
+                Span::default(),
+                Arc::new(cond.reset_spans()),
+                Arc::new(then.reset_spans()),
+                Arc::new(r#else.reset_spans()),
+            ),
+            Expr::Curry(_, f, args) => Expr::Curry(
+                Span::default(),
+                f.reset_spans(),
+                args.iter().map(|x| Arc::new(x.reset_spans())).collect(),
+            ),
         }
     }
 }
@@ -312,7 +340,7 @@ impl Display for Expr {
                 g.fmt(f)?;
                 for arg in args {
                     ' '.fmt(f)?;
-                    match arg {
+                    match &**arg {
                         Self::Bool(..)
                         | Self::Uint(..)
                         | Self::Int(..)

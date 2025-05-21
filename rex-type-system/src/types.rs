@@ -425,7 +425,7 @@ impl TypeFormatter {
 
 pub trait Dispatch: Display {
     fn num_params(&self) -> usize;
-    fn maybe_accepts_args(&self, args: &[Expr]) -> bool;
+    fn maybe_accepts_args(&self, args: &[Arc<Expr>]) -> bool;
 }
 
 impl Dispatch for Type {
@@ -436,7 +436,7 @@ impl Dispatch for Type {
         }
     }
 
-    fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
+    fn maybe_accepts_args(&self, args: &[Arc<Expr>]) -> bool {
         match self {
             Type::Arrow(a, b) => {
                 !args.is_empty() && a.maybe_compatible(&args[0]) && b.maybe_accepts_args(&args[1..])
@@ -451,7 +451,7 @@ impl Dispatch for Arc<Type> {
         Type::num_params(self)
     }
 
-    fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
+    fn maybe_accepts_args(&self, args: &[Arc<Expr>]) -> bool {
         Type::maybe_accepts_args(self, args)
     }
 }

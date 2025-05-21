@@ -59,13 +59,13 @@ impl<'a> Stack<'a> {
 #[async_recursion::async_recursion]
 pub async fn eval<State>(
     ctx: &Context<State>,
-    expr: &Expr,
+    expr: &Arc<Expr>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
-    match expr {
+    match &**expr {
         Expr::Bool(..)
         | Expr::Uint(..)
         | Expr::Int(..)
@@ -83,16 +83,16 @@ where
         Expr::Lam(span, scope, param, body) => eval_lam(ctx, span, scope, param, body).await,
         Expr::Let(span, var, def, body) => eval_let(ctx, span, var, def, body, stack).await,
         Expr::Ite(span, cond, then, r#else) => eval_ite(ctx, span, cond, then, r#else, stack).await,
-        Expr::Curry(span, f, args) => Ok(Expr::Curry(*span, f.clone(), args.clone())),
+        Expr::Curry(span, f, args) => Ok(Arc::new(Expr::Curry(*span, f.clone(), args.clone()))),
     }
 }
 
 pub async fn eval_tuple<State>(
     ctx: &Context<State>,
     span: &Span,
-    tuple: &Vec<Expr>,
+    tuple: &Vec<Arc<Expr>>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -100,21 +100,21 @@ where
     for v in tuple {
         result.push(eval(ctx, v, stack));
     }
-    Ok(Expr::Tuple(
+    Ok(Arc::new(Expr::Tuple(
         *span,
         future::join_all(result)
             .await
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?,
-    ))
+    )))
 }
 
 pub async fn eval_list<State>(
     ctx: &Context<State>,
     span: &Span,
-    list: &Vec<Expr>,
+    list: &Vec<Arc<Expr>>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -122,21 +122,21 @@ where
     for v in list {
         result.push(eval(ctx, v, stack));
     }
-    Ok(Expr::List(
+    Ok(Arc::new(Expr::List(
         *span,
         future::join_all(result)
             .await
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?,
-    ))
+    )))
 }
 
 pub async fn eval_dict<State>(
     ctx: &Context<State>,
     span: &Span,
-    dict: &BTreeMap<String, Expr>,
+    dict: &BTreeMap<String, Arc<Expr>>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -151,7 +151,7 @@ where
     for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
         result.insert(k.clone(), v?);
     }
-    Ok(Expr::Dict(*span, result))
+    Ok(Arc::new(Expr::Dict(*span, result)))
 }
 
 #[async_recursion::async_recursion]
@@ -159,7 +159,7 @@ pub async fn eval_var<State>(
     ctx: &Context<State>,
     var: &Var,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -176,7 +176,11 @@ where
                     return Ok(res);
                 }
 
-                return Ok(Expr::Curry(Span::default(), var.clone(), Vec::new()));
+                return Ok(Arc::new(Expr::Curry(
+                    Span::default(),
+                    var.clone(),
+                    Vec::new(),
+                )));
             }
 
             Err(Error::VarNotFound {
@@ -190,10 +194,10 @@ where
 pub async fn eval_app<State>(
     ctx: &Context<State>,
     span: &Span,
-    f: &Expr,
-    x: &Expr,
+    f: &Arc<Expr>,
+    x: &Arc<Expr>,
     parent: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -203,10 +207,10 @@ where
 
 pub async fn apply<State>(
     ctx: &Context<State>,
-    f: impl Borrow<Expr>,
-    x: impl Borrow<Expr>,
+    f: impl Borrow<Arc<Expr>>,
+    x: impl Borrow<Arc<Expr>>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -269,7 +273,7 @@ where
                 }
                 Ordering::Greater => {
                     // TODO(loong): fix the span.
-                    Ok(Expr::Curry(*span, var.clone(), args))
+                    Ok(Arc::new(Expr::Curry(*span, var.clone(), args)))
                 }
             }
         }
@@ -285,8 +289,8 @@ pub async fn eval_lam<State>(
     span: &Span,
     scope: &Scope,
     param: &Var,
-    body: &Expr,
-) -> Result<Expr, Error>
+    body: &Arc<Expr>,
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -294,22 +298,22 @@ where
     for entry in ctx.scope.iter() {
         scope.insert_mut(entry.0.clone(), entry.1.clone());
     }
-    Ok(Expr::Lam(
+    Ok(Arc::new(Expr::Lam(
         *span,
         scope,
         param.clone(),
-        Box::new(body.clone()),
-    ))
+        body.clone(),
+    )))
 }
 
 pub async fn eval_let<State>(
     ctx: &Context<State>,
     _span: &Span,
     var: &Var,
-    def: &Expr,
-    body: &Expr,
+    def: &Arc<Expr>,
+    body: &Arc<Expr>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -322,16 +326,16 @@ where
 pub async fn eval_ite<State>(
     ctx: &Context<State>,
     _span: &Span,
-    cond: &Expr,
-    then: &Expr,
-    r#else: &Expr,
+    cond: &Arc<Expr>,
+    then: &Arc<Expr>,
+    r#else: &Arc<Expr>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
     let cond = eval(ctx, cond, stack).await?;
-    match cond {
+    match &*cond {
         Expr::Bool(_, true) => eval(ctx, then, stack).await,
         Expr::Bool(_, false) => eval(ctx, r#else, stack).await,
         _ => unimplemented!(),
@@ -351,7 +355,7 @@ pub mod test {
     /// Helper function for parsing, inferring, and evaluating a given code
     /// snippet. Pretty much all of the test suites can use this flow for
     /// testing that the engine is correctly evaluating types and expressions.
-    async fn parse_infer_and_eval(code: &str) -> Result<(Expr, Arc<Type>), Error> {
+    async fn parse_infer_and_eval(code: &str) -> Result<(Arc<Expr>, Arc<Type>), Error> {
         let builder: Builder<()> = Builder::with_prelude().unwrap();
         let program = Program::compile(builder, code)?;
         let res_type = program.res_type.clone();
@@ -790,22 +794,22 @@ pub mod test {
     async fn test_uuid() {
         let (res, res_type) = parse_infer_and_eval(r#"random_uuid"#).await.unwrap();
         assert!(matches!(&*res_type, Type::Uuid));
-        assert!(matches!(res, Expr::Uuid(..))); // Don't check value; it's random!
+        assert!(matches!(&*res, Expr::Uuid(..))); // Don't check value; it's random!
 
         let (res, res_type) = parse_infer_and_eval(r#"string random_uuid"#).await.unwrap();
         assert!(matches!(&*res_type, Type::String));
-        assert!(matches!(res, Expr::String(..))); // Don't check value; it's random!
+        assert!(matches!(&*res, Expr::String(..))); // Don't check value; it's random!
     }
 
     #[tokio::test]
     async fn test_datetime() {
         let (res, res_type) = parse_infer_and_eval(r#"now"#).await.unwrap();
         assert!(matches!(&*res_type, Type::DateTime));
-        assert!(matches!(res, Expr::DateTime(..))); // Don't check value; depends on current time
+        assert!(matches!(&*res, Expr::DateTime(..))); // Don't check value; depends on current time
 
         let (res, res_type) = parse_infer_and_eval(r#"string now"#).await.unwrap();
         assert!(matches!(&*res_type, Type::String));
-        assert!(matches!(res, Expr::String(..))); // Don't check value; depends on current time
+        assert!(matches!(&*res, Expr::String(..))); // Don't check value; depends on current time
     }
 
     #[tokio::test]

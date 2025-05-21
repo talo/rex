@@ -723,9 +723,9 @@ mod tests {
         let expr = Expr::List(
             Span::default(),
             vec![
-                Expr::Var(Var::new("one")),
-                Expr::Var(Var::new("two")),
-                Expr::Var(Var::new("three")),
+                Arc::new(Expr::Var(Var::new("one"))),
+                Arc::new(Expr::Var(Var::new("two"))),
+                Arc::new(Expr::Var(Var::new("three"))),
             ],
         );
 
@@ -757,7 +757,10 @@ mod tests {
         // Test that lists of mixed types fail
         let expr = Expr::List(
             Span::default(),
-            vec![Expr::Var(Var::new("one")), Expr::Var(Var::new("true"))],
+            vec![
+                Arc::new(Expr::Var(Var::new("one"))),
+                Arc::new(Expr::Var(Var::new("true"))),
+            ],
         );
 
         insert_type(&mut env, "true", Arc::new(Type::Bool));
@@ -800,25 +803,25 @@ mod tests {
             Span::default(),
             Var::new("f"),
             // \xs -> head xs
-            Box::new(Expr::Lam(
+            Arc::new(Expr::Lam(
                 Span::default(),
                 Scope::new_sync(),
                 Var::new("xs"),
-                Box::new(Expr::App(
+                Arc::new(Expr::App(
                     Span::default(),
-                    Box::new(Expr::Var(Var::new("head"))),
-                    Box::new(Expr::Var(Var::new("xs"))),
+                    Arc::new(Expr::Var(Var::new("head"))),
+                    Arc::new(Expr::Var(Var::new("xs"))),
                 )),
             )),
             // f [1, true]
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 Span::default(),
-                Box::new(Expr::Var(Var::new("f"))),
-                Box::new(Expr::List(
+                Arc::new(Expr::Var(Var::new("f"))),
+                Arc::new(Expr::List(
                     Span::default(),
                     vec![
-                        Expr::Var(Var::new("int_val")),
-                        Expr::Var(Var::new("bool_val")),
+                        Arc::new(Expr::Var(Var::new("int_val"))),
+                        Arc::new(Expr::Var(Var::new("bool_val"))),
                     ],
                 )),
             )),
@@ -890,16 +893,16 @@ mod tests {
         let expr = Expr::Tuple(
             Span::default(),
             vec![
-                Expr::App(
+                Arc::new(Expr::App(
                     Span::default(),
-                    Box::new(Expr::Var(Var::new("head"))),
-                    Box::new(Expr::Var(Var::new("int_list"))),
-                ),
-                Expr::App(
+                    Arc::new(Expr::Var(Var::new("head"))),
+                    Arc::new(Expr::Var(Var::new("int_list"))),
+                )),
+                Arc::new(Expr::App(
                     Span::default(),
-                    Box::new(Expr::Var(Var::new("head"))),
-                    Box::new(Expr::Var(Var::new("bool_list"))),
-                ),
+                    Arc::new(Expr::Var(Var::new("head"))),
+                    Arc::new(Expr::Var(Var::new("bool_list"))),
+                )),
             ],
         );
 
@@ -928,16 +931,16 @@ mod tests {
         let expr = Expr::Let(
             Span::default(),
             Var::new("id"),
-            Box::new(Expr::Lam(
+            Arc::new(Expr::Lam(
                 Span::default(),
                 Scope::new_sync(),
                 Var::new("x"),
-                Box::new(Expr::Var(Var::new("x"))),
+                Arc::new(Expr::Var(Var::new("x"))),
             )),
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 Span::default(),
-                Box::new(Expr::Var(Var::new("id"))),
-                Box::new(Expr::Var(Var::new("one"))),
+                Arc::new(Expr::Var(Var::new("id"))),
+                Arc::new(Expr::Var(Var::new("one"))),
             )),
         );
 
@@ -967,26 +970,26 @@ mod tests {
             Span::default(),
             Var::new("id"),
             // \x -> x
-            Box::new(Expr::Lam(
+            Arc::new(Expr::Lam(
                 Span::default(),
                 Scope::new_sync(),
                 Var::new("x"),
-                Box::new(Expr::Var(Var::new("x"))),
+                Arc::new(Expr::Var(Var::new("x"))),
             )),
             // Create tuple of (id 1, id true)
-            Box::new(Expr::Tuple(
+            Arc::new(Expr::Tuple(
                 Span::default(),
                 vec![
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::Var(Var::new("id"))),
-                        Box::new(Expr::Var(Var::new("int_val"))),
-                    ),
-                    Expr::App(
+                        Arc::new(Expr::Var(Var::new("id"))),
+                        Arc::new(Expr::Var(Var::new("int_val"))),
+                    )),
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::Var(Var::new("id"))),
-                        Box::new(Expr::Var(Var::new("bool_val"))),
-                    ),
+                        Arc::new(Expr::Var(Var::new("id"))),
+                        Arc::new(Expr::Var(Var::new("bool_val"))),
+                    )),
                 ],
             )),
         );
@@ -1019,9 +1022,9 @@ mod tests {
         // Test expression: if true then 1 else 2
         let expr = Expr::Ite(
             Span::default(),
-            Box::new(Expr::Var(Var::new("true"))),
-            Box::new(Expr::Var(Var::new("one"))),
-            Box::new(Expr::Var(Var::new("two"))),
+            Arc::new(Expr::Var(Var::new("true"))),
+            Arc::new(Expr::Var(Var::new("one"))),
+            Arc::new(Expr::Var(Var::new("two"))),
         );
 
         // Set up environment
@@ -1056,61 +1059,61 @@ mod tests {
         let expr = Expr::Let(
             Span::default(),
             Var::new("compose"),
-            Box::new(Expr::Lam(
+            Arc::new(Expr::Lam(
                 Span::default(),
                 Scope::new_sync(),
                 Var::new("f"),
-                Box::new(Expr::Lam(
+                Arc::new(Expr::Lam(
                     Span::default(),
                     Scope::new_sync(),
                     Var::new("g"),
-                    Box::new(Expr::Lam(
+                    Arc::new(Expr::Lam(
                         Span::default(),
                         Scope::new_sync(),
                         Var::new("x"),
-                        Box::new(Expr::App(
+                        Arc::new(Expr::App(
                             Span::default(),
-                            Box::new(Expr::Var(Var::new("f"))),
-                            Box::new(Expr::App(
+                            Arc::new(Expr::Var(Var::new("f"))),
+                            Arc::new(Expr::App(
                                 Span::default(),
-                                Box::new(Expr::Var(Var::new("g"))),
-                                Box::new(Expr::Var(Var::new("x"))),
+                                Arc::new(Expr::Var(Var::new("g"))),
+                                Arc::new(Expr::Var(Var::new("x"))),
                             )),
                         )),
                     )),
                 )),
             )),
-            Box::new(Expr::Tuple(
+            Arc::new(Expr::Tuple(
                 Span::default(),
                 vec![
                     // compose not not true
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::App(
+                        Arc::new(Expr::App(
                             Span::default(),
-                            Box::new(Expr::App(
+                            Arc::new(Expr::App(
                                 Span::default(),
-                                Box::new(Expr::Var(Var::new("compose"))),
-                                Box::new(Expr::Var(Var::new("not"))),
+                                Arc::new(Expr::Var(Var::new("compose"))),
+                                Arc::new(Expr::Var(Var::new("not"))),
                             )),
-                            Box::new(Expr::Var(Var::new("not"))),
+                            Arc::new(Expr::Var(Var::new("not"))),
                         )),
-                        Box::new(Expr::Var(Var::new("bool_val"))),
-                    ),
+                        Arc::new(Expr::Var(Var::new("bool_val"))),
+                    )),
                     // compose (+1) (+2) 3
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::App(
+                        Arc::new(Expr::App(
                             Span::default(),
-                            Box::new(Expr::App(
+                            Arc::new(Expr::App(
                                 Span::default(),
-                                Box::new(Expr::Var(Var::new("compose"))),
-                                Box::new(Expr::Var(Var::new("inc"))),
+                                Arc::new(Expr::Var(Var::new("compose"))),
+                                Arc::new(Expr::Var(Var::new("inc"))),
                             )),
-                            Box::new(Expr::Var(Var::new("inc2"))),
+                            Arc::new(Expr::Var(Var::new("inc2"))),
                         )),
-                        Box::new(Expr::Var(Var::new("int_val"))),
-                    ),
+                        Arc::new(Expr::Var(Var::new("int_val"))),
+                    )),
                 ],
             )),
         );
@@ -1160,37 +1163,37 @@ mod tests {
         let expr = Expr::Let(
             Span::default(),
             Var::new("id"),
-            Box::new(Expr::Lam(
+            Arc::new(Expr::Lam(
                 Span::default(),
                 Scope::new_sync(),
                 Var::new("x"),
-                Box::new(Expr::Var(Var::new("x"))),
+                Arc::new(Expr::Var(Var::new("x"))),
             )),
-            Box::new(Expr::Tuple(
+            Arc::new(Expr::Tuple(
                 Span::default(),
                 vec![
                     // id true - ok
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::Var(Var::new("id"))),
-                        Box::new(Expr::Var(Var::new("bool_val"))),
-                    ),
+                        Arc::new(Expr::Var(Var::new("id"))),
+                        Arc::new(Expr::Var(Var::new("bool_val"))),
+                    )),
                     // id 1 - ok
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::Var(Var::new("id"))),
-                        Box::new(Expr::Var(Var::new("int_val"))),
-                    ),
+                        Arc::new(Expr::Var(Var::new("id"))),
+                        Arc::new(Expr::Var(Var::new("int_val"))),
+                    )),
                     // id true + 1 - should fail!
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::Var(Var::new("plus"))),
-                        Box::new(Expr::App(
+                        Arc::new(Expr::Var(Var::new("plus"))),
+                        Arc::new(Expr::App(
                             Span::default(),
-                            Box::new(Expr::Var(Var::new("id"))),
-                            Box::new(Expr::Var(Var::new("bool_val"))),
+                            Arc::new(Expr::Var(Var::new("id"))),
+                            Arc::new(Expr::Var(Var::new("bool_val"))),
                         )),
-                    ),
+                    )),
                 ],
             )),
         );
@@ -1256,12 +1259,12 @@ mod tests {
         // Test bool version: xor true false
         let bool_expr = Expr::App(
             Span::default(),
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 Span::default(),
-                Box::new(Expr::Var(Var::new("xor"))),
-                Box::new(Expr::Var(Var::new("true"))),
+                Arc::new(Expr::Var(Var::new("xor"))),
+                Arc::new(Expr::Var(Var::new("true"))),
             )),
-            Box::new(Expr::Var(Var::new("false"))),
+            Arc::new(Expr::Var(Var::new("false"))),
         );
 
         let mut constraint_system =
@@ -1328,38 +1331,43 @@ mod tests {
         // Test bool version: xor true false
         let bool_expr = Expr::App(
             Span::default(),
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 Span::default(),
-                Box::new(Expr::Var(Var::new("xor"))),
-                Box::new(Expr::Var(Var::new("true"))),
+                Arc::new(Expr::Var(Var::new("xor"))),
+                Arc::new(Expr::Var(Var::new("true"))),
             )),
-            Box::new(Expr::Var(Var::new("false"))),
+            Arc::new(Expr::Var(Var::new("false"))),
         );
         // Test int version: xor true false
         let int_expr = Expr::App(
             Span::default(),
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 Span::default(),
-                Box::new(Expr::Var(Var::new("xor"))),
-                Box::new(Expr::Var(Var::new("one"))),
+                Arc::new(Expr::Var(Var::new("xor"))),
+                Arc::new(Expr::Var(Var::new("one"))),
             )),
-            Box::new(Expr::Var(Var::new("two"))),
+            Arc::new(Expr::Var(Var::new("two"))),
         );
-        let tuple_expr = Expr::Tuple(Span::default(), vec![bool_expr, int_expr]);
+        let tuple_expr = Expr::Tuple(
+            Span::default(),
+            vec![Arc::new(bool_expr), Arc::new(int_expr)],
+        );
         // let xor_lam_expr = Expr::Lam(
         //     Span::default(),
+        //     Scope::default(),
         //     Var::new("x"),
-        //     Box::new(Expr::Lam(
+        //     Arc::new(Expr::Lam(
         //         Span::default(),
+        //         Scope::default(),
         //         Var::new("y"),
-        //         Box::new(Expr::App(
+        //         Arc::new(Expr::App(
         //             Span::default(),
-        //             Box::new(Expr::App(
+        //             Arc::new(Expr::App(
         //                 Span::default(),
-        //                 Box::new(Expr::Var(Var::new("xor"))),
-        //                 Box::new(Expr::Var(Var::new("x"))),
+        //                 Arc::new(Expr::Var(Var::new("xor"))),
+        //                 Arc::new(Expr::Var(Var::new("x"))),
         //             )),
-        //             Box::new(Expr::Var(Var::new("y"))),
+        //             Arc::new(Expr::Var(Var::new("y"))),
         //         )),
         //     )),
         // );
@@ -1367,8 +1375,8 @@ mod tests {
         //     Span::default(),
         //     Var::new("f"),
         //     // Box::new(xor_lam_expr),
-        //     Box::new(Expr::Var(Var::new("xor"))),
-        //     Box::new(tuple_expr),
+        //     Arc::new(Expr::Var(Var::new("xor"))),
+        //     Arc::new(tuple_expr),
         // );
 
         let mut constraint_system = ConstraintSystem::with_global_constraints(vec![]);
@@ -1424,10 +1432,13 @@ mod tests {
         // Test sum [rand, rand]
         let sum_expr = Expr::App(
             Span::default(),
-            Box::new(Expr::Var(Var::new("sum"))),
-            Box::new(Expr::List(
+            Arc::new(Expr::Var(Var::new("sum"))),
+            Arc::new(Expr::List(
                 Span::default(),
-                vec![Expr::Var(Var::new("rand")), Expr::Var(Var::new("rand"))],
+                vec![
+                    Arc::new(Expr::Var(Var::new("rand"))),
+                    Arc::new(Expr::Var(Var::new("rand"))),
+                ],
             )),
         );
 

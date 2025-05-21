@@ -67,7 +67,7 @@ pub fn json_to_expr(
     json: &Value,
     want: &Arc<Type>,
     opts: &JsonOptions,
-) -> Result<Expr, EngineError> {
+) -> Result<Arc<Expr>, EngineError> {
     match (&**want, json) {
         // (Type::UnresolvedVar(_), _) => unimplemented!(),
         // (Type::Var(_), _) => unimplemented!(),
@@ -75,21 +75,25 @@ pub fn json_to_expr(
         (Type::ADT(adt), _) => {
             if adt.variants.is_empty() {
                 match json {
-                    Value::Null => Ok(Expr::Named(Span::default(), adt.name.clone(), None)),
+                    Value::Null => Ok(Arc::new(Expr::Named(
+                        Span::default(),
+                        adt.name.clone(),
+                        None,
+                    ))),
                     _ => Err(type_error(json, want)),
                 }
             } else if adt.variants.len() == 1
                 && adt.name == "serde_json::Value"
                 && adt.variants[0].name == "serde_json::Value"
             {
-                json.clone().try_encode(Span::default())
+                Ok(json.clone().try_encode(Span::default())?)
             } else if adt.variants.len() == 1 {
                 if let Some(variant_t) = &adt.variants[0].t {
-                    Ok(Expr::Named(
+                    Ok(Arc::new(Expr::Named(
                         Span::default(),
                         adt.variants[0].name.clone(),
-                        Some(Box::new(json_to_expr(json, variant_t, opts)?)),
-                    ))
+                        Some(json_to_expr(json, variant_t, opts)?),
+                    )))
                 } else {
                     Err(type_error(json, want))
                 }
@@ -102,11 +106,11 @@ pub fn json_to_expr(
                         if let Value::Number(n) = json {
                             if let Some(n) = n.as_i64() {
                                 if n == discriminant {
-                                    return Ok(Expr::Named(
+                                    return Ok(Arc::new(Expr::Named(
                                         Span::default(),
                                         variant.name.clone(),
                                         None,
-                                    ));
+                                    )));
                                 }
                             }
                         }
@@ -116,22 +120,22 @@ pub fn json_to_expr(
                                 Value::Object(entries) if entries.len() == 1 => {
                                     if let Some(inner_json) = entries.get(&variant.name) {
                                         let inner_rex = json_to_expr(inner_json, t, opts)?;
-                                        return Ok(Expr::Named(
+                                        return Ok(Arc::new(Expr::Named(
                                             Span::default(),
                                             variant.name.clone(),
-                                            Some(Box::new(inner_rex)),
-                                        ));
+                                            Some(inner_rex),
+                                        )));
                                     }
                                 }
                                 _ => {}
                             },
                             None => match json {
                                 Value::String(s) if s == &variant.name => {
-                                    return Ok(Expr::Named(
+                                    return Ok(Arc::new(Expr::Named(
                                         Span::default(),
                                         variant.name.clone(),
                                         None,
-                                    ));
+                                    )));
                                 }
                                 _ => {}
                             },
@@ -145,39 +149,43 @@ pub fn json_to_expr(
         (Type::Result(ok_type, err_type), Value::Object(name_object)) if name_object.len() == 1 => {
             if let Some(ok_value) = name_object.get("Ok") {
                 let inner = json_to_expr(ok_value, ok_type, opts)?;
-                Ok(Expr::Named(
+                Ok(Arc::new(Expr::Named(
                     Span::default(),
                     "Ok".to_string(),
-                    Some(Box::new(inner)),
-                ))
+                    Some(inner),
+                )))
             } else if let Some(err_value) = name_object.get("Err") {
                 let inner = json_to_expr(err_value, err_type, opts)?;
-                Ok(Expr::Named(
+                Ok(Arc::new(Expr::Named(
                     Span::default(),
                     "Err".to_string(),
-                    Some(Box::new(inner)),
-                ))
+                    Some(inner),
+                )))
             } else {
                 Err(type_error(json, want))
             }
         }
         (Type::Option(inner), _) => match json {
-            Value::Null => Ok(Expr::Named(Span::default(), "None".to_string(), None)),
-            _ => Ok(Expr::Named(
+            Value::Null => Ok(Arc::new(Expr::Named(
+                Span::default(),
+                "None".to_string(),
+                None,
+            ))),
+            _ => Ok(Arc::new(Expr::Named(
                 Span::default(),
                 "Some".to_string(),
-                Some(Box::new(json_to_expr(json, inner, opts)?)),
-            )),
+                Some(json_to_expr(json, inner, opts)?),
+            ))),
         },
         (Type::List(item_type), Value::Array(json_items)) => {
-            let mut exprs: Vec<Expr> = Vec::new();
+            let mut exprs: Vec<Arc<Expr>> = Vec::new();
             for json_item in json_items {
                 exprs.push(json_to_expr(json_item, item_type, opts)?);
             }
-            Ok(Expr::List(Span::default(), exprs))
+            Ok(Arc::new(Expr::List(Span::default(), exprs)))
         }
         (Type::Dict(type_entries), Value::Object(json_entries)) => {
-            let mut expr_entries: BTreeMap<String, Expr> = BTreeMap::new();
+            let mut expr_entries: BTreeMap<String, Arc<Expr>> = BTreeMap::new();
             for (k, t) in type_entries.iter() {
                 let expr = match json_entries.get(k) {
                     Some(v) => json_to_expr(v, t, opts)?,
@@ -185,48 +193,48 @@ pub fn json_to_expr(
                 };
                 expr_entries.insert(k.clone(), expr);
             }
-            Ok(Expr::Dict(Span::default(), expr_entries))
+            Ok(Arc::new(Expr::Dict(Span::default(), expr_entries)))
         }
         (Type::Tuple(item_types), Value::Array(item_values))
             if item_types.len() == item_values.len() =>
         {
-            let mut exprs: Vec<Expr> = Vec::new();
+            let mut exprs: Vec<Arc<Expr>> = Vec::new();
             for i in 0..item_types.len() {
                 exprs.push(json_to_expr(&item_values[i], &item_types[i], opts)?);
             }
-            Ok(Expr::Tuple(Span::default(), exprs))
+            Ok(Arc::new(Expr::Tuple(Span::default(), exprs)))
         }
-        (Type::Bool, Value::Bool(b)) => Ok(Expr::Bool(Span::default(), *b)),
+        (Type::Bool, Value::Bool(b)) => Ok(Arc::new(Expr::Bool(Span::default(), *b))),
         (Type::Uint, Value::Number(n)) => {
             if let Some(v) = n.as_u64() {
-                Ok(Expr::Uint(Span::default(), v))
+                Ok(Arc::new(Expr::Uint(Span::default(), v)))
             } else {
                 Err(type_error(json, want))
             }
         }
         (Type::Int, Value::Number(n)) => {
             if let Some(v) = n.as_i64() {
-                Ok(Expr::Int(Span::default(), v))
+                Ok(Arc::new(Expr::Int(Span::default(), v)))
             } else {
                 Err(type_error(json, want))
             }
         }
         (Type::Float, Value::Number(n)) => {
             if let Some(v) = n.as_f64() {
-                Ok(Expr::Float(Span::default(), v))
+                Ok(Arc::new(Expr::Float(Span::default(), v)))
             } else {
                 Err(type_error(json, want))
             }
         }
-        (Type::String, Value::String(s)) => Ok(Expr::String(Span::default(), s.clone())),
-        (Type::Uuid, _) => Ok(Expr::Uuid(
+        (Type::String, Value::String(s)) => Ok(Arc::new(Expr::String(Span::default(), s.clone()))),
+        (Type::Uuid, _) => Ok(Arc::new(Expr::Uuid(
             Span::default(),
             serde_json::from_value(json.clone()).map_err(|_| type_error(json, want))?,
-        )),
-        (Type::DateTime, _) => Ok(Expr::DateTime(
+        ))),
+        (Type::DateTime, _) => Ok(Arc::new(Expr::DateTime(
             Span::default(),
             serde_json::from_value(json.clone()).map_err(|_| type_error(json, want))?,
-        )),
+        ))),
         (_, _) => Err(type_error(json, want)),
     }
 }
@@ -243,11 +251,11 @@ pub fn json_to_expr(
 ///
 /// [`Decode::try_decode`]: crate::engine::codec::Decode::try_decode
 pub fn expr_to_json(
-    expr: &Expr,
+    expr: &Arc<Expr>,
     want: &Arc<Type>,
     opts: &JsonOptions,
 ) -> Result<Value, EngineError> {
-    match (&**want, expr) {
+    match (&**want, &**expr) {
         // (Type::UnresolvedVar(_), _) => unimplemented!(),
         // (Type::Var(_), _) => unimplemented!(),
         // (Type::ForAll(_, _, _), _) => unimplemented!(),
@@ -260,7 +268,7 @@ pub fn expr_to_json(
             {
                 serde_json::Value::try_decode(expr)
             } else if adt.variants.len() == 1 {
-                match expr {
+                match &**expr {
                     Expr::Named(_, n, Some(inner_expr)) if n == &adt.variants[0].name => {
                         if let Some(inner) = &adt.variants[0].t {
                             expr_to_json(inner_expr, inner, opts)
@@ -274,7 +282,7 @@ pub fn expr_to_json(
                     _ => Err(expr_error(expr, want)),
                 }
             } else {
-                match expr {
+                match &**expr {
                     Expr::Named(_, n, opt_inner) => {
                         for variant in adt.variants.iter() {
                             if n == &variant.name {
@@ -378,7 +386,7 @@ fn type_error(json: &Value, want: &Arc<Type>) -> EngineError {
     }
 }
 
-fn expr_error(expr: &Expr, want: &Arc<Type>) -> EngineError {
+fn expr_error(expr: &Arc<Expr>, want: &Arc<Type>) -> EngineError {
     EngineError::ExpectedTypeGotValue {
         expected: want.clone(),
         got: expr.clone(),
