@@ -22,7 +22,7 @@ where
 {
     pub ftable: Ftable<State>,
     pub res_type: Arc<Type>,
-    pub expr: Expr,
+    pub expr: Arc<Expr>,
     pub subst: Subst,
 }
 
@@ -71,7 +71,7 @@ where
         })
     }
 
-    pub async fn run(self, state: State) -> Result<Expr, Error> {
+    pub async fn run(self, state: State) -> Result<Arc<Expr>, Error> {
         eval(
             &Context {
                 scope: Scope::new_sync(),

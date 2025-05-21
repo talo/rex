@@ -504,7 +504,7 @@ where
                 match x {
                     Some(x) => Ok(Some(x)),
                     None => {
-                        let x = Expr::Tuple(Span::default(), vec![]);
+                        let x = Arc::new(Expr::Tuple(Span::default(), vec![]));
                         let res = apply(ctx, &f, &x, None).await?;
                         Ok(Option::<A>::try_decode(&res)?)
                     }
@@ -516,7 +516,7 @@ where
                 match x {
                     Some(x) => Ok(x),
                     None => {
-                        let x = Expr::Tuple(Span::default(), vec![]);
+                        let x = Arc::new(Expr::Tuple(Span::default(), vec![]));
                         let res = apply(ctx, &f, &x, None).await?;
                         Ok(A(res))
                     }
@@ -599,19 +599,22 @@ where
                     Box::new(move |_, args| {
                         let tuple_type = tuple_type.clone();
                         Box::pin(async move {
-                            match args.first() {
-                                Some(Expr::Tuple(_, elems)) if elems.len() == tuple_len => {
-                                    Ok(elems[tuple_index].clone())
+                            if let Some(arg) = args.first() {
+                                match &**arg {
+                                    Expr::Tuple(_, elems) if elems.len() == tuple_len => {
+                                        Ok(elems[tuple_index].clone())
+                                    }
+                                    _ => Err(Error::ExpectedTypeGotValue {
+                                        expected: tuple_type.clone(),
+                                        got: arg.clone(),
+                                        trace: Default::default(),
+                                    }),
                                 }
-                                Some(arg) => Err(Error::ExpectedTypeGotValue {
-                                    expected: tuple_type.clone(),
-                                    got: arg.clone(),
-                                    trace: Default::default(),
-                                }),
-                                _ => Err(Error::MissingArgument {
+                            } else {
+                                Err(Error::MissingArgument {
                                     argument: 0,
                                     trace: Default::default(),
-                                }),
+                                })
                             }
                         })
                     }),
@@ -732,11 +735,11 @@ where
                     Box::new(move |_, args| {
                         let base_name = base_name.clone();
                         Box::pin(async move {
-                            Ok(Expr::Named(
+                            Ok(Arc::new(Expr::Named(
                                 Span::default(),
                                 base_name,
-                                Some(Box::new(Expr::Tuple(Span::default(), args.clone()))),
-                            ))
+                                Some(Arc::new(Expr::Tuple(Span::default(), args.clone()))),
+                            )))
                         })
                     }),
                 )
@@ -762,16 +765,16 @@ where
                         Box::pin(async move {
                             let mut val = args[0].clone();
 
-                            if let Expr::Dict(span, entries) = &val {
-                                let mut new_entries: BTreeMap<String, Expr> = entries.clone();
+                            if let Expr::Dict(span, entries) = &*val {
+                                let mut new_entries: BTreeMap<String, Arc<Expr>> = entries.clone();
                                 for (k, vf) in defaults.iter() {
                                     let v = vf(ctx, &vec![]).await?;
                                     new_entries.insert(k.clone(), v);
                                 }
-                                val = Expr::Dict(*span, new_entries);
+                                val = Arc::new(Expr::Dict(*span, new_entries));
                             }
 
-                            Ok(Expr::Named(Span::default(), base_name, Some(Box::new(val))))
+                            Ok(Arc::new(Expr::Named(Span::default(), base_name, Some(val))))
                         })
                     }),
                 )?;
@@ -791,7 +794,7 @@ where
                             let base_name = base_name.clone();
                             Box::pin(async move {
                                 let val = args[0].clone();
-                                Ok(Expr::Named(Span::default(), base_name, Some(Box::new(val))))
+                                Ok(Arc::new(Expr::Named(Span::default(), base_name, Some(val))))
                             })
                         }),
                     )?;
@@ -808,9 +811,9 @@ where
                         adt_type.clone(),
                         Box::new(move |_, _| {
                             let base_name = base_name.clone();
-                            Box::pin(
-                                async move { Ok(Expr::Named(Span::default(), base_name, None)) },
-                            )
+                            Box::pin(async move {
+                                Ok(Arc::new(Expr::Named(Span::default(), base_name, None)))
+                            })
                         }),
                     )
                 }
@@ -879,8 +882,8 @@ impl Dispatch for Accessor {
         1
     }
 
-    fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
-        args.len() == 1 && matches!(args[0], Expr::Named(..))
+    fn maybe_accepts_args(&self, args: &[Arc<Expr>]) -> bool {
+        args.len() == 1 && matches!(&*args[0], Expr::Named(..))
     }
 }
 
@@ -896,10 +899,10 @@ where
     State: Clone + Sync + 'static,
 {
     let entry_key = entry_key.to_string();
-    Box::new(move |_, args: &Vec<Expr>| {
+    Box::new(move |_, args: &Vec<Arc<Expr>>| {
         let entry_key = entry_key.clone();
         Box::pin(async move {
-            match &args[0] {
+            match &*args[0] {
                 Expr::Named(_, _, Some(inner)) => match &**inner {
                     Expr::Dict(_, entries) => match entries.get(&entry_key) {
                         Some(v) => Ok(v.clone()),
