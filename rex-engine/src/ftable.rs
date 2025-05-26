@@ -205,12 +205,12 @@ where
     impl_register_fn!(register_fn1, A0);
     impl_register_fn!(register_fn2, A0, A1);
     impl_register_fn!(register_fn3, A0, A1, A2);
-    impl_register_fn!(register_fn4, A0, A1, A2);
+    impl_register_fn!(register_fn4, A0, A1, A2, A3);
 
     impl_register_fn_async!(register_fn_async1, A0);
     impl_register_fn_async!(register_fn_async2, A0, A1);
     impl_register_fn_async!(register_fn_async3, A0, A1, A2);
-    impl_register_fn_async!(register_fn_async4, A0, A1, A2);
+    impl_register_fn_async!(register_fn_async4, A0, A1, A2, A3);
 }
 
 impl<State> fmt::Display for Ftable<State>
