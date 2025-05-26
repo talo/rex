@@ -15,7 +15,9 @@ async fn test_function_overload_param_count_mismatch() {
     let res = builder.register_fn_core_with_name(
         "map",
         Type::build_arrow(vec![uint!(), uint!(), uint!()], uint!()),
-        Box::new(move |_ctx, _args| Box::pin(async move { Ok(Expr::Uint(Span::default(), 0)) })),
+        Box::new(move |_ctx, _args| {
+            Box::pin(async move { Ok(Arc::new(Expr::Uint(Span::default(), 0))) })
+        }),
     );
 
     assert_eq!(

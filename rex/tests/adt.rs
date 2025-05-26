@@ -483,12 +483,12 @@ fn test_field_datetime() {
         "Foo",
         Some(d!(
             a = s!("Hello"),
-            b = Expr::DateTime(
+            b = Arc::new(Expr::DateTime(
                 Span::default(),
                 DateTime::parse_from_rfc3339("2014-11-28T21:00:09+09:00")
                     .unwrap()
                     .into()
-            ),
+            )),
         ))
     );
 
@@ -516,10 +516,10 @@ async fn test_field_uuid() {
         "Foo",
         Some(d!(
             a = s!("Hello"),
-            b = Expr::Uuid(
+            b = Arc::new(Expr::Uuid(
                 Span::default(),
                 uuid!("f5d62567-7a45-4637-bbfb-252f4162574f")
-            )
+            ))
         ))
     );
 
