@@ -83,12 +83,12 @@ impl ConstraintSystem {
     ) {
         constraints.for_each(|constraint| match constraint {
             Constraint::Eq(_, t1, t2) => {
-                *t1 = unify::apply_subst(t1, subst);
-                *t2 = unify::apply_subst(t2, subst);
+                *t1 = t1.apply(subst);
+                *t2 = t2.apply(subst);
             }
             Constraint::OneOf(_, t, ts) => {
-                *t = unify::apply_subst(t, subst);
-                *ts = ts.iter().map(|t| unify::apply_subst(t, subst)).collect();
+                *t = t.apply(subst);
+                *ts = ts.iter().map(|t| t.apply(subst)).collect();
             }
         });
     }
@@ -293,7 +293,7 @@ pub fn generate_constraints(
 
             // Solve definition constraints to get its type
             let def_subst = unify::unify_constraints(&def_constraint_system, errors);
-            let solved_def_type = unify::apply_subst(&def_type, &def_subst);
+            let solved_def_type = def_type.apply(&def_subst);
             constraint_system.extend(def_constraint_system.clone());
 
             // Generalize the type
@@ -380,61 +380,12 @@ pub fn generate_constraints(
     }
 }
 
-// For generalization, we need to find free type variables in a type
-fn free_vars_type_scheme(scheme: &TypeScheme) -> HashSet<TypeVar> {
-    let mut set = free_vars(&scheme.ty);
-    for var in scheme.vars.iter() {
-        set.remove(var);
-    }
-    set
-}
-
-fn free_vars(ty: &Type) -> HashSet<TypeVar> {
-    match ty {
-        Type::UnresolvedVar(_) => todo!("free_vars should return a result"),
-        Type::Var(v) => {
-            let mut set = HashSet::new();
-            set.insert(*v);
-            set
-        }
-        Type::ADT(adt) => {
-            let mut set = HashSet::new();
-            for variant in &adt.variants {
-                if let Some(t) = &variant.t {
-                    set.extend(free_vars(t));
-                }
-            }
-            set
-        }
-        Type::App(a, b) => {
-            let mut set = free_vars(a);
-            set.extend(free_vars(b));
-            set
-        }
-        Type::Dict(kts) => {
-            let mut vars = HashSet::new();
-            for t in kts.values() {
-                vars.extend(free_vars(t));
-            }
-            vars
-        }
-        Type::Tuple(ts) => {
-            let mut vars = HashSet::new();
-            for t in ts {
-                vars.extend(free_vars(t));
-            }
-            vars
-        }
-        Type::Con(_) => HashSet::new(),
-    }
-}
-
 // For generalization, we also need to know which variables are free in the environment
 fn env_free_vars(env: &TypeEnv) -> HashSet<TypeVar> {
     let mut vars = HashSet::new();
     for entry in env.values() {
         for scheme in entry {
-            vars.extend(free_vars_type_scheme(scheme))
+            vars.extend(scheme.free_vars())
         }
     }
     vars
@@ -443,7 +394,7 @@ fn env_free_vars(env: &TypeEnv) -> HashSet<TypeVar> {
 // Generalize a type by quantifying over any type variables that aren't free in the environment
 fn generalize(env: &TypeEnv, ty: &Arc<Type>, deps: BTreeSet<TypeVar>) -> TypeScheme {
     let env_vars = env_free_vars(env);
-    let ty_vars = free_vars(ty);
+    let ty_vars = ty.free_vars();
 
     // Find variables that are free in ty but not in env
     let mut to_quantify: Vec<_> = ty_vars.difference(&env_vars).cloned().collect();
@@ -580,14 +531,14 @@ mod tests {
 
         // α -> β
         let ty = arrow!(var!(alpha) => var!(beta));
-        let vars = free_vars(&ty);
+        let vars = ty.free_vars();
         assert_eq!(vars.len(), 2);
         assert!(vars.contains(&alpha));
         assert!(vars.contains(&beta));
 
         // ∀α. α -> β
         let scheme = TypeScheme::new(vec![alpha], arrow!(var!(alpha) => var!(beta)));
-        let vars = free_vars_type_scheme(&scheme);
+        let vars = scheme.free_vars();
         assert_eq!(vars.len(), 1);
         assert!(vars.contains(&beta));
     }
@@ -676,7 +627,7 @@ mod tests {
         }
 
         // Final type should be [Int]
-        let final_type = unify::apply_subst(&ty, &subst);
+        let final_type = ty.apply(&subst);
         assert_eq!(final_type, list!(int!()));
 
         // Test that lists of mixed types fail
@@ -831,7 +782,7 @@ mod tests {
         let subst = unify::unify_constraints(&constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
-        let final_type = unify::apply_subst(&ty, &subst);
+        let final_type = ty.apply(&subst);
         assert_eq!(final_type, tuple!(int!(), bool!()));
     }
 
@@ -868,7 +819,7 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // Result should be Int
-        let final_result = unify::apply_subst(&result_type, &subst);
+        let final_result = result_type.apply(&subst);
         assert_eq!(final_result, int!());
     }
 
@@ -920,7 +871,7 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // The final type should be (Int, Bool)
-        let final_type = unify::apply_subst(&ty, &subst);
+        let final_type = ty.apply(&subst);
         assert_eq!(final_type, tuple!(int!(), bool!()));
     }
 
@@ -952,7 +903,7 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // Result should be Int
-        let final_result = unify::apply_subst(&result_type, &subst);
+        let final_result = result_type.apply(&subst);
         assert_eq!(final_result, int!());
     }
 
@@ -1044,7 +995,7 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // The final type should be (Bool, Int)
-        let final_type = unify::apply_subst(&ty, &subst);
+        let final_type = ty.apply(&subst);
         assert_eq!(final_type, tuple!(bool!(), int!()));
     }
 
@@ -1118,7 +1069,7 @@ mod tests {
                     _ => panic!("Expected equality constraint"),
                 }
             }
-            Ok(unify::apply_subst(&ty, &subst))
+            Ok(ty.apply(&subst))
         });
 
         match result {
@@ -1170,7 +1121,7 @@ mod tests {
 
         let subst = unify::unify_constraints(&constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
-        let final_type = unify::apply_subst(&ty, &subst);
+        let final_type = ty.apply(&subst);
         assert_eq!(final_type, bool!());
     }
 
@@ -1259,7 +1210,7 @@ mod tests {
         let subst = unify::unify_constraints(&constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
-        let final_type = unify::apply_subst(&ty, &subst);
+        let final_type = ty.apply(&subst);
 
         println!("SUBST: {}", sprint_subst(&subst));
         println!("FINAL TYPE: {}", final_type);
@@ -1303,7 +1254,7 @@ mod tests {
         let subst = unify::unify_constraints(&constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
-        let final_type = unify::apply_subst(&ty, &subst);
+        let final_type = ty.apply(&subst);
         assert_eq!(final_type, int!());
     }
 

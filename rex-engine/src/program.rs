@@ -62,7 +62,7 @@ where
             });
         }
 
-        let res_type = unify::apply_subst(&ty, &subst);
+        let res_type = ty.apply(&subst);
         Ok(Program {
             ftable,
             res_type,

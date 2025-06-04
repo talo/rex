@@ -9,7 +9,7 @@ use rex_lexer::span::Span;
 use crate::{
     constraint::{Constraint, ConstraintSystem},
     error::TypeError,
-    types::{ADTVariant, Type, TypeScheme, TypeVar, ADT},
+    types::{Type, TypeVar},
 };
 
 pub type Subst = HashMap<TypeVar, Arc<Type>>;
@@ -136,8 +136,8 @@ pub fn unify_eq_r(
     path: &Path<'_>,
 ) {
     // First apply any existing substitutions
-    let t1 = apply_subst(t1, subst);
-    let t2 = apply_subst(t2, subst);
+    let t1 = t1.apply(subst);
+    let t2 = t2.apply(subst);
 
     if t1.kind() != t2.kind() {
         errors.push(TypeError::KindMismatch(
@@ -212,7 +212,7 @@ pub fn unify_eq_r(
 
         // Type variable case requires occurs check
         (Type::Var(v), _) => {
-            if occurs_check(v, &t2) {
+            if t2.occurs_check(v) {
                 errors.push(TypeError::OccursCheckFailed(*span, path.to_string()));
             } else {
                 subst.insert(*v, t2);
@@ -220,7 +220,7 @@ pub fn unify_eq_r(
             }
         }
         (_, Type::Var(v)) => {
-            if occurs_check(v, &t1) {
+            if t1.occurs_check(v) {
                 errors.push(TypeError::OccursCheckFailed(*span, path.to_string()));
             } else {
                 subst.insert(*v, t1.clone());
@@ -285,13 +285,13 @@ pub fn unify_one_of(
     did_change: &mut bool,
 ) -> Result<(), TypeError> {
     // First apply any existing substitutions
-    let t1 = apply_subst(t1, subst);
+    let t1 = t1.apply(subst);
 
     let mut successes = Vec::new();
 
     // Try unifying with each possibility
     for t2 in t2_possibilities {
-        let t2 = apply_subst(t2, subst);
+        let t2 = t2.apply(subst);
         let mut test_subst = subst.clone();
         let mut test_did_change = *did_change;
 
@@ -313,72 +313,6 @@ pub fn unify_one_of(
             Ok(())
         }
         _ => Ok(()),
-    }
-}
-
-pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
-    match &**t {
-        Type::UnresolvedVar(_) => todo!("apply_subst should return a result"),
-        Type::Var(v) => {
-            if let Some(t2) = subst.get(v) {
-                apply_subst(t2, subst)
-            } else {
-                t.clone()
-            }
-        }
-        Type::ADT(adt) => Arc::new(Type::ADT(ADT {
-            docs: adt.docs.clone(),
-            name: adt.name.clone(),
-            variants: adt
-                .variants
-                .iter()
-                .map(|v| ADTVariant {
-                    docs: v.docs.clone(),
-                    name: v.name.clone(),
-                    t: v.t.as_ref().map(|t| apply_subst(t, subst)),
-                    t_docs: v.t_docs.clone(),
-                    discriminant: v.discriminant,
-                })
-                .collect(),
-        })),
-        Type::App(a, b) => Arc::new(Type::App(apply_subst(a, subst), apply_subst(b, subst))),
-        Type::Dict(kts) => Arc::new(Type::Dict(
-            kts.iter()
-                .map(|(k, t)| (k.clone(), apply_subst(t, subst)))
-                .collect(),
-        )),
-        Type::Tuple(ts) => Arc::new(Type::Tuple(
-            ts.iter().map(|t| apply_subst(t, subst)).collect(),
-        )),
-        Type::Con(_) => t.clone(),
-    }
-}
-
-pub fn occurs_check_type_scheme(var: &TypeVar, scheme: &TypeScheme) -> bool {
-    // If we're looking for the same variable that's quantified,
-    // then it doesn't occur freely (it's bound)
-
-    for v in scheme.vars.iter() {
-        if v == var {
-            return false;
-        }
-    }
-
-    occurs_check(var, &scheme.ty)
-}
-
-pub fn occurs_check(var: &TypeVar, t: &Arc<Type>) -> bool {
-    match &**t {
-        Type::UnresolvedVar(_) => false, // TODO(loong): should this function return a result?
-        Type::Var(v) => v == var,
-        Type::ADT(adt) => adt.variants.iter().any(|v| match &v.t {
-            Some(t) => occurs_check(var, t),
-            None => false,
-        }),
-        Type::App(a, b) => occurs_check(var, a) || occurs_check(var, b),
-        Type::Dict(kts) => kts.values().any(|t| occurs_check(var, t)),
-        Type::Tuple(ts) => ts.iter().any(|t| occurs_check(var, t)),
-        Type::Con(_) => false,
     }
 }
 
@@ -406,7 +340,7 @@ fn missing_keys_vec(
 // Test cases
 #[cfg(test)]
 mod tests {
-    use crate::{arrow, bool, int, list, tuple, types::Kind, var};
+    use crate::{arrow, bool, int, list, tuple, types::Kind, types::TypeScheme, var};
 
     use super::*;
 
@@ -422,14 +356,14 @@ mod tests {
         let t1 = var!(alpha);
         let t2 = int!();
         assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
-        assert_eq!(apply_subst(&var!(alpha), &subst), int!());
+        assert_eq!(var!(alpha).apply(&subst), int!());
 
         // Test case 2: (α -> β) = (Int -> Bool)
         let t1 = arrow!(var!(alpha) => var!(beta));
         let t2 = arrow!(int!() => bool!());
         assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
-        assert_eq!(apply_subst(&var!(alpha), &subst), int!());
-        assert_eq!(apply_subst(&var!(beta), &subst), bool!());
+        assert_eq!(var!(alpha).apply(&subst), int!());
+        assert_eq!(var!(beta).apply(&subst), bool!());
     }
 
     #[test]
@@ -446,7 +380,7 @@ mod tests {
         assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
 
         // Now α should be mapped to β
-        assert_eq!(apply_subst(&var!(alpha), &subst), var!(beta));
+        assert_eq!(var!(alpha).apply(&subst), var!(beta));
     }
 
     #[test]
@@ -475,8 +409,8 @@ mod tests {
         .is_ok());
 
         // After unification:
-        let final_f = apply_subst(&f_type, &subst);
-        let final_g = apply_subst(&g_type, &subst);
+        let final_f = f_type.apply(&subst);
+        let final_g = g_type.apply(&subst);
 
         // Both should be unified to the same type: γ -> γ
         assert_eq!(final_f, final_g);
@@ -523,8 +457,8 @@ mod tests {
         .is_ok());
 
         // After unification:
-        let final_g = apply_subst(&g_type, &subst);
-        let final_f = apply_subst(&f_type, &subst);
+        let final_g = g_type.apply(&subst);
+        let final_f = f_type.apply(&subst);
 
         // g should be Int -> Int
         assert_eq!(final_g, arrow!(int!() => int!()));
@@ -560,7 +494,7 @@ mod tests {
         .is_ok());
 
         // After unification:
-        let final_f = apply_subst(&f_type, &subst);
+        let final_f = f_type.apply(&subst);
 
         // final_f should be (Int -> Bool) -> δ
         assert_eq!(final_f, arrow!(arrow!(int!() => bool!()) => var!(delta)));
@@ -574,40 +508,33 @@ mod tests {
         let var = alpha.clone();
 
         // Simple variable occurrence
-        assert!(occurs_check(&var, &var!(alpha)));
-        assert!(!occurs_check(&var, &var!(beta)));
+        assert!(var!(alpha).occurs_check(&var));
+        assert!(!var!(beta).occurs_check(&var));
 
         // Arrow type occurrences
-        assert!(occurs_check(&var, &arrow!(var!(alpha) => int!())));
-        assert!(occurs_check(&var, &arrow!(int!() => var!(alpha))));
+        assert!(arrow!(var!(alpha) => int!()).occurs_check(&var));
+        assert!(arrow!(int!() => var!(alpha)).occurs_check(&var));
 
         // Tuple occurrences - would have failed before our fix
-        assert!(occurs_check(&var, &tuple!(int!(), var!(alpha), bool!())));
-        assert!(!occurs_check(&var, &tuple!(int!(), var!(beta), bool!())));
+        assert!(tuple!(int!(), var!(alpha), bool!()).occurs_check(&var));
+        assert!(!tuple!(int!(), var!(beta), bool!()).occurs_check(&var));
 
         // List occurrences - would have failed before our fix
-        assert!(occurs_check(&var, &list!(var!(alpha))));
-        assert!(!occurs_check(&var, &list!(var!(beta))));
+        assert!(list!(var!(alpha)).occurs_check(&var));
+        assert!(!list!(var!(beta)).occurs_check(&var));
 
         // Nested structures - would have failed before our fix
-        assert!(occurs_check(
-            &var,
-            &tuple!(list!(var!(alpha)), arrow!(int!() => list!(bool!())))
-        ));
+        assert!(tuple!(list!(var!(alpha)), arrow!(int!() => list!(bool!()))).occurs_check(&var));
 
         // ForAll cases - would have failed before our fix
         // Case 1: The variable we're looking for is bound by the ForAll
-        assert!(!occurs_check_type_scheme(
-            &var,
-            &TypeScheme::new(vec![alpha], var!(alpha))
-        ));
+        let scheme = TypeScheme::new(vec![alpha], var!(alpha));
+        assert!(!scheme.occurs_check(&var));
 
         // Case 2: The variable we're looking for occurs freely in the body
         let var2 = beta;
-        assert!(occurs_check_type_scheme(
-            &var2,
-            &TypeScheme::new(vec![alpha], arrow!(var!(beta) => var!(alpha)))
-        ));
+        let scheme = TypeScheme::new(vec![alpha], arrow!(var!(beta) => var!(alpha)));
+        assert!(scheme.occurs_check(&var2));
     }
 
     #[test]

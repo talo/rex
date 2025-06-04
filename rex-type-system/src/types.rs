@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use crate::unify::Subst;
 use chrono::{DateTime, Utc};
 use rex_ast::expr::Expr;
 use uuid::Uuid;
@@ -53,6 +54,14 @@ impl TypeVar {
     pub fn kind(&self) -> Kind {
         self.kind
     }
+
+    pub fn apply(&self, subst: &Subst) -> Arc<Type> {
+        if let Some(t2) = subst.get(self) {
+            t2.apply(subst)
+        } else {
+            Arc::new(Type::Var(*self))
+        }
+    }
 }
 
 impl Default for TypeVar {
@@ -89,6 +98,27 @@ impl TypeScheme {
         // We can ignore type variables hwere, since any two variables are considered
         // potentially overlapping
         self.ty.maybe_overlaps_with(&other.ty)
+    }
+
+    // For generalization, we need to find free type variables in a type
+    pub fn free_vars(&self) -> HashSet<TypeVar> {
+        let mut set = self.ty.free_vars();
+        for var in self.vars.iter() {
+            set.remove(var);
+        }
+        set
+    }
+
+    pub fn occurs_check(&self, var: &TypeVar) -> bool {
+        // If we're looking for the same variable that's quantified,
+        // then it doesn't occur freely (it's bound)
+        for v in self.vars.iter() {
+            if v == var {
+                return false;
+            }
+        }
+
+        self.ty.occurs_check(var)
     }
 }
 
@@ -394,6 +424,88 @@ impl Type {
                 _ => false,
             },
             Type::Con(c) => *other == Type::Con(*c),
+        }
+    }
+
+    pub fn free_vars(&self) -> HashSet<TypeVar> {
+        let mut set = HashSet::new();
+        self.free_vars_accum(&mut set);
+        set
+    }
+
+    fn free_vars_accum(&self, set: &mut HashSet<TypeVar>) {
+        match self {
+            Type::UnresolvedVar(_) => todo!("free_vars should return a result"),
+            Type::Var(v) => {
+                set.insert(*v);
+            }
+            Type::ADT(adt) => {
+                for variant in &adt.variants {
+                    if let Some(t) = &variant.t {
+                        t.free_vars_accum(set);
+                    }
+                }
+            }
+            Type::App(a, b) => {
+                a.free_vars_accum(set);
+                b.free_vars_accum(set);
+            }
+            Type::Dict(kts) => {
+                for t in kts.values() {
+                    t.free_vars_accum(set);
+                }
+            }
+            Type::Tuple(ts) => {
+                for t in ts.iter() {
+                    t.free_vars_accum(set);
+                }
+            }
+            Type::Con(_) => {}
+        }
+    }
+
+    pub fn occurs_check(&self, var: &TypeVar) -> bool {
+        match self {
+            Type::UnresolvedVar(_) => false, // TODO(loong): should this function return a result?
+            Type::Var(v) => v == var,
+            Type::ADT(adt) => adt.variants.iter().any(|v| match &v.t {
+                Some(t) => t.occurs_check(var),
+                None => false,
+            }),
+            Type::App(a, b) => a.occurs_check(var) || b.occurs_check(var),
+            Type::Dict(kts) => kts.values().any(|t| t.occurs_check(var)),
+            Type::Tuple(ts) => ts.iter().any(|t| t.occurs_check(var)),
+            Type::Con(_) => false,
+        }
+    }
+
+    pub fn apply(&self, subst: &Subst) -> Arc<Type> {
+        match self {
+            Type::UnresolvedVar(_) => todo!("apply_subst should return a result"),
+            Type::Var(v) => v.apply(subst),
+            Type::ADT(adt) => Arc::new(Type::ADT(ADT {
+                docs: adt.docs.clone(),
+                name: adt.name.clone(),
+                variants: adt
+                    .variants
+                    .iter()
+                    .map(|v| ADTVariant {
+                        docs: v.docs.clone(),
+                        name: v.name.clone(),
+                        t: v.t.as_ref().map(|t| t.apply(subst)),
+                        t_docs: v.t_docs.clone(),
+                        discriminant: v.discriminant,
+                    })
+                    .collect(),
+            })),
+            Type::App(a, b) => Arc::new(Type::App(a.apply(subst), b.apply(subst))),
+            Type::Dict(kts) => Arc::new(Type::Dict(
+                kts.iter()
+                    .map(|(k, t)| (k.clone(), t.apply(subst)))
+                    .collect(),
+            )),
+            Type::Tuple(ts) => Arc::new(Type::Tuple(ts.iter().map(|t| t.apply(subst)).collect())),
+            Type::Con(c) => Arc::new(Type::Con(*c)),
         }
     }
 
