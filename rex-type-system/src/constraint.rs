@@ -15,36 +15,23 @@ use crate::{
 
 #[derive(Clone, Debug, Default)]
 pub struct ConstraintSystem {
-    pub local_constraints: Vec<Constraint>,
-    pub global_constraints: Vec<Constraint>,
+    pub constraints: Vec<Constraint>,
 }
 
 impl ConstraintSystem {
-    pub fn with_global_constraints(global_constraints: Vec<Constraint>) -> Self {
-        Self {
-            local_constraints: vec![],
-            global_constraints,
-        }
+    pub fn with_constraints(constraints: Vec<Constraint>) -> Self {
+        Self { constraints }
     }
 
-    pub fn add_global_constraint(&mut self, constraint: Constraint) {
-        if !self.has_constraint_globally(&constraint) {
-            self.global_constraints.push(constraint);
-        }
-    }
-
-    pub fn add_local_constraint(&mut self, constraint: Constraint) {
-        if !self.has_constraint_globally(&constraint) && !self.has_constraint_locally(&constraint) {
-            self.local_constraints.push(constraint);
+    pub fn add_constraint(&mut self, constraint: Constraint) {
+        if !self.has_constraint(&constraint) {
+            self.constraints.push(constraint);
         }
     }
 
     pub fn extend(&mut self, other: ConstraintSystem) {
-        for constraint in other.global_constraints {
-            self.add_global_constraint(constraint);
-        }
-        for constraint in other.local_constraints {
-            self.add_local_constraint(constraint);
+        for constraint in other.constraints {
+            self.add_constraint(constraint);
         }
     }
 
@@ -52,32 +39,20 @@ impl ConstraintSystem {
         Self::apply_subst_to_constraints(subst, self.constraints_mut());
     }
 
-    pub fn has_constraint_globally(&self, constraint: &Constraint) -> bool {
-        Self::constraints_has_constraint(constraint, self.global_constraints.iter())
-    }
-
-    pub fn has_constraint_locally(&self, constraint: &Constraint) -> bool {
-        Self::constraints_has_constraint(constraint, self.local_constraints.iter())
-    }
-
     pub fn has_constraint(&self, constraint: &Constraint) -> bool {
         Self::constraints_has_constraint(constraint, self.constraints())
     }
 
     pub fn is_empty(&self) -> bool {
-        self.local_constraints.is_empty() && self.global_constraints.is_empty()
+        self.constraints.is_empty()
     }
 
     pub fn constraints(&self) -> impl Iterator<Item = &Constraint> {
-        self.local_constraints
-            .iter()
-            .chain(self.global_constraints.iter())
+        self.constraints.iter()
     }
 
     pub fn constraints_mut(&mut self) -> impl Iterator<Item = &mut Constraint> {
-        self.local_constraints
-            .iter_mut()
-            .chain(self.global_constraints.iter_mut())
+        self.constraints.iter_mut()
     }
 
     fn constraints_has_constraint<'a>(
@@ -123,17 +98,12 @@ impl Display for ConstraintSystem {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "local = [{}], global = [{}]",
-            self.local_constraints
+            "{}",
+            self.constraints
                 .iter()
                 .map(|c| c.to_string())
                 .collect::<Vec<_>>()
                 .join(", \n"),
-            self.global_constraints
-                .iter()
-                .map(|c| c.to_string())
-                .collect::<Vec<_>>()
-                .join(", \n")
         )
     }
 }
@@ -196,7 +166,7 @@ pub fn generate_constraints(
                 let fresh_var = Arc::new(Type::Var(fresh_id));
 
                 // Add OneOf constraint with same possibilities
-                constraint_system.add_local_constraint(Constraint::OneOf(
+                constraint_system.add_constraint(Constraint::OneOf(
                     *expr.span(),
                     fresh_var.clone(),
                     possible_types.clone(),
@@ -262,7 +232,7 @@ pub fn generate_constraints(
 
             // Add constraints that all elements must have the same type
             for ty in &types[1..] {
-                constraint_system.add_local_constraint(Constraint::Eq(
+                constraint_system.add_constraint(Constraint::Eq(
                     *span,
                     types[0].clone(),
                     ty.clone(),
@@ -280,7 +250,7 @@ pub fn generate_constraints(
 
             let expected_f_type = Arc::new(Type::Arrow(x_type.clone(), result_type.clone()));
 
-            constraint_system.add_local_constraint(Constraint::Eq(*span, f_type, expected_f_type));
+            constraint_system.add_constraint(Constraint::Eq(*span, f_type, expected_f_type));
 
             result_type
         }
@@ -383,17 +353,13 @@ pub fn generate_constraints(
             let else_type = generate_constraints(else_branch, env, constraint_system, errors);
 
             // Condition must be boolean
-            constraint_system.add_local_constraint(Constraint::Eq(
+            constraint_system.add_constraint(Constraint::Eq(
                 *cond.span(),
                 cond_type,
                 Arc::new(Type::Bool),
             ));
             // Then and else branches must have the same type
-            constraint_system.add_local_constraint(Constraint::Eq(
-                *span,
-                then_type.clone(),
-                else_type,
-            ));
+            constraint_system.add_constraint(Constraint::Eq(*span, then_type.clone(), else_type));
 
             then_type
         }
@@ -534,7 +500,7 @@ fn instantiate(
                 Constraint::Eq(_, x1, t2) => {
                     if let Type::Var(t1) = &**x1 {
                         if t1 == dep_id {
-                            new_constraint_sytem.add_local_constraint(Constraint::Eq(
+                            new_constraint_sytem.add_constraint(Constraint::Eq(
                                 *span,
                                 Arc::new(Type::Var(fresh_dep_id)),
                                 t2.clone(),
@@ -545,7 +511,7 @@ fn instantiate(
                 Constraint::OneOf(_, x1, ts) => {
                     if let Type::Var(t1) = &**x1 {
                         if t1 == dep_id {
-                            new_constraint_sytem.add_local_constraint(Constraint::OneOf(
+                            new_constraint_sytem.add_constraint(Constraint::OneOf(
                                 *span,
                                 Arc::new(Type::Var(fresh_dep_id)),
                                 ts.clone(),
@@ -1267,23 +1233,22 @@ mod tests {
             Arc::new(Expr::Var(Var::new("false"))),
         );
 
-        let mut constraint_system =
-            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
-                Span::default(),
-                Arc::new(Type::Var(xor_type_id)),
-                vec![
-                    Arc::new(Type::Arrow(
-                        Arc::new(Type::Bool),
-                        Arc::new(Type::Arrow(Arc::new(Type::Bool), Arc::new(Type::Bool))),
-                    )),
-                    Arc::new(Type::Arrow(
-                        Arc::new(Type::Int),
-                        Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-                    )),
-                ]
-                .into_iter()
-                .collect(),
-            )]);
+        let mut constraint_system = ConstraintSystem::with_constraints(vec![Constraint::OneOf(
+            Span::default(),
+            Arc::new(Type::Var(xor_type_id)),
+            vec![
+                Arc::new(Type::Arrow(
+                    Arc::new(Type::Bool),
+                    Arc::new(Type::Arrow(Arc::new(Type::Bool), Arc::new(Type::Bool))),
+                )),
+                Arc::new(Type::Arrow(
+                    Arc::new(Type::Int),
+                    Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
+                )),
+            ]
+            .into_iter()
+            .collect(),
+        )]);
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&bool_expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -1379,7 +1344,7 @@ mod tests {
         //     Arc::new(tuple_expr),
         // );
 
-        let mut constraint_system = ConstraintSystem::with_global_constraints(vec![]);
+        let mut constraint_system = ConstraintSystem::with_constraints(vec![]);
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&tuple_expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -1442,14 +1407,13 @@ mod tests {
             )),
         );
 
-        let mut constraint_system =
-            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
-                Span::default(),
-                Arc::new(Type::Var(rand_type_id)),
-                vec![Arc::new(Type::Int), Arc::new(Type::Bool)]
-                    .into_iter()
-                    .collect(),
-            )]);
+        let mut constraint_system = ConstraintSystem::with_constraints(vec![Constraint::OneOf(
+            Span::default(),
+            Arc::new(Type::Var(rand_type_id)),
+            vec![Arc::new(Type::Int), Arc::new(Type::Bool)]
+                .into_iter()
+                .collect(),
+        )]);
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&sum_expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
@@ -1471,14 +1435,13 @@ mod tests {
         // Test: just rand by itself (should be ambiguous)
         let expr = Expr::Var(Var::new("rand"));
 
-        let mut constraint_system =
-            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
-                Span::default(),
-                Arc::new(Type::Var(rand_type_id)),
-                vec![Arc::new(Type::Int), Arc::new(Type::Bool)]
-                    .into_iter()
-                    .collect(),
-            )]);
+        let mut constraint_system = ConstraintSystem::with_constraints(vec![Constraint::OneOf(
+            Span::default(),
+            Arc::new(Type::Var(rand_type_id)),
+            vec![Arc::new(Type::Int), Arc::new(Type::Bool)]
+                .into_iter()
+                .collect(),
+        )]);
         let mut errors = BTreeSet::new();
         let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
