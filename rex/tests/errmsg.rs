@@ -389,7 +389,7 @@ async fn test_path_error3() {
     builder
         .register_fn_core_with_name(
             "f",
-            Arc::new(Type::Arrow(dict0.clone(), dict0.clone())),
+            Arc::new(Type::make_arrow(dict0.clone(), dict0.clone())),
             Box::new(move |_, args| Box::pin(async move { Ok(args[0].clone()) })),
         )
         .unwrap();

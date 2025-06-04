@@ -142,13 +142,7 @@ pub fn unify_eq_r(
 
     match (&*t1, &*t2) {
         // Base types must match exactly
-        (Type::Bool, Type::Bool) => {}
-        (Type::Uint, Type::Uint) => {}
-        (Type::Int, Type::Int) => {}
-        (Type::Float, Type::Float) => {}
-        (Type::String, Type::String) => {}
-        (Type::Uuid, Type::Uuid) => {}
-        (Type::DateTime, Type::DateTime) => {}
+        (Type::Con(lhs), Type::Con(rhs)) if lhs == rhs => {}
 
         // Tuples
         (Type::Tuple(ts1), Type::Tuple(ts2)) => {
@@ -162,16 +156,11 @@ pub fn unify_eq_r(
             }
         }
 
-        // Lists
-        (Type::List(t1), Type::List(t2)) => unify_eq_r(
-            t1,
-            t2,
-            span,
-            subst,
-            did_change,
-            errors,
-            &path.variant("item"),
-        ),
+        // Type application
+        (Type::App(a1, b1), Type::App(a2, b2)) => {
+            unify_eq_r(a1, a2, span, subst, did_change, errors, path);
+            unify_eq_r(b1, b2, span, subst, did_change, errors, path);
+        }
 
         // Dictionaries
         (Type::Dict(d1), Type::Dict(d2)) => {
@@ -203,48 +192,6 @@ pub fn unify_eq_r(
                 }
             }
         }
-
-        // For function types, unify arguments and results
-        (Type::Arrow(a1, b1), Type::Arrow(a2, b2)) => {
-            unify_eq_r(a1, a2, span, subst, did_change, errors, path);
-            unify_eq_r(b1, b2, span, subst, did_change, errors, path);
-        }
-
-        // Result
-        (Type::Result(a1, b1), Type::Result(a2, b2)) => {
-            unify_eq_r(a1, a2, span, subst, did_change, errors, &path.variant("Ok"));
-            unify_eq_r(
-                b1,
-                b2,
-                span,
-                subst,
-                did_change,
-                errors,
-                &path.variant("Err"),
-            );
-        }
-
-        // Option
-        (Type::Option(a1), Type::Option(a2)) => unify_eq_r(
-            a1,
-            a2,
-            span,
-            subst,
-            did_change,
-            errors,
-            &path.variant("Some"),
-        ),
-
-        // Promise
-        (Type::Promise(a1), Type::Promise(a2)) => unify_eq_r(
-            a1,
-            a2,
-            span,
-            subst,
-            did_change,
-            errors,
-            &path.variant("Promise"),
-        ),
 
         // Type variable case requires occurs check
         (Type::Var(v1), Type::Var(v2)) => {
@@ -385,11 +332,7 @@ pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
                 })
                 .collect(),
         })),
-        Type::Arrow(a, b) => Arc::new(Type::Arrow(apply_subst(a, subst), apply_subst(b, subst))),
-        Type::Result(t, e) => Arc::new(Type::Result(apply_subst(t, subst), apply_subst(e, subst))),
-        Type::Option(t) => Arc::new(Type::Option(apply_subst(t, subst))),
-        Type::Promise(t) => Arc::new(Type::Promise(apply_subst(t, subst))),
-        Type::List(t) => Arc::new(Type::List(apply_subst(t, subst))),
+        Type::App(a, b) => Arc::new(Type::App(apply_subst(a, subst), apply_subst(b, subst))),
         Type::Dict(kts) => Arc::new(Type::Dict(
             kts.iter()
                 .map(|(k, t)| (k.clone(), apply_subst(t, subst)))
@@ -398,14 +341,7 @@ pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
         Type::Tuple(ts) => Arc::new(Type::Tuple(
             ts.iter().map(|t| apply_subst(t, subst)).collect(),
         )),
-
-        Type::Bool
-        | Type::Uint
-        | Type::Int
-        | Type::Float
-        | Type::String
-        | Type::Uuid
-        | Type::DateTime => t.clone(),
+        Type::Con(_) => t.clone(),
     }
 }
 
@@ -430,21 +366,10 @@ pub fn occurs_check(var: &Id, t: &Arc<Type>) -> bool {
             Some(t) => occurs_check(var, t),
             None => false,
         }),
-        Type::Arrow(a, b) => occurs_check(var, a) || occurs_check(var, b),
-        Type::Result(t, e) => occurs_check(var, t) || occurs_check(var, e),
-        Type::Option(t) => occurs_check(var, t),
-        Type::Promise(t) => occurs_check(var, t),
-        Type::List(t) => occurs_check(var, t),
+        Type::App(a, b) => occurs_check(var, a) || occurs_check(var, b),
         Type::Dict(kts) => kts.values().any(|t| occurs_check(var, t)),
         Type::Tuple(ts) => ts.iter().any(|t| occurs_check(var, t)),
-
-        Type::Bool
-        | Type::Uint
-        | Type::Int
-        | Type::Float
-        | Type::String
-        | Type::Uuid
-        | Type::DateTime => false,
+        Type::Con(_) => false,
     }
 }
 

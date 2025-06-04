@@ -11,7 +11,7 @@ use rex::{
     lexer::span::Span,
     type_system::{
         adt, adt_variant, bool, float, int, list, option, promise, result, string, tuple,
-        types::{ADTVariant, ToType, Type, ADT},
+        types::{ADTVariant, ToType, Type, TypeCon, ADT},
         uint,
     },
     Rex,
@@ -425,8 +425,8 @@ async fn test_field_result() {
     let expected_type = Arc::new(Type::ADT(adt! {
         Foo = Foo {
             a: string!(),
-            i1: result!(uint!(), string!()),
-            i2: result!(uint!(), string!()),
+            i1: result!(string!(), uint!()),
+            i2: result!(string!(), uint!()),
         }
     }));
 
@@ -541,7 +541,7 @@ fn test_field_datetime() {
     };
 
     let expected_type = Arc::new(Type::ADT(adt! {
-        Foo = Foo { a: string!(), b: Arc::new(Type::DateTime) }
+        Foo = Foo { a: string!(), b: Arc::new(Type::Con(TypeCon::DateTime)) }
     }));
 
     let expected_encoding = n!(
@@ -574,7 +574,7 @@ async fn test_field_uuid() {
     };
 
     let expected_type = Arc::new(Type::ADT(adt! {
-        Foo = Foo { a: string!(), b: Arc::new(Type::Uuid) }
+        Foo = Foo { a: string!(), b: Arc::new(Type::Con(TypeCon::Uuid)) }
     }));
 
     let expected_encoding = n!(

@@ -35,43 +35,82 @@ impl From<Arc<Type>> for TypeScheme {
 
 pub type TypeEnv = HashMap<String, HashSet<TypeScheme>>;
 
-#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Eq, PartialEq, Debug)]
+pub enum AppliedType<'a> {
+    Arrow(&'a Arc<Type>, &'a Arc<Type>),
+    Result(&'a Arc<Type>, &'a Arc<Type>),
+    Option(&'a Arc<Type>),
+    Promise(&'a Arc<Type>),
+    List(&'a Arc<Type>),
+}
+
+#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Clone, Copy)]
+pub enum TypeCon {
+    Arrow,    // 2 args
+    Result,   // 2 args
+    Option,   // 1 arg
+    Promise,  // 1 arg
+    List,     // 1 arg
+    Bool,     // 0 args
+    Uint,     // 0 args
+    Int,      // 0 args
+    Float,    // 0 args
+    String,   // 0 args
+    Uuid,     // 0 args
+    DateTime, // 0 args
+}
+
+impl fmt::Display for TypeCon {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            TypeCon::Arrow => "Arrow".fmt(f),
+            TypeCon::List => "List".fmt(f),
+            TypeCon::Option => "Option".fmt(f),
+            TypeCon::Promise => "Promise".fmt(f),
+            TypeCon::Result => "Result".fmt(f),
+            TypeCon::Bool => "bool".fmt(f),
+            TypeCon::Uint => "uint".fmt(f),
+            TypeCon::Int => "int".fmt(f),
+            TypeCon::Float => "float".fmt(f),
+            TypeCon::String => "string".fmt(f),
+            TypeCon::Uuid => "uuid".fmt(f),
+            TypeCon::DateTime => "datetime".fmt(f),
+        }
+    }
+}
+
+#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Type {
     UnresolvedVar(String),
     Var(Id),
 
     ADT(ADT),
-    Arrow(Arc<Type>, Arc<Type>),
-    Result(Arc<Type>, Arc<Type>),
-    Option(Arc<Type>),
-    Promise(Arc<Type>),
-    List(Arc<Type>),
+    App(Arc<Type>, Arc<Type>),
     Dict(BTreeMap<String, Arc<Type>>),
     Tuple(Vec<Arc<Type>>),
-
-    Bool,
-    Uint,
-    Int,
-    Float,
-    String,
-    Uuid,
-    DateTime,
+    Con(TypeCon),
 }
 
 impl Type {
+    pub fn make_arrow(a: Arc<Type>, b: Arc<Type>) -> Type {
+        Type::App(
+            Arc::new(Type::App(Arc::new(Type::Con(TypeCon::Arrow)), a)),
+            b,
+        )
+    }
+
+    pub fn make_result(a: Arc<Type>, b: Arc<Type>) -> Type {
+        Type::App(
+            Arc::new(Type::App(Arc::new(Type::Con(TypeCon::Result)), a)),
+            b,
+        )
+    }
+
     pub fn build_arrow(params: Vec<Arc<Type>>, ret: Arc<Type>) -> Arc<Type> {
         params
             .into_iter()
             .rev()
-            .fold(ret, |acc, t| Arc::new(Type::Arrow(t, acc)))
-    }
-
-    pub fn evaluated_type(&self) -> &Type {
-        match self {
-            Type::Arrow(_, b) => b.evaluated_type(),
-            _ => self,
-        }
+            .fold(ret, |acc, t| Arc::new(Type::make_arrow(t, acc)))
     }
 
     pub fn resolve_vars(&self, assignments: &HashMap<String, Arc<Type>>) -> Arc<Type> {
@@ -116,20 +155,30 @@ impl Type {
                 }
                 _ => false,
             },
-            Type::Arrow(_, _) => true,
-            Type::Result(_, _) => match other {
-                Expr::Named(_, n, _) => n == "Ok" || n == "Err",
-                _ => false,
+            Type::App(_, _) => match self.as_applied_type() {
+                Some(AppliedType::Arrow(_, _)) => true,
+                Some(AppliedType::Result(_, _)) => match other {
+                    Expr::Named(_, n, _) => n == "Ok" || n == "Err",
+                    _ => false,
+                },
+                Some(AppliedType::Option(_)) => match other {
+                    Expr::Named(_, n, _) => n == "Some" || n == "None",
+                    _ => false,
+                },
+                Some(AppliedType::Promise(_)) => {
+                    matches!(other, Expr::Promise(..))
+                }
+                Some(AppliedType::List(t)) => match other {
+                    Expr::List(_, es) => es.iter().all(|e| t.maybe_compatible(e)),
+                    _ => false,
+                },
+                None => true,
             },
-            Type::Option(_) => match other {
-                Expr::Named(_, n, _) => n == "Some" || n == "None",
-                _ => false,
-            },
-            Type::Promise(_) => matches!(other, Expr::Promise(..)),
-            Type::List(t) => match other {
-                Expr::List(_, es) => es.iter().all(|e| t.maybe_compatible(e)),
-                _ => false,
-            },
+            Type::Con(TypeCon::Arrow) => true,
+            Type::Con(TypeCon::Result) => true,
+            Type::Con(TypeCon::Option) => true,
+            Type::Con(TypeCon::Promise) => true,
+            Type::Con(TypeCon::List) => true,
             Type::Dict(_) => {
                 true // TODO
             }
@@ -143,13 +192,30 @@ impl Type {
                 }
                 _ => false,
             },
-            Type::Bool => matches!(other, Expr::Bool(..)),
-            Type::Uint => matches!(other, Expr::Uint(..)),
-            Type::Int => matches!(other, Expr::Int(..)),
-            Type::Float => matches!(other, Expr::Float(..)),
-            Type::String => matches!(other, Expr::String(..)),
-            Type::Uuid => matches!(other, Expr::Uuid(..)),
-            Type::DateTime => matches!(other, Expr::DateTime(..)),
+            Type::Con(TypeCon::Bool) => matches!(other, Expr::Bool(..)),
+            Type::Con(TypeCon::Uint) => matches!(other, Expr::Uint(..)),
+            Type::Con(TypeCon::Int) => matches!(other, Expr::Int(..)),
+            Type::Con(TypeCon::Float) => matches!(other, Expr::Float(..)),
+            Type::Con(TypeCon::String) => matches!(other, Expr::String(..)),
+            Type::Con(TypeCon::Uuid) => matches!(other, Expr::Uuid(..)),
+            Type::Con(TypeCon::DateTime) => matches!(other, Expr::DateTime(..)),
+        }
+    }
+
+    pub fn as_applied_type(&self) -> Option<AppliedType<'_>> {
+        match self {
+            Type::App(a, b) => match &**a {
+                Type::App(c, d) => match &**c {
+                    Type::Con(TypeCon::Arrow) => Some(AppliedType::Arrow(d, b)),
+                    Type::Con(TypeCon::Result) => Some(AppliedType::Result(d, b)),
+                    _ => None,
+                },
+                Type::Con(TypeCon::List) => Some(AppliedType::List(b)),
+                Type::Con(TypeCon::Option) => Some(AppliedType::Option(b)),
+                Type::Con(TypeCon::Promise) => Some(AppliedType::Promise(b)),
+                _ => None,
+            },
+            _ => None,
         }
     }
 
@@ -170,29 +236,43 @@ impl Type {
                 Type::ADT(adt2) => adt1.name == adt2.name,
                 _ => false,
             },
-            Type::Arrow(arg1, res1) => match other {
-                Type::Arrow(arg2, res2) => {
-                    arg1.maybe_overlaps_with(arg2) && res1.maybe_overlaps_with(res2)
+            Type::App(_, _) => match self.as_applied_type() {
+                Some(AppliedType::Arrow(arg1, res1)) => {
+                    if let Some(AppliedType::Arrow(arg2, res2)) = other.as_applied_type() {
+                        arg1.maybe_overlaps_with(arg2) && res1.maybe_overlaps_with(res2)
+                    } else {
+                        false
+                    }
                 }
-                _ => false,
-            },
-            Type::Result(ok1, err1) => match other {
-                Type::Result(ok2, err2) => {
-                    ok1.maybe_overlaps_with(ok2) && err1.maybe_overlaps_with(err2)
+                Some(AppliedType::Result(err1, ok1)) => {
+                    if let Some(AppliedType::Result(err2, ok2)) = other.as_applied_type() {
+                        err1.maybe_overlaps_with(err2) && ok1.maybe_overlaps_with(ok2)
+                    } else {
+                        false
+                    }
                 }
-                _ => false,
-            },
-            Type::Option(lhs) => match other {
-                Type::Option(rhs) => lhs.maybe_overlaps_with(rhs),
-                _ => false,
-            },
-            Type::Promise(lhs) => match other {
-                Type::Promise(rhs) => lhs.maybe_overlaps_with(rhs),
-                _ => false,
-            },
-            Type::List(lhs) => match other {
-                Type::List(rhs) => lhs.maybe_overlaps_with(rhs),
-                _ => false,
+                Some(AppliedType::Option(lhs)) => {
+                    if let Some(AppliedType::Option(rhs)) = other.as_applied_type() {
+                        lhs.maybe_overlaps_with(rhs)
+                    } else {
+                        false
+                    }
+                }
+                Some(AppliedType::Promise(lhs)) => {
+                    if let Some(AppliedType::Promise(rhs)) = other.as_applied_type() {
+                        lhs.maybe_overlaps_with(rhs)
+                    } else {
+                        false
+                    }
+                }
+                Some(AppliedType::List(lhs)) => {
+                    if let Some(AppliedType::List(rhs)) = other.as_applied_type() {
+                        lhs.maybe_overlaps_with(rhs)
+                    } else {
+                        false
+                    }
+                }
+                None => true,
             },
             Type::Dict(_) => {
                 true // TODO
@@ -207,13 +287,7 @@ impl Type {
                 }
                 _ => false,
             },
-            Type::Bool => matches!(other, Type::Bool),
-            Type::Uint => matches!(other, Type::Uint),
-            Type::Int => matches!(other, Type::Int),
-            Type::Float => matches!(other, Type::Float),
-            Type::String => matches!(other, Type::String),
-            Type::Uuid => matches!(other, Type::Uuid),
-            Type::DateTime => matches!(other, Type::DateTime),
+            Type::Con(c) => *other == Type::Con(*c),
         }
     }
 
@@ -261,24 +335,14 @@ impl Type {
                     .collect(),
                 docs: adt.docs.clone(),
             })),
-            Type::Arrow(a, b) => Arc::new(Type::Arrow(a.transform_ref(f), b.transform_ref(f))),
-            Type::Result(a, b) => Arc::new(Type::Result(a.transform_ref(f), b.transform_ref(f))),
-            Type::Option(t) => Arc::new(Type::Option(t.transform_ref(f))),
-            Type::Promise(t) => Arc::new(Type::Promise(t.transform_ref(f))),
-            Type::List(t) => Arc::new(Type::List(t.transform_ref(f))),
+            Type::App(a, b) => Arc::new(Type::App(a.transform_ref(f), b.transform_ref(f))),
             Type::Dict(xs) => Arc::new(Type::Dict(BTreeMap::from_iter(
                 xs.iter().map(|(k, v)| (k.clone(), v.transform_ref(f))),
             ))),
             Type::Tuple(xs) => {
                 Arc::new(Type::Tuple(xs.iter().map(|x| x.transform_ref(f)).collect()))
             }
-            Type::Bool => Arc::new(Type::Bool),
-            Type::Uint => Arc::new(Type::Uint),
-            Type::Int => Arc::new(Type::Int),
-            Type::Float => Arc::new(Type::Float),
-            Type::String => Arc::new(Type::String),
-            Type::Uuid => Arc::new(Type::Uuid),
-            Type::DateTime => Arc::new(Type::DateTime),
+            Type::Con(c) => Arc::new(Type::Con(*c)),
         }
     }
 }
@@ -350,30 +414,7 @@ impl TypeFormatter {
 
     pub fn fmt_type(&mut self, t: &Type, f: &mut Formatter<'_>) -> fmt::Result {
         match t {
-            Type::Bool => "bool".fmt(f),
-            Type::Uint => "uint".fmt(f),
-            Type::Int => "int".fmt(f),
-            Type::Float => "float".fmt(f),
-            Type::String => "string".fmt(f),
-            Type::Uuid => "uuid".fmt(f),
-            Type::DateTime => "datetime".fmt(f),
-            Type::Option(x) => {
-                "Option<".fmt(f)?;
-                self.fmt_type(x, f)?;
-                '>'.fmt(f)
-            }
-            Type::Promise(x) => {
-                "Promise<".fmt(f)?;
-                self.fmt_type(x, f)?;
-                '>'.fmt(f)
-            }
-            Type::Result(a, b) => {
-                "Result<".fmt(f)?;
-                self.fmt_type(a, f)?;
-                ", ".fmt(f)?;
-                self.fmt_type(b, f)?;
-                '>'.fmt(f)
-            }
+            Type::Con(c) => c.fmt(f),
             Type::Tuple(xs) => {
                 '('.fmt(f)?;
                 for (i, x) in xs.iter().enumerate() {
@@ -396,28 +437,40 @@ impl TypeFormatter {
                 }
                 '}'.fmt(f)
             }
-            Type::Arrow(a, b) => {
-                match a.as_ref() {
-                    Type::Arrow(_, _) => {
-                        '('.fmt(f)?;
-                        self.fmt_type(a, f)?;
-                        ')'.fmt(f)?;
-                    }
-                    _ => self.fmt_type(a, f)?,
+            Type::App(a, b) => match &**a {
+                Type::Con(TypeCon::List) => {
+                    '['.fmt(f)?;
+                    self.fmt_type(b, f)?;
+                    ']'.fmt(f)
                 }
-                " → ".fmt(f)?;
-                self.fmt_type(b, f)
-            }
+                _ => {
+                    if let Some(AppliedType::Arrow(_, _)) = t.as_applied_type() {
+                        let mut t = t;
+                        while let Some(AppliedType::Arrow(a, b)) = t.as_applied_type() {
+                            if let Some(AppliedType::Arrow(_, _)) = a.as_applied_type() {
+                                '('.fmt(f)?;
+                                self.fmt_type(a, f)?;
+                                ')'.fmt(f)?;
+                            } else {
+                                self.fmt_type(a, f)?;
+                            }
+                            " → ".fmt(f)?;
+                            t = b;
+                        }
+                        self.fmt_type(t, f)
+                    } else {
+                        self.fmt_type(a, f)?;
+                        '<'.fmt(f)?;
+                        self.fmt_type(b, f)?;
+                        '>'.fmt(f)
+                    }
+                }
+            },
             Type::UnresolvedVar(x) => {
                 'τ'.fmt(f)?;
                 x.fmt(f)
             }
             Type::Var(x) => self.fmt_var(x, f),
-            Type::List(x) => {
-                '['.fmt(f)?;
-                self.fmt_type(x, f)?;
-                ']'.fmt(f)
-            }
             Type::ADT(x) => x.name.fmt(f), // Only show name
         }
     }
@@ -430,18 +483,18 @@ pub trait Dispatch: Display {
 
 impl Dispatch for Type {
     fn num_params(&self) -> usize {
-        match self {
-            Type::Arrow(_, b) => 1 + b.num_params(),
-            _ => 0,
+        if let Some(AppliedType::Arrow(_, b)) = self.as_applied_type() {
+            1 + b.num_params()
+        } else {
+            0
         }
     }
 
     fn maybe_accepts_args(&self, args: &[Arc<Expr>]) -> bool {
-        match self {
-            Type::Arrow(a, b) => {
-                !args.is_empty() && a.maybe_compatible(&args[0]) && b.maybe_accepts_args(&args[1..])
-            }
-            _ => args.is_empty(),
+        if let Some(AppliedType::Arrow(a, b)) = self.as_applied_type() {
+            !args.is_empty() && a.maybe_compatible(&args[0]) && b.maybe_accepts_args(&args[1..])
+        } else {
+            args.is_empty()
         }
     }
 }
@@ -456,10 +509,7 @@ impl Dispatch for Arc<Type> {
     }
 }
 
-#[derive(
-    Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, serde::Deserialize, serde::Serialize,
-)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ADT {
     pub name: String,
     pub variants: Vec<ADTVariant>,
@@ -482,10 +532,7 @@ impl Display for ADT {
     }
 }
 
-#[derive(
-    Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, serde::Deserialize, serde::Serialize,
-)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ADTVariant {
     pub name: String,
     pub t: Option<Arc<Type>>,
@@ -512,103 +559,103 @@ pub trait ToType {
 
 impl ToType for bool {
     fn to_type() -> Type {
-        Type::Bool
+        Type::Con(TypeCon::Bool)
     }
 }
 
 impl ToType for u8 {
     fn to_type() -> Type {
-        Type::Uint
+        Type::Con(TypeCon::Uint)
     }
 }
 
 impl ToType for u16 {
     fn to_type() -> Type {
-        Type::Uint
+        Type::Con(TypeCon::Uint)
     }
 }
 
 impl ToType for u32 {
     fn to_type() -> Type {
-        Type::Uint
+        Type::Con(TypeCon::Uint)
     }
 }
 
 impl ToType for u64 {
     fn to_type() -> Type {
-        Type::Uint
+        Type::Con(TypeCon::Uint)
     }
 }
 
 impl ToType for u128 {
     fn to_type() -> Type {
-        Type::Uint
+        Type::Con(TypeCon::Uint)
     }
 }
 
 impl ToType for i8 {
     fn to_type() -> Type {
-        Type::Int
+        Type::Con(TypeCon::Int)
     }
 }
 
 impl ToType for i16 {
     fn to_type() -> Type {
-        Type::Int
+        Type::Con(TypeCon::Int)
     }
 }
 
 impl ToType for i32 {
     fn to_type() -> Type {
-        Type::Int
+        Type::Con(TypeCon::Int)
     }
 }
 
 impl ToType for i64 {
     fn to_type() -> Type {
-        Type::Int
+        Type::Con(TypeCon::Int)
     }
 }
 
 impl ToType for i128 {
     fn to_type() -> Type {
-        Type::Int
+        Type::Con(TypeCon::Int)
     }
 }
 
 impl ToType for f32 {
     fn to_type() -> Type {
-        Type::Float
+        Type::Con(TypeCon::Float)
     }
 }
 
 impl ToType for f64 {
     fn to_type() -> Type {
-        Type::Float
+        Type::Con(TypeCon::Float)
     }
 }
 
 impl ToType for str {
     fn to_type() -> Type {
-        Type::String
+        Type::Con(TypeCon::String)
     }
 }
 
 impl ToType for String {
     fn to_type() -> Type {
-        Type::String
+        Type::Con(TypeCon::String)
     }
 }
 
 impl ToType for Uuid {
     fn to_type() -> Type {
-        Type::Uuid
+        Type::Con(TypeCon::Uuid)
     }
 }
 
 impl ToType for DateTime<Utc> {
     fn to_type() -> Type {
-        Type::DateTime
+        Type::Con(TypeCon::DateTime)
     }
 }
 
@@ -619,7 +666,7 @@ impl ToType for serde_json::Value {
             docs: None,
             variants: vec![ADTVariant {
                 name: "serde_json::Value".to_string(),
-                t: Some(Arc::new(Type::String)),
+                t: Some(Arc::new(Type::Con(TypeCon::String))),
                 docs: None,
                 t_docs: None,
                 discriminant: None,
@@ -643,7 +690,7 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::Arrow(Arc::new(A0::to_type()), Arc::new(B::to_type()))
+        Type::make_arrow(Arc::new(A0::to_type()), Arc::new(B::to_type()))
     }
 }
 
@@ -654,9 +701,12 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::Arrow(
+        Type::make_arrow(
             Arc::new(A0::to_type()),
-            Arc::new(Type::Arrow(Arc::new(A1::to_type()), Arc::new(B::to_type()))),
+            Arc::new(Type::make_arrow(
+                Arc::new(A1::to_type()),
+                Arc::new(B::to_type()),
+            )),
         )
     }
 }
@@ -669,11 +719,14 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::Arrow(
+        Type::make_arrow(
             Arc::new(A0::to_type()),
-            Arc::new(Type::Arrow(
+            Arc::new(Type::make_arrow(
                 Arc::new(A1::to_type()),
-                Arc::new(Type::Arrow(Arc::new(A2::to_type()), Arc::new(B::to_type()))),
+                Arc::new(Type::make_arrow(
+                    Arc::new(A2::to_type()),
+                    Arc::new(B::to_type()),
+                )),
             )),
         )
     }
@@ -688,13 +741,16 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::Arrow(
+        Type::make_arrow(
             Arc::new(A0::to_type()),
-            Arc::new(Type::Arrow(
+            Arc::new(Type::make_arrow(
                 Arc::new(A1::to_type()),
-                Arc::new(Type::Arrow(
+                Arc::new(Type::make_arrow(
                     Arc::new(A2::to_type()),
-                    Arc::new(Type::Arrow(Arc::new(A3::to_type()), Arc::new(B::to_type()))),
+                    Arc::new(Type::make_arrow(
+                        Arc::new(A3::to_type()),
+                        Arc::new(B::to_type()),
+                    )),
                 )),
             )),
         )
@@ -707,7 +763,7 @@ where
     E: ToType,
 {
     fn to_type() -> Type {
-        Type::Result(Arc::new(T::to_type()), Arc::new(E::to_type()))
+        Type::make_result(Arc::new(E::to_type()), Arc::new(T::to_type()))
     }
 }
 
@@ -716,7 +772,7 @@ where
     T: ToType,
 {
     fn to_type() -> Type {
-        Type::Option(Arc::new(T::to_type()))
+        Type::App(Arc::new(Type::Con(TypeCon::Option)), Arc::new(T::to_type()))
     }
 }
 
@@ -725,7 +781,7 @@ where
     T: ToType,
 {
     fn to_type() -> Type {
-        Type::List(Arc::new(T::to_type()))
+        Type::App(Arc::new(Type::Con(TypeCon::List)), Arc::new(T::to_type()))
     }
 }
 
@@ -734,7 +790,7 @@ where
     T: ToType,
 {
     fn to_type() -> Type {
-        Type::List(Arc::new(T::to_type()))
+        Type::App(Arc::new(Type::Con(TypeCon::List)), Arc::new(T::to_type()))
     }
 }
 
@@ -743,7 +799,7 @@ where
     T: ToType,
 {
     fn to_type() -> Type {
-        Type::List(Arc::new(T::to_type()))
+        Type::App(Arc::new(Type::Con(TypeCon::List)), Arc::new(T::to_type()))
     }
 }
 
@@ -895,7 +951,7 @@ where
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::{arrow, bool, float, int, string, uint};
+    use crate::{arrow, bool, float, int, list, option, promise, result, string, uint};
     use rex_ast::{b, f, s, u};
 
     #[test]
@@ -952,6 +1008,34 @@ pub mod test {
         assert_eq!(
             Arc::new(<fn(u64, String, i64, f64) -> bool as ToType>::to_type()),
             arrow!(uint!() => string!() => int!() => float!() => bool!())
+        );
+    }
+
+    #[test]
+    fn test_applied_type() {
+        assert_eq!(
+            arrow!(int!() => bool!()).as_applied_type(),
+            Some(AppliedType::Arrow(&int!(), &bool!()))
+        );
+        assert_eq!(
+            arrow!(int!() => bool!() => string!()).as_applied_type(),
+            Some(AppliedType::Arrow(&int!(), &arrow!(bool!() => string!())))
+        );
+        assert_eq!(
+            result!(bool!(), string!()).as_applied_type(),
+            Some(AppliedType::Result(&bool!(), &string!()))
+        );
+        assert_eq!(
+            option!(string!()).as_applied_type(),
+            Some(AppliedType::Option(&string!()))
+        );
+        assert_eq!(
+            promise!(string!()).as_applied_type(),
+            Some(AppliedType::Promise(&string!()))
+        );
+        assert_eq!(
+            list!(string!()).as_applied_type(),
+            Some(AppliedType::List(&string!()))
         );
     }
 }

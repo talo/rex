@@ -9,7 +9,7 @@ use rex_lexer::span::Span;
 
 use crate::{
     error::TypeError,
-    types::{ADTVariant, Type, TypeEnv, TypeScheme, ADT},
+    types::{ADTVariant, AppliedType, Type, TypeCon, TypeEnv, TypeScheme, ADT},
     unify::{self, Subst},
 };
 
@@ -219,8 +219,8 @@ pub fn generate_constraints(
         Expr::List(span, exprs) => {
             // If list is empty, create a fresh type variable for element type
             if exprs.is_empty() {
-                let elem_ty = Type::Var(Id::new());
-                return Arc::new(Type::List(Arc::new(elem_ty)));
+                let elem_ty = Arc::new(Type::Var(Id::new()));
+                return Arc::new(Type::App(Arc::new(Type::Con(TypeCon::List)), elem_ty));
             }
 
             // Generate constraints for all expressions
@@ -239,7 +239,10 @@ pub fn generate_constraints(
                 ));
             }
 
-            Arc::new(Type::List(types[0].clone()))
+            Arc::new(Type::App(
+                Arc::new(Type::Con(TypeCon::List)),
+                types[0].clone(),
+            ))
         }
 
         Expr::App(span, f, x) => {
@@ -248,7 +251,7 @@ pub fn generate_constraints(
 
             let result_type = Arc::new(Type::Var(Id::new()));
 
-            let expected_f_type = Arc::new(Type::Arrow(x_type.clone(), result_type.clone()));
+            let expected_f_type = Arc::new(Type::make_arrow(x_type.clone(), result_type.clone()));
 
             constraint_system.add_constraint(Constraint::Eq(*span, f_type, expected_f_type));
 
@@ -266,7 +269,7 @@ pub fn generate_constraints(
 
             let body_type = generate_constraints(body, &new_env, constraint_system, errors);
 
-            Arc::new(Type::Arrow(param_type, body_type))
+            Arc::new(Type::make_arrow(param_type, body_type))
         }
 
         Expr::Let(_span, var, def, body) => {
@@ -332,8 +335,8 @@ pub fn generate_constraints(
             //
             // New version:
             // ```rex
-            let type_scheme = match &*solved_def_type {
-                Type::Arrow(..) => generalize(env, &solved_def_type, gen_deps),
+            let type_scheme = match solved_def_type.as_applied_type() {
+                Some(AppliedType::Arrow(_, _)) => generalize(env, &solved_def_type, gen_deps),
                 _ => TypeScheme::from(solved_def_type),
             };
             // ```
@@ -356,7 +359,7 @@ pub fn generate_constraints(
             constraint_system.add_constraint(Constraint::Eq(
                 *cond.span(),
                 cond_type,
-                Arc::new(Type::Bool),
+                Arc::new(Type::Con(TypeCon::Bool)),
             ));
             // Then and else branches must have the same type
             constraint_system.add_constraint(Constraint::Eq(*span, then_type.clone(), else_type));
@@ -364,13 +367,13 @@ pub fn generate_constraints(
             then_type
         }
 
-        Expr::Bool(_span, _x) => Arc::new(Type::Bool),
-        Expr::Uint(_span, _x) => Arc::new(Type::Uint),
-        Expr::Int(_span, _x) => Arc::new(Type::Int),
-        Expr::Float(_span, _x) => Arc::new(Type::Float),
-        Expr::String(_span, _x) => Arc::new(Type::String),
-        Expr::Uuid(_span, _x) => Arc::new(Type::Uuid),
-        Expr::DateTime(_span, _x) => Arc::new(Type::DateTime),
+        Expr::Bool(_span, _x) => Arc::new(Type::Con(TypeCon::Bool)),
+        Expr::Uint(_span, _x) => Arc::new(Type::Con(TypeCon::Uint)),
+        Expr::Int(_span, _x) => Arc::new(Type::Con(TypeCon::Int)),
+        Expr::Float(_span, _x) => Arc::new(Type::Con(TypeCon::Float)),
+        Expr::String(_span, _x) => Arc::new(Type::Con(TypeCon::String)),
+        Expr::Uuid(_span, _x) => Arc::new(Type::Con(TypeCon::Uuid)),
+        Expr::DateTime(_span, _x) => Arc::new(Type::Con(TypeCon::DateTime)),
 
         Expr::Curry(..) => {
             todo!("generate_constraints for Expr::Curry just like we do for Expr::App")
@@ -404,19 +407,11 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
             }
             set
         }
-        Type::Arrow(a, b) => {
+        Type::App(a, b) => {
             let mut set = free_vars(a);
             set.extend(free_vars(b));
             set
         }
-        Type::Result(t, e) => {
-            let mut set = free_vars(t);
-            set.extend(free_vars(e));
-            set
-        }
-        Type::Option(t) => free_vars(t),
-        Type::Promise(t) => free_vars(t),
-        Type::List(t) => free_vars(t),
         Type::Dict(kts) => {
             let mut vars = HashSet::new();
             for t in kts.values() {
@@ -431,14 +426,7 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
             }
             vars
         }
-
-        Type::Bool
-        | Type::Uint
-        | Type::Int
-        | Type::Float
-        | Type::String
-        | Type::Uuid
-        | Type::DateTime => HashSet::new(),
+        Type::Con(_) => HashSet::new(),
     }
 }
 
@@ -551,11 +539,7 @@ fn inst_helper(ty: &Arc<Type>, subst: &mut Subst) -> Arc<Type> {
                 })
                 .collect(),
         })),
-        Type::Arrow(a, b) => Arc::new(Type::Arrow(inst_helper(a, subst), inst_helper(b, subst))),
-        Type::Result(t, e) => Arc::new(Type::Result(inst_helper(t, subst), inst_helper(e, subst))),
-        Type::Option(t) => Arc::new(Type::Option(inst_helper(t, subst))),
-        Type::Promise(t) => Arc::new(Type::Promise(inst_helper(t, subst))),
-        Type::List(t) => Arc::new(Type::List(inst_helper(t, subst))),
+        Type::App(a, b) => Arc::new(Type::App(inst_helper(a, subst), inst_helper(b, subst))),
         Type::Dict(kts) => Arc::new(Type::Dict(
             kts.iter()
                 .map(|(k, t)| (k.clone(), inst_helper(t, subst)))
@@ -564,14 +548,7 @@ fn inst_helper(ty: &Arc<Type>, subst: &mut Subst) -> Arc<Type> {
         Type::Tuple(ts) => Arc::new(Type::Tuple(
             ts.iter().map(|t| inst_helper(t, subst)).collect(),
         )),
-
-        Type::Bool
-        | Type::Uint
-        | Type::Int
-        | Type::Float
-        | Type::String
-        | Type::Uuid
-        | Type::DateTime => ty.clone(),
+        Type::Con(_) => ty.clone(),
     }
 }
 
@@ -637,12 +614,11 @@ mod tests {
         // (β isn't quantified because it appears in env)
         let scheme = generalize(&env, &ty, BTreeSet::new());
         assert_eq!(*scheme.ids, vec![alpha]);
-        match &*scheme.ty {
-            Type::Arrow(arg, ret) => {
-                assert_eq!(*arg, var!(alpha));
-                assert_eq!(*ret, var!(beta));
-            }
-            _ => panic!("Expected arrow type"),
+        if let Some(AppliedType::Arrow(arg, ret)) = scheme.ty.as_applied_type() {
+            assert_eq!(*arg, var!(alpha));
+            assert_eq!(*ret, var!(beta));
+        } else {
+            panic!("Expected arrow type");
         }
     }
 
@@ -661,16 +637,15 @@ mod tests {
         let inst_ty = instantiate(&scheme, &Span::default(), &mut ConstraintSystem::default());
 
         // Should become γ -> β where γ is fresh
-        match &*inst_ty {
-            Type::Arrow(arg, ret) => {
-                // Arg should be a fresh variable
-                assert_ne!(*arg, var!(alpha));
-                assert_ne!(*arg, var!(beta));
+        if let Some(AppliedType::Arrow(arg, ret)) = inst_ty.as_applied_type() {
+            // Arg should be a fresh variable
+            assert_ne!(*arg, var!(alpha));
+            assert_ne!(*arg, var!(beta));
 
-                // Result should be original free variable
-                assert_eq!(*ret, var!(beta));
-            }
-            _ => panic!("Expected arrow type"),
+            // Result should be original free variable
+            assert_eq!(*ret, var!(beta));
+        } else {
+            panic!("Expected arrow type");
         }
     }
 
@@ -748,7 +723,14 @@ mod tests {
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
-        assert!(matches!(&*ty, Type::List(_)));
+        match &*ty {
+            Type::App(a, _) => {
+                assert!(matches!(&**a, Type::Con(TypeCon::List)));
+            }
+            _ => {
+                panic!("Expected list");
+            }
+        }
         assert!(constraint_system.is_empty());
     }
 

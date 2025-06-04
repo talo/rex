@@ -388,7 +388,9 @@ pub mod test {
     use crate::{codec::Encode, engine::Builder, program::Program};
     use rex_ast::{assert_expr_eq, b, d, f, i, l, n, s, tup, u};
     use rex_type_system::{
-        bool, dict, float, int, list, option, result, string, tuple, types::Type, uint,
+        bool, dict, float, int, list, option, result, string, tuple,
+        types::{Type, TypeCon},
+        uint,
     };
 
     use super::*;
@@ -780,7 +782,12 @@ pub mod test {
         // Empty list
         let (res, res_type) = parse_infer_and_eval(r#"[]"#).await.unwrap();
         assert!(match &*res_type {
-            Type::List(inner) => matches!(&**inner, Type::Var(_)),
+            Type::App(a, inner) => {
+                match &**a {
+                    Type::Con(TypeCon::List) => matches!(&**inner, Type::Var(_)),
+                    _ => false,
+                }
+            }
             _ => false,
         });
         assert_expr_eq!(res, l!(); ignore span);
@@ -858,22 +865,22 @@ pub mod test {
     #[tokio::test]
     async fn test_uuid() {
         let (res, res_type) = parse_infer_and_eval(r#"random_uuid"#).await.unwrap();
-        assert!(matches!(&*res_type, Type::Uuid));
+        assert!(matches!(&*res_type, Type::Con(TypeCon::Uuid)));
         assert!(matches!(&*res, Expr::Uuid(..))); // Don't check value; it's random!
 
         let (res, res_type) = parse_infer_and_eval(r#"string random_uuid"#).await.unwrap();
-        assert!(matches!(&*res_type, Type::String));
+        assert!(matches!(&*res_type, Type::Con(TypeCon::String)));
         assert!(matches!(&*res, Expr::String(..))); // Don't check value; it's random!
     }
 
     #[tokio::test]
     async fn test_datetime() {
         let (res, res_type) = parse_infer_and_eval(r#"now"#).await.unwrap();
-        assert!(matches!(&*res_type, Type::DateTime));
+        assert!(matches!(&*res_type, Type::Con(TypeCon::DateTime)));
         assert!(matches!(&*res, Expr::DateTime(..))); // Don't check value; depends on current time
 
         let (res, res_type) = parse_infer_and_eval(r#"string now"#).await.unwrap();
-        assert!(matches!(&*res_type, Type::String));
+        assert!(matches!(&*res_type, Type::Con(TypeCon::String)));
         assert!(matches!(&*res, Expr::String(..))); // Don't check value; depends on current time
     }
 
@@ -1031,7 +1038,7 @@ pub mod test {
         let (res, res_type) = parse_infer_and_eval(r#"let a = Ok 4, b = Err "bad" in [a, b]"#)
             .await
             .unwrap();
-        assert_eq!(res_type, list!(result!(uint!(), string!())));
+        assert_eq!(res_type, list!(result!(string!(), uint!())));
         assert_expr_eq!(res, l!(n!("Ok", Some(u!(4))), n!("Err", Some(s!("bad")))); ignore span);
 
         let (res, res_type) = parse_infer_and_eval(r#"map is_ok [Ok 3, Err "bad"]"#)
@@ -1061,7 +1068,7 @@ pub mod test {
         )
         .await
         .unwrap();
-        assert_eq!(res_type, list!(result!(list!(uint!()), string!())));
+        assert_eq!(res_type, list!(result!(string!(), list!(uint!()))));
         assert_expr_eq!(
             res,
             l!(n!("Ok", Some(l!(u!(4), u!(5), u!(6)))),
@@ -1084,7 +1091,7 @@ pub mod test {
         )
         .await
         .unwrap();
-        assert_eq!(res_type, list!(result!(float!(), string!())));
+        assert_eq!(res_type, list!(result!(string!(), float!())));
         assert_expr_eq!(
             res,
             l!(
@@ -1109,7 +1116,7 @@ pub mod test {
         )
         .await
         .unwrap();
-        assert_eq!(res_type, list!(result!(string!(), float!())));
+        assert_eq!(res_type, list!(result!(float!(), string!())));
         assert_expr_eq!(
             res,
             l!(
@@ -1282,7 +1289,7 @@ pub mod test {
         .unwrap();
         assert_eq!(
             res_type,
-            tuple!(list!(result!(string!(), uint!())), list!(option!(float!())),)
+            tuple!(list!(result!(uint!(), string!())), list!(option!(float!())),)
         );
         assert_expr_eq!(
             res,

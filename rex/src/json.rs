@@ -5,7 +5,7 @@ use crate::{
         error::Error as EngineError,
     },
     lexer::span::Span,
-    type_system::types::Type,
+    type_system::types::{AppliedType, Type, TypeCon},
 };
 use serde_json::{Map, Number, Value};
 use std::{collections::BTreeMap, sync::Arc};
@@ -145,45 +145,57 @@ pub fn json_to_expr(
                 Err(type_error(json, want))
             }
         }
-        // (Type::Arrow(_, _), _) => unimplemented!(),
-        (Type::Result(ok_type, err_type), Value::Object(name_object)) if name_object.len() == 1 => {
-            if let Some(ok_value) = name_object.get("Ok") {
-                let inner = json_to_expr(ok_value, ok_type, opts)?;
-                Ok(Arc::new(Expr::Named(
+        (Type::App(_, _), rhs) => match want.as_applied_type() {
+            Some(AppliedType::Result(err_type, ok_type)) => match rhs {
+                Value::Object(name_object) if name_object.len() == 1 => {
+                    if let Some(ok_value) = name_object.get("Ok") {
+                        let inner = json_to_expr(ok_value, ok_type, opts)?;
+                        Ok(Arc::new(Expr::Named(
+                            Span::default(),
+                            "Ok".to_string(),
+                            Some(inner),
+                        )))
+                    } else if let Some(err_value) = name_object.get("Err") {
+                        let inner = json_to_expr(err_value, err_type, opts)?;
+                        Ok(Arc::new(Expr::Named(
+                            Span::default(),
+                            "Err".to_string(),
+                            Some(inner),
+                        )))
+                    } else {
+                        Err(type_error(json, want))
+                    }
+                }
+                _ => Err(type_error(json, want)),
+            },
+            Some(AppliedType::Option(inner)) => match json {
+                Value::Null => Ok(Arc::new(Expr::Named(
                     Span::default(),
-                    "Ok".to_string(),
-                    Some(inner),
-                )))
-            } else if let Some(err_value) = name_object.get("Err") {
-                let inner = json_to_expr(err_value, err_type, opts)?;
-                Ok(Arc::new(Expr::Named(
+                    "None".to_string(),
+                    None,
+                ))),
+                _ => Ok(Arc::new(Expr::Named(
                     Span::default(),
-                    "Err".to_string(),
-                    Some(inner),
-                )))
-            } else {
-                Err(type_error(json, want))
-            }
-        }
-        (Type::Option(inner), _) => match json {
-            Value::Null => Ok(Arc::new(Expr::Named(
+                    "Some".to_string(),
+                    Some(json_to_expr(json, inner, opts)?),
+                ))),
+            },
+            Some(AppliedType::Promise(_)) => Ok(Arc::new(Expr::Promise(
                 Span::default(),
-                "None".to_string(),
-                None,
+                serde_json::from_value(json.clone()).map_err(|_e| type_error(json, want))?,
             ))),
-            _ => Ok(Arc::new(Expr::Named(
-                Span::default(),
-                "Some".to_string(),
-                Some(json_to_expr(json, inner, opts)?),
-            ))),
+            Some(AppliedType::List(item_type)) => match rhs {
+                Value::Array(json_items) => {
+                    let mut exprs: Vec<Arc<Expr>> = Vec::new();
+                    for json_item in json_items {
+                        exprs.push(json_to_expr(json_item, item_type, opts)?);
+                    }
+                    Ok(Arc::new(Expr::List(Span::default(), exprs)))
+                }
+                _ => Err(type_error(json, want)),
+            },
+            _ => Err(type_error(json, want)),
         },
-        (Type::List(item_type), Value::Array(json_items)) => {
-            let mut exprs: Vec<Arc<Expr>> = Vec::new();
-            for json_item in json_items {
-                exprs.push(json_to_expr(json_item, item_type, opts)?);
-            }
-            Ok(Arc::new(Expr::List(Span::default(), exprs)))
-        }
         (Type::Dict(type_entries), Value::Object(json_entries)) => {
             let mut expr_entries: BTreeMap<String, Arc<Expr>> = BTreeMap::new();
             for (k, t) in type_entries.iter() {
@@ -204,40 +216,38 @@ pub fn json_to_expr(
             }
             Ok(Arc::new(Expr::Tuple(Span::default(), exprs)))
         }
-        (Type::Bool, Value::Bool(b)) => Ok(Arc::new(Expr::Bool(Span::default(), *b))),
-        (Type::Uint, Value::Number(n)) => {
+        (Type::Con(TypeCon::Bool), Value::Bool(b)) => Ok(Arc::new(Expr::Bool(Span::default(), *b))),
+        (Type::Con(TypeCon::Uint), Value::Number(n)) => {
             if let Some(v) = n.as_u64() {
                 Ok(Arc::new(Expr::Uint(Span::default(), v)))
             } else {
                 Err(type_error(json, want))
             }
         }
-        (Type::Int, Value::Number(n)) => {
+        (Type::Con(TypeCon::Int), Value::Number(n)) => {
             if let Some(v) = n.as_i64() {
                 Ok(Arc::new(Expr::Int(Span::default(), v)))
             } else {
                 Err(type_error(json, want))
             }
         }
-        (Type::Float, Value::Number(n)) => {
+        (Type::Con(TypeCon::Float), Value::Number(n)) => {
             if let Some(v) = n.as_f64() {
                 Ok(Arc::new(Expr::Float(Span::default(), v)))
             } else {
                 Err(type_error(json, want))
             }
         }
-        (Type::String, Value::String(s)) => Ok(Arc::new(Expr::String(Span::default(), s.clone()))),
-        (Type::Uuid, _) => Ok(Arc::new(Expr::Uuid(
+        (Type::Con(TypeCon::String), Value::String(s)) => {
+            Ok(Arc::new(Expr::String(Span::default(), s.clone())))
+        }
+        (Type::Con(TypeCon::Uuid), _) => Ok(Arc::new(Expr::Uuid(
             Span::default(),
             serde_json::from_value(json.clone()).map_err(|_| type_error(json, want))?,
         ))),
-        (Type::DateTime, _) => Ok(Arc::new(Expr::DateTime(
+        (Type::Con(TypeCon::DateTime), _) => Ok(Arc::new(Expr::DateTime(
             Span::default(),
             serde_json::from_value(json.clone()).map_err(|_| type_error(json, want))?,
-        ))),
-        (Type::Promise(_), _) => Ok(Arc::new(Expr::Promise(
-            Span::default(),
-            serde_json::from_value(json.clone()).map_err(|_e| type_error(json, want))?,
         ))),
         (_, _) => Err(type_error(json, want)),
     }
@@ -317,33 +327,50 @@ pub fn expr_to_json(
                 // todo!("expr_to_json for ADT with multiple variants: {:#?}", adt)
             }
         }
-        // (Type::Arrow(_, _), _) => unimplemented!(),
-        (Type::Result(ok_type, err_type), Expr::Named(_, n, Some(v))) => {
-            let mut map: Map<String, Value> = Map::new();
-            match n.as_str() {
-                "Ok" => {
-                    map.insert("Ok".to_string(), expr_to_json(v, ok_type, opts)?);
-                    Ok(Value::Object(map))
-                }
-                "Err" => {
-                    map.insert("Err".to_string(), expr_to_json(v, err_type, opts)?);
-                    Ok(Value::Object(map))
+        (Type::App(_, _), rhs) => match want.as_applied_type() {
+            Some(AppliedType::Result(err_type, ok_type)) => match rhs {
+                Expr::Named(_, n, Some(v)) => {
+                    let mut map: Map<String, Value> = Map::new();
+                    match n.as_str() {
+                        "Ok" => {
+                            map.insert("Ok".to_string(), expr_to_json(v, ok_type, opts)?);
+                            Ok(Value::Object(map))
+                        }
+                        "Err" => {
+                            map.insert("Err".to_string(), expr_to_json(v, err_type, opts)?);
+                            Ok(Value::Object(map))
+                        }
+                        _ => Err(expr_error(expr, want)),
+                    }
                 }
                 _ => Err(expr_error(expr, want)),
-            }
-        }
-        (Type::Option(inner_type), Expr::Named(_, n, ov)) => match (n.as_str(), ov) {
-            ("Some", Some(v)) => expr_to_json(v, inner_type, opts),
-            ("None", None) => Ok(Value::Null),
+            },
+            Some(AppliedType::Promise(_)) => match rhs {
+                Expr::Promise(_, u) => {
+                    Ok(serde_json::to_value(u).map_err(|_| expr_error(expr, want))?)
+                }
+                _ => Err(expr_error(expr, want)),
+            },
+            Some(AppliedType::Option(inner_type)) => match rhs {
+                Expr::Named(_, n, ov) => match (n.as_str(), ov) {
+                    ("Some", Some(v)) => expr_to_json(v, inner_type, opts),
+                    ("None", None) => Ok(Value::Null),
+                    _ => Err(expr_error(expr, want)),
+                },
+                _ => Err(expr_error(expr, want)),
+            },
+            Some(AppliedType::List(inner_type)) => match rhs {
+                Expr::List(_, items) => {
+                    let mut values: Vec<Value> = Vec::new();
+                    for item in items.iter() {
+                        values.push(expr_to_json(item, inner_type, opts)?);
+                    }
+                    Ok(Value::Array(values))
+                }
+                _ => Err(expr_error(expr, want)),
+            },
             _ => Err(expr_error(expr, want)),
         },
-        (Type::List(inner_type), Expr::List(_, items)) => {
-            let mut values: Vec<Value> = Vec::new();
-            for item in items.iter() {
-                values.push(expr_to_json(item, inner_type, opts)?);
-            }
-            Ok(Value::Array(values))
-        }
         (Type::Dict(type_entries), Expr::Dict(_, value_entries))
             if type_entries.len() == value_entries.len() =>
         {
@@ -361,22 +388,19 @@ pub fn expr_to_json(
             }
             Ok(Value::Array(values))
         }
-        (Type::Bool, Expr::Bool(_, b)) => Ok(Value::Bool(*b)),
-        (Type::Uint, Expr::Uint(_, x)) => Ok(Value::Number((*x).into())),
-        (Type::Int, Expr::Int(_, x)) => Ok(Value::Number((*x).into())),
-        (Type::Float, Expr::Float(_, x)) => match Number::from_f64(*x) {
+        (Type::Con(TypeCon::Bool), Expr::Bool(_, b)) => Ok(Value::Bool(*b)),
+        (Type::Con(TypeCon::Uint), Expr::Uint(_, x)) => Ok(Value::Number((*x).into())),
+        (Type::Con(TypeCon::Int), Expr::Int(_, x)) => Ok(Value::Number((*x).into())),
+        (Type::Con(TypeCon::Float), Expr::Float(_, x)) => match Number::from_f64(*x) {
             Some(n) => Ok(Value::Number(n)),
             None => Err(expr_error(expr, want)),
         },
-        (Type::String, Expr::String(_, x)) => Ok(Value::String(x.clone())),
-        (Type::Uuid, Expr::Uuid(_, u)) => {
+        (Type::Con(TypeCon::String), Expr::String(_, x)) => Ok(Value::String(x.clone())),
+        (Type::Con(TypeCon::Uuid), Expr::Uuid(_, u)) => {
             Ok(serde_json::to_value(u).map_err(|_| expr_error(expr, want))?)
         }
-        (Type::DateTime, Expr::DateTime(_, dt)) => {
+        (Type::Con(TypeCon::DateTime), Expr::DateTime(_, dt)) => {
             Ok(serde_json::to_value(dt).map_err(|_| expr_error(expr, want))?)
-        }
-        (Type::Promise(_), Expr::Promise(_, u)) => {
-            Ok(serde_json::to_value(u).map_err(|_| expr_error(expr, want))?)
         }
         _ => Err(expr_error(expr, want)),
     }

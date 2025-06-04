@@ -3,7 +3,7 @@ use std::{borrow::Borrow, marker::PhantomData, sync::Arc};
 use chrono::{DateTime, Utc};
 use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
-use rex_type_system::types::{ToType, Type};
+use rex_type_system::types::{ToType, Type, TypeCon};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
@@ -663,7 +663,7 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::Arrow(Arc::new(A::to_type()), Arc::new(B::to_type()))
+        Type::make_arrow(Arc::new(A::to_type()), Arc::new(B::to_type()))
     }
 }
 
@@ -727,6 +727,9 @@ where
     T: ToType,
 {
     fn to_type() -> Type {
-        Type::Promise(Arc::new(T::to_type()))
+        Type::App(
+            Arc::new(Type::Con(TypeCon::Promise)),
+            Arc::new(T::to_type()),
+        )
     }
 }

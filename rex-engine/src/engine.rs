@@ -588,7 +588,7 @@ where
 
             for tuple_index in 0..tuple_len {
                 let fun_name = format!("elem{}", tuple_index);
-                let fun_type = Arc::new(Type::Arrow(
+                let fun_type = Arc::new(Type::make_arrow(
                     tuple_type.clone(),
                     element_types[tuple_index].clone(),
                 ));
@@ -727,7 +727,7 @@ where
             (Some(Type::Tuple(fields)), _) => {
                 let mut fun_type = adt_type.clone();
                 for field in fields.iter().rev() {
-                    fun_type = Arc::new(Type::Arrow(field.clone(), fun_type));
+                    fun_type = Arc::new(Type::make_arrow(field.clone(), fun_type));
                 }
                 self.register_fn_core_with_name(
                     constructor_name,
@@ -753,7 +753,7 @@ where
                 }
                 let t = Arc::new(Type::Dict(entries_without_defaults));
 
-                let fun_type = Arc::new(Type::Arrow(t.clone(), adt_type.clone()));
+                let fun_type = Arc::new(Type::make_arrow(t.clone(), adt_type.clone()));
                 let defaults: BTreeMap<String, FtableFn<State>> = (*defaults).clone();
                 let base_name1 = base_name.clone();
                 self.register_fn_core_with_name(
@@ -786,7 +786,7 @@ where
             }
             _ => {
                 if let Some(t) = variant_type {
-                    let fun_type = Arc::new(Type::Arrow(t.clone(), adt_type.clone()));
+                    let fun_type = Arc::new(Type::make_arrow(t.clone(), adt_type.clone()));
                     self.register_fn_core_with_name(
                         constructor_name,
                         fun_type,
@@ -828,7 +828,7 @@ where
     ) -> Result<(), Error> {
         for (entry_key, entry_type) in entries.iter() {
             let this_accessor_fun_type =
-                Arc::new(Type::Arrow(adt_type.clone(), entry_type.clone()));
+                Arc::new(Type::make_arrow(adt_type.clone(), entry_type.clone()));
 
             // Register the type
             match register_fn_core(self, entry_key, this_accessor_fun_type.clone()) {
