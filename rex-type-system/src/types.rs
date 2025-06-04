@@ -5,17 +5,86 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use rex_ast::{expr::Expr, id::Id};
+use rex_ast::expr::Expr;
 use uuid::Uuid;
+
+/// Simple version of Kind; in general it should be Kind = Star | Kfun Kind Kind
+/// but for our purposes we don't need to support kinds where the arguments aren't
+/// simply *. So it's sufficient to use a single integer, representing the number
+/// of arguments, i.e 0 is *, 1 is * -> *, 2 is * -> * -> *, etc. Using a single
+/// integer makes it possible for the type to implement Copy.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Kind(pub usize);
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for _ in 0..self.0 {
+            write!(f, "* -> ")?;
+        }
+        write!(f, "*")
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct TypeVar {
+    uuid: Uuid,
+    kind: Kind,
+}
+
+impl TypeVar {
+    pub fn new() -> Self {
+        TypeVar::new_with_kind(Kind(0))
+    }
+
+    pub fn new_with_kind(kind: Kind) -> Self {
+        TypeVar {
+            uuid: Uuid::new_v4(),
+            kind,
+        }
+    }
+
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        TypeVar {
+            uuid,
+            kind: Kind(0),
+        }
+    }
+
+    pub fn kind(&self) -> Kind {
+        self.kind
+    }
+}
+
+impl Default for TypeVar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for TypeVar {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let (fst, snd, thrd, _frth) = self.uuid.as_fields();
+        let id = (fst as u64) << 32 | (snd as u64) << 16 | (thrd as u64);
+        id.fmt(f)
+    }
+}
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub struct TypeScheme {
-    pub ids: Vec<Id>,
+    pub vars: Vec<TypeVar>,
     pub ty: Arc<Type>,
-    pub deps: BTreeSet<Id>,
+    pub deps: BTreeSet<TypeVar>,
 }
 
 impl TypeScheme {
+    pub fn new(vars: Vec<TypeVar>, ty: Arc<Type>) -> Self {
+        TypeScheme {
+            vars,
+            ty,
+            deps: BTreeSet::new(),
+        }
+    }
+
     pub fn maybe_overlaps_with(&self, other: &TypeScheme) -> bool {
         // We can ignore type variables hwere, since any two variables are considered
         // potentially overlapping
@@ -26,7 +95,7 @@ impl TypeScheme {
 impl From<Arc<Type>> for TypeScheme {
     fn from(t: Arc<Type>) -> Self {
         TypeScheme {
-            ids: vec![],
+            vars: vec![],
             ty: t,
             deps: BTreeSet::new(),
         }
@@ -60,6 +129,25 @@ pub enum TypeCon {
     DateTime, // 0 args
 }
 
+impl TypeCon {
+    pub fn kind(&self) -> Kind {
+        match self {
+            TypeCon::Arrow => Kind(2),
+            TypeCon::Result => Kind(2),
+            TypeCon::Option => Kind(1),
+            TypeCon::Promise => Kind(1),
+            TypeCon::List => Kind(1),
+            TypeCon::Bool => Kind(0),
+            TypeCon::Uint => Kind(0),
+            TypeCon::Int => Kind(0),
+            TypeCon::Float => Kind(0),
+            TypeCon::String => Kind(0),
+            TypeCon::Uuid => Kind(0),
+            TypeCon::DateTime => Kind(0),
+        }
+    }
+}
+
 impl fmt::Display for TypeCon {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
@@ -82,7 +170,7 @@ impl fmt::Display for TypeCon {
 #[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Type {
     UnresolvedVar(String),
-    Var(Id),
+    Var(TypeVar),
 
     ADT(ADT),
     App(Arc<Type>, Arc<Type>),
@@ -92,6 +180,24 @@ pub enum Type {
 }
 
 impl Type {
+    pub fn kind(&self) -> Option<Kind> {
+        match self {
+            Type::UnresolvedVar(_) => None,
+            Type::Var(v) => Some(v.kind()),
+            Type::ADT(_) => Some(Kind(0)),
+            Type::App(a, _) => {
+                match a.kind() {
+                    None => None,
+                    Some(Kind(0)) => None, // attempt to apply constant to argument
+                    Some(Kind(n)) => Some(Kind(n - 1)),
+                }
+            }
+            Type::Dict(_) => Some(Kind(0)),
+            Type::Tuple(_) => Some(Kind(0)),
+            Type::Con(c) => Some(c.kind()),
+        }
+    }
+
     pub fn make_arrow(a: Arc<Type>, b: Arc<Type>) -> Type {
         Type::App(
             Arc::new(Type::App(Arc::new(Type::Con(TypeCon::Arrow)), a)),
@@ -349,7 +455,7 @@ impl Type {
 
 impl Display for TypeScheme {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for x in self.ids.iter() {
+        for x in self.vars.iter() {
             "∀τ".fmt(f)?;
             x.fmt(f)?;
             ". ".fmt(f)?;
@@ -376,7 +482,7 @@ impl Display for Type {
 }
 
 pub struct TypeFormatter {
-    var_names: BTreeMap<Id, String>,
+    var_names: BTreeMap<TypeVar, String>,
     next_var_no: u64,
 }
 
@@ -396,20 +502,20 @@ impl TypeFormatter {
         var_no
     }
 
-    fn get_var_name(&mut self, id: &Id) -> String {
-        match self.var_names.get(id) {
+    fn get_var_name(&mut self, var: &TypeVar) -> String {
+        match self.var_names.get(var) {
             Some(name) => name.clone(),
             None => {
                 let var_no = self.alloc_var_no();
                 let var_name = format!("τ{}", var_no);
-                self.var_names.insert(*id, var_name.clone());
+                self.var_names.insert(*var, var_name.clone());
                 var_name
             }
         }
     }
 
-    pub fn fmt_var(&mut self, id: &Id, f: &mut Formatter<'_>) -> fmt::Result {
-        self.get_var_name(id).fmt(f)
+    pub fn fmt_var(&mut self, var: &TypeVar, f: &mut Formatter<'_>) -> fmt::Result {
+        self.get_var_name(var).fmt(f)
     }
 
     pub fn fmt_type(&mut self, t: &Type, f: &mut Formatter<'_>) -> fmt::Result {
@@ -954,6 +1060,10 @@ pub mod test {
     use crate::{arrow, bool, float, int, list, option, promise, result, string, uint};
     use rex_ast::{b, f, s, u};
 
+    fn app(a: &Arc<Type>, b: &Arc<Type>) -> Arc<Type> {
+        Arc::new(Type::App(a.clone(), b.clone()))
+    }
+
     #[test]
     fn test_dispatch() {
         // uint → string → float → bool
@@ -1009,6 +1119,25 @@ pub mod test {
             Arc::new(<fn(u64, String, i64, f64) -> bool as ToType>::to_type()),
             arrow!(uint!() => string!() => int!() => float!() => bool!())
         );
+    }
+
+    #[test]
+    fn test_kind() {
+        let arrow2 = Arc::new(Type::Con(TypeCon::Arrow));
+        assert_eq!(arrow2.kind(), Some(Kind(2)));
+        let arrow1 = app(&arrow2, &uint!());
+        assert_eq!(arrow1.kind(), Some(Kind(1)));
+        let arrow0 = app(&arrow1, &bool!());
+        assert_eq!(arrow0.kind(), Some(Kind(0)));
+        let arrowx = app(&arrow0, &string!());
+        assert_eq!(arrowx.kind(), None);
+
+        let list1 = Arc::new(Type::Con(TypeCon::List));
+        assert_eq!(list1.kind(), Some(Kind(1)));
+        let list0 = app(&list1, &uint!());
+        assert_eq!(list0.kind(), Some(Kind(0)));
+        let listx = app(&list0, &string!());
+        assert_eq!(listx.kind(), None);
     }
 
     #[test]

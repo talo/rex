@@ -206,10 +206,9 @@ macro_rules! arrow {
 
 #[cfg(test)]
 mod test {
-    use rex_ast::id::Id;
     use uuid::Uuid;
 
-    use crate::types::{ADTVariant, Type, TypeCon, ADT};
+    use crate::types::{ADTVariant, Type, TypeCon, TypeVar, ADT};
     use std::sync::Arc;
 
     #[test]
@@ -236,10 +235,13 @@ mod test {
             Arc::new(Type::UnresolvedVar("c".to_string()))
         );
         assert_eq!(
-            var!(Id(Uuid::default())),
-            Arc::new(Type::Var(Id(Uuid::default())))
+            var!(TypeVar::from_uuid(Uuid::default())),
+            Arc::new(Type::Var(TypeVar::from_uuid(Uuid::default())))
         );
-        assert_eq!(var!(Id(Uuid::max())), Arc::new(Type::Var(Id(Uuid::max()))));
+        assert_eq!(
+            var!(TypeVar::from_uuid(Uuid::max())),
+            Arc::new(Type::Var(TypeVar::from_uuid(Uuid::max())))
+        );
     }
 
     #[test]

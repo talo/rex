@@ -4,16 +4,15 @@ use std::{
     sync::Arc,
 };
 
-use rex_ast::id::Id;
 use rex_lexer::span::Span;
 
 use crate::{
     constraint::{Constraint, ConstraintSystem},
     error::TypeError,
-    types::{ADTVariant, Type, TypeScheme, ADT},
+    types::{ADTVariant, Type, TypeScheme, TypeVar, ADT},
 };
 
-pub type Subst = HashMap<Id, Arc<Type>>;
+pub type Subst = HashMap<TypeVar, Arc<Type>>;
 
 // NOTE(loong): We do not support overloaded parametric polymorphism.
 pub fn unify_constraints(
@@ -139,6 +138,16 @@ pub fn unify_eq_r(
     // First apply any existing substitutions
     let t1 = apply_subst(t1, subst);
     let t2 = apply_subst(t2, subst);
+
+    if t1.kind() != t2.kind() {
+        errors.push(TypeError::KindMismatch(
+            *span,
+            path.to_string(),
+            t1.kind(),
+            t2.kind(),
+        ));
+        return;
+    }
 
     match (&*t1, &*t2) {
         // Base types must match exactly
@@ -345,12 +354,12 @@ pub fn apply_subst(t: &Arc<Type>, subst: &Subst) -> Arc<Type> {
     }
 }
 
-pub fn occurs_check_type_scheme(var: &Id, scheme: &TypeScheme) -> bool {
+pub fn occurs_check_type_scheme(var: &TypeVar, scheme: &TypeScheme) -> bool {
     // If we're looking for the same variable that's quantified,
     // then it doesn't occur freely (it's bound)
 
-    for id in scheme.ids.iter() {
-        if id == var {
+    for v in scheme.vars.iter() {
+        if v == var {
             return false;
         }
     }
@@ -358,7 +367,7 @@ pub fn occurs_check_type_scheme(var: &Id, scheme: &TypeScheme) -> bool {
     occurs_check(var, &scheme.ty)
 }
 
-pub fn occurs_check(var: &Id, t: &Arc<Type>) -> bool {
+pub fn occurs_check(var: &TypeVar, t: &Arc<Type>) -> bool {
     match &**t {
         Type::UnresolvedVar(_) => false, // TODO(loong): should this function return a result?
         Type::Var(v) => v == var,
@@ -397,17 +406,14 @@ fn missing_keys_vec(
 // Test cases
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
-    use crate::{arrow, bool, int, list, tuple, var};
-    use rex_ast::id::Id;
+    use crate::{arrow, bool, int, list, tuple, types::Kind, var};
 
     use super::*;
 
     #[test]
     fn test_basic_unification() {
-        let alpha = Id::new();
-        let beta = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
 
         let mut subst = Subst::new();
         let mut did_change = false;
@@ -428,8 +434,8 @@ mod tests {
 
     #[test]
     fn test_var_unification() {
-        let alpha = Id::new();
-        let beta = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
 
         let mut subst = Subst::new();
         let mut did_change = false;
@@ -445,9 +451,9 @@ mod tests {
 
     #[test]
     fn test_function_unification() {
-        let alpha = Id::new();
-        let beta = Id::new();
-        let gamma = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
+        let gamma = TypeVar::new();
 
         let mut subst = Subst::new();
         let mut did_change = false;
@@ -481,9 +487,9 @@ mod tests {
 
     #[test]
     fn test_composition_unification() {
-        let alpha = Id::new();
-        let beta = Id::new();
-        let gamma = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
+        let gamma = TypeVar::new();
 
         let mut subst = Subst::new();
         let mut did_change = false;
@@ -529,10 +535,10 @@ mod tests {
 
     #[test]
     fn test_higher_order_unification() {
-        let alpha = Id::new();
-        let beta = Id::new();
-        let gamma = Id::new();
-        let delta = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
+        let gamma = TypeVar::new();
+        let delta = TypeVar::new();
 
         let mut subst = Subst::new();
         let mut did_change = false;
@@ -562,8 +568,8 @@ mod tests {
 
     #[test]
     fn test_occurs_check() {
-        let alpha = Id::new();
-        let beta = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
 
         let var = alpha.clone();
 
@@ -593,23 +599,47 @@ mod tests {
         // Case 1: The variable we're looking for is bound by the ForAll
         assert!(!occurs_check_type_scheme(
             &var,
-            &TypeScheme {
-                ids: vec![alpha],
-                ty: var!(alpha),
-                deps: BTreeSet::new(),
-            }
+            &TypeScheme::new(vec![alpha], var!(alpha))
         ));
 
         // Case 2: The variable we're looking for occurs freely in the body
         let var2 = beta;
         assert!(occurs_check_type_scheme(
             &var2,
-            &TypeScheme {
-                ids: vec![alpha],
-                ty: arrow!(var!(beta) => var!(alpha)),
-                deps: BTreeSet::new()
-            }
+            &TypeScheme::new(vec![alpha], arrow!(var!(beta) => var!(alpha)))
         ));
+    }
+
+    #[test]
+    fn test_kind_mismatch() {
+        let alpha = TypeVar::new_with_kind(Kind(1));
+        let beta = TypeVar::new_with_kind(Kind(2));
+
+        let mut subst = Subst::new();
+        let mut did_change = false;
+        match unify_eq(
+            &Arc::new(Type::Var(alpha)),
+            &Arc::new(Type::Var(beta)),
+            &Span::default(),
+            &mut subst,
+            &mut did_change,
+        ) {
+            Ok(()) => {
+                panic!("Expected error");
+            }
+            Err(errors) => {
+                assert!(errors.len() == 1);
+                match errors[0] {
+                    TypeError::KindMismatch(_, _, k1, k2) => {
+                        assert_eq!(k1, Some(Kind(1)));
+                        assert_eq!(k2, Some(Kind(2)));
+                    }
+                    _ => {
+                        panic!("Expected kind mismatch");
+                    }
+                }
+            }
+        }
     }
 }
 

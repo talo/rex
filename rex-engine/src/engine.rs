@@ -1,6 +1,6 @@
-use rex_type_system::types::{Dispatch, ToType, Type, TypeEnv, TypeScheme, ADT};
+use rex_type_system::types::{Dispatch, ToType, Type, TypeEnv, TypeScheme, TypeVar, ADT};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt,
     future::Future,
     pin::Pin,
@@ -17,7 +17,6 @@ use crate::{
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use rex_ast::expr::Expr;
-use rex_ast::id::Id;
 use rex_lexer::span::Span;
 use uuid::Uuid;
 
@@ -33,25 +32,21 @@ where
         let mut assignments = HashMap::new();
         for var in &unresolved_vars {
             if !assignments.contains_key(var) {
-                assignments.insert(var.clone(), Arc::new(Type::Var(Id::new())));
+                assignments.insert(var.clone(), Arc::new(Type::Var(TypeVar::new())));
             }
         }
 
         let t = t.resolve_vars(&assignments);
 
-        let mut ids: Vec<Id> = Vec::new();
+        let mut vars: Vec<TypeVar> = Vec::new();
         for var in assignments.into_values() {
             if let Type::Var(var) = *var {
-                ids.push(var);
+                vars.push(var);
             } else {
                 panic!("Expected a type variable");
             }
         }
-        TypeScheme {
-            ids,
-            ty: t,
-            deps: BTreeSet::new(),
-        }
+        TypeScheme::new(vars, t)
     } else {
         TypeScheme::from(t)
     };

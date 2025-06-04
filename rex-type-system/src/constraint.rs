@@ -4,12 +4,12 @@ use std::{
     sync::Arc,
 };
 
-use rex_ast::{expr::Expr, id::Id};
+use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
 
 use crate::{
     error::TypeError,
-    types::{ADTVariant, AppliedType, Type, TypeCon, TypeEnv, TypeScheme, ADT},
+    types::{ADTVariant, AppliedType, Type, TypeCon, TypeEnv, TypeScheme, TypeVar, ADT},
     unify::{self, Subst},
 };
 
@@ -149,7 +149,7 @@ pub fn generate_constraints(
                 Some(ps) => ps,
                 None => {
                     errors.insert(TypeError::UnboundVariable(*expr.span(), var.name.clone()));
-                    return Arc::new(Type::Var(Id::new()));
+                    return Arc::new(Type::Var(TypeVar::new()));
                 }
             };
 
@@ -162,8 +162,7 @@ pub fn generate_constraints(
                 possible_types.into_iter().next().unwrap()
             } else {
                 // Create fresh type variable for this use
-                let fresh_id = Id::new();
-                let fresh_var = Arc::new(Type::Var(fresh_id));
+                let fresh_var = Arc::new(Type::Var(TypeVar::new()));
 
                 // Add OneOf constraint with same possibilities
                 constraint_system.add_constraint(Constraint::OneOf(
@@ -219,7 +218,7 @@ pub fn generate_constraints(
         Expr::List(span, exprs) => {
             // If list is empty, create a fresh type variable for element type
             if exprs.is_empty() {
-                let elem_ty = Arc::new(Type::Var(Id::new()));
+                let elem_ty = Arc::new(Type::Var(TypeVar::new()));
                 return Arc::new(Type::App(Arc::new(Type::Con(TypeCon::List)), elem_ty));
             }
 
@@ -249,7 +248,7 @@ pub fn generate_constraints(
             let f_type = generate_constraints(f, env, constraint_system, errors);
             let x_type = generate_constraints(x, env, constraint_system, errors);
 
-            let result_type = Arc::new(Type::Var(Id::new()));
+            let result_type = Arc::new(Type::Var(TypeVar::new()));
 
             let expected_f_type = Arc::new(Type::make_arrow(x_type.clone(), result_type.clone()));
 
@@ -259,7 +258,7 @@ pub fn generate_constraints(
         }
 
         Expr::Lam(_span, _scope, param, body) => {
-            let param_type = Arc::new(Type::Var(Id::new()));
+            let param_type = Arc::new(Type::Var(TypeVar::new()));
 
             let mut new_env = env.clone();
             new_env.insert(
@@ -382,20 +381,20 @@ pub fn generate_constraints(
 }
 
 // For generalization, we need to find free type variables in a type
-fn free_vars_type_scheme(scheme: &TypeScheme) -> HashSet<Id> {
+fn free_vars_type_scheme(scheme: &TypeScheme) -> HashSet<TypeVar> {
     let mut set = free_vars(&scheme.ty);
-    for id in scheme.ids.iter() {
-        set.remove(id);
+    for var in scheme.vars.iter() {
+        set.remove(var);
     }
     set
 }
 
-fn free_vars(ty: &Type) -> HashSet<Id> {
+fn free_vars(ty: &Type) -> HashSet<TypeVar> {
     match ty {
         Type::UnresolvedVar(_) => todo!("free_vars should return a result"),
-        Type::Var(id) => {
+        Type::Var(v) => {
             let mut set = HashSet::new();
-            set.insert(*id);
+            set.insert(*v);
             set
         }
         Type::ADT(adt) => {
@@ -431,7 +430,7 @@ fn free_vars(ty: &Type) -> HashSet<Id> {
 }
 
 // For generalization, we also need to know which variables are free in the environment
-fn env_free_vars(env: &TypeEnv) -> HashSet<Id> {
+fn env_free_vars(env: &TypeEnv) -> HashSet<TypeVar> {
     let mut vars = HashSet::new();
     for entry in env.values() {
         for scheme in entry {
@@ -442,7 +441,7 @@ fn env_free_vars(env: &TypeEnv) -> HashSet<Id> {
 }
 
 // Generalize a type by quantifying over any type variables that aren't free in the environment
-fn generalize(env: &TypeEnv, ty: &Arc<Type>, deps: BTreeSet<Id>) -> TypeScheme {
+fn generalize(env: &TypeEnv, ty: &Arc<Type>, deps: BTreeSet<TypeVar>) -> TypeScheme {
     let env_vars = env_free_vars(env);
     let ty_vars = free_vars(ty);
 
@@ -452,7 +451,7 @@ fn generalize(env: &TypeEnv, ty: &Arc<Type>, deps: BTreeSet<Id>) -> TypeScheme {
     to_quantify.reverse(); // TODO: remove this
 
     TypeScheme {
-        ids: to_quantify,
+        vars: to_quantify,
         ty: ty.clone(),
         deps: deps.into_iter().collect(),
     }
@@ -464,33 +463,33 @@ fn instantiate(
     span: &Span,
     constraint_system: &mut ConstraintSystem,
 ) -> Arc<Type> {
-    if scheme.ids.is_empty() {
+    if scheme.vars.is_empty() {
         return scheme.ty.clone();
     }
 
     let mut subst = Subst::new();
 
     // Create fresh type variables
-    for id in scheme.ids.iter() {
-        let fresh_id = Id::new();
-        subst.insert(*id, Arc::new(Type::Var(fresh_id)));
+    for var in scheme.vars.iter() {
+        let fresh_var = TypeVar::new_with_kind(var.kind());
+        subst.insert(*var, Arc::new(Type::Var(fresh_var)));
     }
 
     // Create fresh vars for dependencies
     let mut new_constraint_sytem = ConstraintSystem::default();
-    for dep_id in scheme.deps.iter() {
-        let fresh_dep_id = Id::new();
+    for dep_var in scheme.deps.iter() {
+        let fresh_dep_var = TypeVar::new_with_kind(dep_var.kind());
         // Add equality constraint between old and new var
-        subst.insert(*dep_id, Arc::new(Type::Var(fresh_dep_id)));
+        subst.insert(*dep_var, Arc::new(Type::Var(fresh_dep_var)));
 
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(_, x1, t2) => {
                     if let Type::Var(t1) = &**x1 {
-                        if t1 == dep_id {
+                        if t1 == dep_var {
                             new_constraint_sytem.add_constraint(Constraint::Eq(
                                 *span,
-                                Arc::new(Type::Var(fresh_dep_id)),
+                                Arc::new(Type::Var(fresh_dep_var)),
                                 t2.clone(),
                             ));
                         }
@@ -498,10 +497,10 @@ fn instantiate(
                 }
                 Constraint::OneOf(_, x1, ts) => {
                     if let Type::Var(t1) = &**x1 {
-                        if t1 == dep_id {
+                        if t1 == dep_var {
                             new_constraint_sytem.add_constraint(Constraint::OneOf(
                                 *span,
-                                Arc::new(Type::Var(fresh_dep_id)),
+                                Arc::new(Type::Var(fresh_dep_var)),
                                 ts.clone(),
                             ));
                         }
@@ -576,8 +575,8 @@ mod tests {
 
     #[test]
     fn test_free_vars() {
-        let alpha = Id::new();
-        let beta = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
 
         // α -> β
         let ty = arrow!(var!(alpha) => var!(beta));
@@ -587,11 +586,7 @@ mod tests {
         assert!(vars.contains(&beta));
 
         // ∀α. α -> β
-        let scheme = TypeScheme {
-            ids: vec![alpha],
-            ty: arrow!(var!(alpha) => var!(beta)),
-            deps: BTreeSet::new(),
-        };
+        let scheme = TypeScheme::new(vec![alpha], arrow!(var!(alpha) => var!(beta)));
         let vars = free_vars_type_scheme(&scheme);
         assert_eq!(vars.len(), 1);
         assert!(vars.contains(&beta));
@@ -599,8 +594,8 @@ mod tests {
 
     #[test]
     fn test_generalize() {
-        let alpha = Id::new();
-        let beta = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
 
         let mut env = TypeEnv::new();
 
@@ -613,7 +608,7 @@ mod tests {
         // Should become ∀α. α -> β
         // (β isn't quantified because it appears in env)
         let scheme = generalize(&env, &ty, BTreeSet::new());
-        assert_eq!(*scheme.ids, vec![alpha]);
+        assert_eq!(*scheme.vars, vec![alpha]);
         if let Some(AppliedType::Arrow(arg, ret)) = scheme.ty.as_applied_type() {
             assert_eq!(*arg, var!(alpha));
             assert_eq!(*ret, var!(beta));
@@ -624,15 +619,11 @@ mod tests {
 
     #[test]
     fn test_instantiate() {
-        let alpha = Id::new();
-        let beta = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
 
         // ∀α. α -> β
-        let scheme = TypeScheme {
-            ids: vec![alpha],
-            ty: arrow!(var!(alpha) => var!(beta)),
-            deps: BTreeSet::new(),
-        };
+        let scheme = TypeScheme::new(vec![alpha], arrow!(var!(alpha) => var!(beta)));
 
         let inst_ty = instantiate(&scheme, &Span::default(), &mut ConstraintSystem::default());
 
@@ -769,14 +760,13 @@ mod tests {
         );
 
         // Set up environment
-        let elem_type = Id::new();
+        let elem_var = TypeVar::new();
         env.insert(
             "head".to_string(),
-            HashSet::from([TypeScheme {
-                ids: vec![elem_type],
-                ty: arrow!(list!(var!(elem_type)) => var!(elem_type)),
-                deps: BTreeSet::new(),
-            }]),
+            HashSet::from([TypeScheme::new(
+                vec![elem_var],
+                arrow!(list!(var!(elem_var)) => var!(elem_var)),
+            )]),
         );
         insert_type(&mut env, "int_val", int!());
         insert_type(&mut env, "bool_val", bool!());
@@ -805,12 +795,11 @@ mod tests {
         let mut env = TypeEnv::new();
 
         // Set up environment with polymorphic head : ∀α. [α] -> α
-        let elem_id = Id::new();
-        let head_scheme = TypeScheme {
-            ids: vec![elem_id],
-            ty: arrow!(list!(var!(elem_id)) => var!(elem_id)),
-            deps: BTreeSet::new(),
-        };
+        let elem_var = TypeVar::new();
+        let head_scheme = TypeScheme::new(
+            vec![elem_var],
+            arrow!(list!(var!(elem_var)) => var!(elem_var)),
+        );
         env.insert("head".to_string(), HashSet::from([head_scheme]));
 
         // Add example lists to environment
@@ -1145,8 +1134,8 @@ mod tests {
     fn test_overloading_with_arguments() {
         let mut env = HashMap::new();
 
-        let xor_type_id = Id::new();
-        insert_type(&mut env, "xor", var!(xor_type_id));
+        let xor_type_var = TypeVar::new();
+        insert_type(&mut env, "xor", var!(xor_type_var));
 
         // Single-type variables
         insert_type(&mut env, "true", bool!());
@@ -1167,7 +1156,7 @@ mod tests {
 
         let mut constraint_system = ConstraintSystem::with_constraints(vec![Constraint::OneOf(
             Span::default(),
-            var!(xor_type_id),
+            var!(xor_type_var),
             vec![
                 arrow!(bool!() => bool!() => bool!()),
                 arrow!(int!() => int!() => int!()),
@@ -1192,16 +1181,8 @@ mod tests {
         env.insert(
             "xor".to_string(),
             vec![
-                TypeScheme {
-                    ids: Vec::new(),
-                    ty: arrow!(bool!() => bool!() => bool!()),
-                    deps: BTreeSet::new(),
-                },
-                TypeScheme {
-                    ids: Vec::new(),
-                    ty: arrow!(int!() => int!() => int!()),
-                    deps: BTreeSet::new(),
-                },
+                TypeScheme::new(Vec::new(), arrow!(bool!() => bool!() => bool!())),
+                TypeScheme::new(Vec::new(), arrow!(int!() => int!() => int!())),
             ]
             .into_iter()
             .collect(),
@@ -1290,8 +1271,8 @@ mod tests {
     fn test_overloading_with_return() {
         let mut env = TypeEnv::new();
 
-        let rand_type_id = Id::new();
-        insert_type(&mut env, "rand", var!(rand_type_id));
+        let rand_type_var = TypeVar::new();
+        insert_type(&mut env, "rand", var!(rand_type_var));
 
         // Add functions that force return type selection
         insert_type(&mut env, "sum", arrow!(list!(int!()) => int!()));
@@ -1312,7 +1293,7 @@ mod tests {
 
         let mut constraint_system = ConstraintSystem::with_constraints(vec![Constraint::OneOf(
             Span::default(),
-            var!(rand_type_id),
+            var!(rand_type_var),
             vec![int!(), bool!()].into_iter().collect(),
         )]);
         let mut errors = BTreeSet::new();
@@ -1331,14 +1312,14 @@ mod tests {
     fn _test_overloading_with_ambiguity() {
         let mut env = HashMap::new();
 
-        let rand_type_id = Id::new();
-        insert_type(&mut env, "rand", var!(rand_type_id));
+        let rand_type_var = TypeVar::new();
+        insert_type(&mut env, "rand", var!(rand_type_var));
         // Test: just rand by itself (should be ambiguous)
         let expr = Expr::Var(Var::new("rand"));
 
         let mut constraint_system = ConstraintSystem::with_constraints(vec![Constraint::OneOf(
             Span::default(),
-            var!(rand_type_id),
+            var!(rand_type_var),
             vec![int!(), bool!()].into_iter().collect(),
         )]);
         let mut errors = BTreeSet::new();

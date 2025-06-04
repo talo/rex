@@ -1,4 +1,4 @@
-use crate::types::Type;
+use crate::types::{Kind, Type};
 use rex_lexer::span::Span;
 use std::{collections::BTreeSet, fmt, sync::Arc};
 
@@ -10,6 +10,7 @@ pub enum TypeError {
     OccursCheckFailed(Span, String),
     TupleLengthMismatch(Span, String),
     DictKeysMismatch(Span, String, Vec<String>),
+    KindMismatch(Span, String, Option<Kind>, Option<Kind>),
 }
 
 impl TypeError {
@@ -21,6 +22,7 @@ impl TypeError {
             Self::OccursCheckFailed(span, ..) => span,
             Self::TupleLengthMismatch(span, ..) => span,
             Self::DictKeysMismatch(span, ..) => span,
+            Self::KindMismatch(span, ..) => span,
         }
     }
     pub fn path(&self) -> &str {
@@ -31,6 +33,7 @@ impl TypeError {
             Self::OccursCheckFailed(_, path, ..) => path,
             Self::TupleLengthMismatch(_, path, ..) => path,
             Self::DictKeysMismatch(_, path, ..) => path,
+            Self::KindMismatch(_, path, ..) => path,
         }
     }
 }
@@ -74,6 +77,16 @@ impl fmt::Display for TypeError {
                     write!(f, "{}", key)?;
                 }
                 Ok(())
+            }
+            Self::KindMismatch(_, _, k1, k2) => {
+                write!(
+                    f,
+                    "Kinds {} and {} do not match",
+                    k1.map(|k| k.to_string())
+                        .unwrap_or_else(|| "<invalid>".to_string()),
+                    k2.map(|k| k.to_string())
+                        .unwrap_or_else(|| "<invalid>".to_string())
+                )
             }
         }
     }
