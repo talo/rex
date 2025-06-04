@@ -2,8 +2,9 @@ use chrono::{DateTime, Utc};
 use rex::{
     ast::{assert_expr_eq, b, d, expr::Expr, f, i, l, n, s, tup, u},
     engine::{
-        codec::{Decode, Encode},
+        codec::{Decode, Encode, Promise},
         engine::Builder,
+        ftable::A,
         program::Program,
     },
     json::{expr_to_json, json_to_expr},
@@ -451,6 +452,70 @@ async fn test_field_result() {
                 a = "Hello",
                 i1 = Ok 123,
                 i2 = Err "bad",
+            }
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
+}
+
+#[tokio::test]
+async fn test_field_promise() {
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    pub struct Foo {
+        pub a: String,
+        pub i1: Promise<String>,
+        pub i2: Promise<u64>,
+    }
+
+    let value = Foo {
+        a: "Hello".to_string(),
+        i1: Promise::new(uuid!("00000000-0000-0000-0000-000000000001")),
+        i2: Promise::new(uuid!("00000000-0000-0000-0000-000000000002")),
+    };
+
+    let expected_type = Arc::new(Type::ADT(adt! {
+        Foo = Foo {
+            a: string!(),
+            i1: Arc::new(Type::Promise(Arc::new(Type::String))),
+            i2: Arc::new(Type::Promise(Arc::new(Type::Uint))),
+        }
+    }));
+
+    let expected_encoding = n!(
+        "Foo",
+        Some(d!(
+            a = s!("Hello"),
+            i1 = Arc::new(Expr::Promise(
+                Span::default(),
+                uuid!("00000000-0000-0000-0000-000000000001")
+            )),
+            i2 = Arc::new(Expr::Promise(
+                Span::default(),
+                uuid!("00000000-0000-0000-0000-000000000002")
+            )),
+        ))
+    );
+
+    compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
+    builder.register_fn2("make_promise", |_ctx, uuid: Uuid, _value: A| {
+        let promise: Promise<A> = Promise::new(uuid);
+        Ok(promise)
+    });
+    let program = Program::compile(
+        builder,
+        r#"
+            Foo {
+                a = "Hello",
+                i1 = make_promise (uuid "00000000-0000-0000-0000-000000000001") "hello",
+                i2 = make_promise (uuid "00000000-0000-0000-0000-000000000002") 123,
             }
         "#,
     )

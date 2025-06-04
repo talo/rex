@@ -895,7 +895,7 @@ where
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::{bool, float, string, uint};
+    use crate::{arrow, bool, float, int, string, uint};
     use rex_ast::{b, f, s, u};
 
     #[test]
@@ -920,5 +920,38 @@ pub mod test {
 
         // Third argument doesn't match
         assert!(!t.maybe_accepts_args(&[u!(4), s!("Hello"), u!(2)]));
+    }
+
+    #[test]
+    fn test_to_string() {
+        let t = arrow!(uint!() => bool!());
+        assert_eq!(t.to_string(), "uint → bool");
+
+        let t = arrow!(uint!() => float!() => string!() => bool!());
+        assert_eq!(t.to_string(), "uint → float → string → bool");
+
+        let t = arrow!(uint!() => arrow!(float!() => int!()) => string!() => bool!());
+        assert_eq!(t.to_string(), "uint → (float → int) → string → bool");
+    }
+
+    #[test]
+    fn test_fn_totype() {
+        assert_eq!(Arc::new(<fn() -> bool as ToType>::to_type()), bool!());
+        assert_eq!(
+            Arc::new(<fn(u64) -> bool as ToType>::to_type()),
+            arrow!(uint!() => bool!())
+        );
+        assert_eq!(
+            Arc::new(<fn(u64, String) -> bool as ToType>::to_type()),
+            arrow!(uint!() => string!() => bool!())
+        );
+        assert_eq!(
+            Arc::new(<fn(u64, String, i64) -> bool as ToType>::to_type()),
+            arrow!(uint!() => string!() => int!() => bool!())
+        );
+        assert_eq!(
+            Arc::new(<fn(u64, String, i64, f64) -> bool as ToType>::to_type()),
+            arrow!(uint!() => string!() => int!() => float!() => bool!())
+        );
     }
 }

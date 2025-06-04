@@ -235,6 +235,10 @@ pub fn json_to_expr(
             Span::default(),
             serde_json::from_value(json.clone()).map_err(|_| type_error(json, want))?,
         ))),
+        (Type::Promise(_), _) => Ok(Arc::new(Expr::Promise(
+            Span::default(),
+            serde_json::from_value(json.clone()).map_err(|_e| type_error(json, want))?,
+        ))),
         (_, _) => Err(type_error(json, want)),
     }
 }

@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
 use rex_type_system::types::{ToType, Type};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
 use crate::error::Error;
@@ -663,5 +664,69 @@ where
 {
     fn to_type() -> Type {
         Type::Arrow(Arc::new(A::to_type()), Arc::new(B::to_type()))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct Promise<T> {
+    pub uuid: Uuid,
+    phantom: PhantomData<T>,
+}
+
+impl<T> Serialize for Promise<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.uuid.serialize(serializer)
+    }
+}
+
+impl<'de, T> Deserialize<'de> for Promise<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(Promise::new(Uuid::deserialize(deserializer)?))
+    }
+}
+
+impl<T> Promise<T> {
+    pub fn new(uuid: Uuid) -> Self {
+        Promise {
+            uuid,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> Encode for Promise<T> {
+    fn try_encode(self, span: Span) -> Result<Arc<Expr>, Error> {
+        Ok(Arc::new(Expr::Promise(span, self.uuid)))
+    }
+}
+
+impl<T> Decode for Promise<T>
+where
+    T: ToType,
+{
+    fn try_decode(v: &Arc<Expr>) -> Result<Self, Error> {
+        match &**v {
+            Expr::Promise(_, uuid) => Ok(Promise::new(*uuid)),
+            _ => Err(Error::ExpectedTypeGotValue {
+                expected: Arc::new(Self::to_type()),
+                got: v.clone(),
+                trace: Default::default(),
+            }),
+        }
+    }
+}
+
+impl<T> ToType for Promise<T>
+where
+    T: ToType,
+{
+    fn to_type() -> Type {
+        Type::Promise(Arc::new(T::to_type()))
     }
 }

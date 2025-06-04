@@ -1,5 +1,11 @@
 use rex_ast::{assert_expr_eq, b, d, expr::Expr, f, l, n, s, tup, u};
-use rex_engine::{engine::Builder, error::Error, program::Program};
+use rex_engine::{
+    codec::{Func, Promise},
+    engine::Builder,
+    error::Error,
+    ftable::{A, B},
+    program::Program,
+};
 use rex_lexer::span::Span;
 use rex_proc_macro::Rex;
 use rex_type_system::{
@@ -8,6 +14,7 @@ use rex_type_system::{
     uint,
 };
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn test_function_overload_param_count_mismatch() {
@@ -119,4 +126,39 @@ async fn test_map_adt() {
            n!("Foo", Some(d!( a = u!(2), b = s!("Hello")))),
            n!("Foo", Some(d!( a = u!(3), b = s!("Hello")))));
         ignore span);
+}
+
+#[tokio::test]
+async fn test_promise_overload() {
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register_fn1("produce_promise", |_ctx, uuid: Uuid| {
+        let promise: Promise<u64> = Promise::new(uuid);
+        Ok(promise)
+    });
+
+    builder.register_fn1("consume_promise", |_ctx, _promise: Promise<String>| {
+        Ok(true)
+    });
+
+    builder.register_fn_async2("map", |_ctx, _f: Func<A, B>, x: Promise<A>| {
+        Box::pin(async move {
+            let res: Promise<B> = Promise::new(x.uuid);
+            Ok(res)
+        })
+    });
+
+    let program = Program::compile(
+        builder,
+        r#"
+            (
+                map (λx → x + 1) [1, 2, 3],
+                consume_promise (map string (produce_promise random_uuid)),
+            )
+
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, tuple!(list!(uint!()), bool!()));
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, tup!(l!(u!(2), u!(3), u!(4)), b!(true)); ignore span);
 }
