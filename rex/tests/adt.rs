@@ -3,7 +3,7 @@ use rex::{
     ast::{assert_expr_eq, b, d, expr::Expr, f, i, l, n, s, tup, u},
     engine::{
         codec::{Decode, Encode, Promise},
-        engine::Builder,
+        engine::{fn2, Builder},
         ftable::A,
         program::Program,
     },
@@ -505,10 +505,13 @@ async fn test_field_promise() {
     builder
         .register_adt(&Arc::new(Foo::to_type()), None, None)
         .unwrap();
-    builder.register_fn2("make_promise", |_ctx, uuid: Uuid, _value: A| {
-        let promise: Promise<A> = Promise::new(uuid);
-        Ok(promise)
-    });
+    builder.register(
+        "make_promise",
+        fn2(|_ctx, uuid: Uuid, _value: A| {
+            let promise: Promise<A> = Promise::new(uuid);
+            Ok(promise)
+        }),
+    );
     let program = Program::compile(
         builder,
         r#"

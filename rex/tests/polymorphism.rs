@@ -1,7 +1,7 @@
 use rex_ast::{assert_expr_eq, b, d, expr::Expr, f, l, n, s, tup, u};
 use rex_engine::{
     codec::{Func, Promise},
-    engine::Builder,
+    engine::{fn1, fn_async2, Builder},
     error::Error,
     ftable::{A, B},
     program::Program,
@@ -131,21 +131,28 @@ async fn test_map_adt() {
 #[tokio::test]
 async fn test_promise_overload() {
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    builder.register_fn1("produce_promise", |_ctx, uuid: Uuid| {
-        let promise: Promise<u64> = Promise::new(uuid);
-        Ok(promise)
-    });
+    builder.register(
+        "produce_promise",
+        fn1(|_ctx, uuid: Uuid| {
+            let promise: Promise<u64> = Promise::new(uuid);
+            Ok(promise)
+        }),
+    );
 
-    builder.register_fn1("consume_promise", |_ctx, _promise: Promise<String>| {
-        Ok(true)
-    });
+    builder.register(
+        "consume_promise",
+        fn1(|_ctx, _promise: Promise<String>| Ok(true)),
+    );
 
-    builder.register_fn_async2("map", |_ctx, _f: Func<A, B>, x: Promise<A>| {
-        Box::pin(async move {
-            let res: Promise<B> = Promise::new(x.uuid);
-            Ok(res)
-        })
-    });
+    builder.register(
+        "map",
+        fn_async2(|_ctx, _f: Func<A, B>, x: Promise<A>| {
+            Box::pin(async move {
+                let res: Promise<B> = Promise::new(x.uuid);
+                Ok(res)
+            })
+        }),
+    );
 
     let program = Program::compile(
         builder,

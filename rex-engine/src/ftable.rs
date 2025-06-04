@@ -10,90 +10,6 @@ use crate::{
     eval::Context,
 };
 
-macro_rules! impl_register_fn {
-    ($name:ident $(, $($param:ident),*)?) => {
-        #[allow(unused_assignments)] // This is a workaround for the unused_assignments lint for the last `i += 1` in the macro expansion.
-        #[allow(unused_mut)] // This is a workaround for the unused_assignments lint for `let mut i = 0` not being needed for functions with zero parameters.
-        #[allow(unused_variables)] // This is a workaround for the unused_assignments lint for `args` and `i` not being needed for functions with zero parameters.
-        pub fn $name <$($($param,)*)? B, F>(
-            &mut self,
-            n: impl ToString,
-            f: F,
-        ) where
-            $($($param : Decode + Send + ToType,)*)?
-            B: Encode + ToType,
-            F: Fn(
-                &Context<State>,
-                $($($param,)*)?
-            ) -> Result<B, Error>
-                + Clone
-                + Send
-                + Sync
-                + 'static
-        {
-            let t = Arc::new(<fn($($($param,)*)?) -> B as ToType>::to_type());
-            let t_num_params = t.num_params();
-
-            self.add_fn(
-                n,
-                Box::new(t),
-                Box::new(move |ctx, args| {
-                    let f = f.clone();
-                    Box::pin(async move {
-                        let mut i = 0;
-                        let mut r = f(ctx $(, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*)?)?
-                            .try_encode(Span::default())?; // FIXME(loong): assign a proper span
-                        while i < args.len() {
-                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }], None).await?;
-                        }
-                        Ok(r)
-                    })
-                }),
-            ).unwrap()
-        }
-    };
-}
-
-macro_rules! impl_register_fn_async {
-    ($name:ident, $($param:ident),*) => {
-        #[allow(unused_assignments)] // This is a workaround for the unused_assignments lint for the last `i += 1` in the macro expansion.
-        pub fn $name <$($param,)* B, F>(
-            &mut self,
-            n: impl ToString,
-            f: F,
-        ) where
-            $($param : Decode + Send + ToType,)*
-            B: Encode + ToType,
-            for<'c> F: Fn(
-                &'c Context<State>,
-                $($param,)*
-            ) -> Pin<Box<dyn Future<Output = Result<B, Error>> + Send + 'c>>
-                + Clone
-                + Send
-                + Sync
-                + 'static,
-        {
-            self.add_fn(
-                n,
-                Box::new(Arc::new(<fn($($param,)*) -> B as ToType>::to_type())),
-                Box::new(move |ctx, args| {
-                    let f = f.clone();
-                    Box::pin(async move {
-                        let mut i = 0;
-                        let mut r = f(ctx, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*)
-                            .await?
-                            .try_encode(Span::default())?; // FIXME(loong): assign a proper span
-                        while i < args.len() {
-                            r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }], None).await?;
-                        }
-                        Ok(r)
-                    })
-                }),
-            ).unwrap()
-        }
-    };
-}
-
 pub type FtableFn<State> = Box<dyn for<'r> Fx<'r, State>>;
 
 pub trait Fx<'r, State>:
@@ -200,17 +116,6 @@ where
         }
         Ok(())
     }
-
-    impl_register_fn!(register_fn0);
-    impl_register_fn!(register_fn1, A0);
-    impl_register_fn!(register_fn2, A0, A1);
-    impl_register_fn!(register_fn3, A0, A1, A2);
-    impl_register_fn!(register_fn4, A0, A1, A2, A3);
-
-    impl_register_fn_async!(register_fn_async1, A0);
-    impl_register_fn_async!(register_fn_async2, A0, A1);
-    impl_register_fn_async!(register_fn_async3, A0, A1, A2);
-    impl_register_fn_async!(register_fn_async4, A0, A1, A2, A3);
 }
 
 impl<State> fmt::Display for Ftable<State>
@@ -234,18 +139,6 @@ where
         }
         Ok(())
     }
-}
-
-pub fn decode_arg<A>(args: &[Arc<Expr>], i: usize) -> Result<A, Error>
-where
-    A: Decode,
-{
-    args.get(i)
-        .ok_or(Error::MissingArgument {
-            argument: i,
-            trace: Default::default(),
-        })
-        .and_then(|a0| A::try_decode(a0))
 }
 
 macro_rules! define_polymorphic_types {
