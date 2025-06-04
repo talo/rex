@@ -1,6 +1,9 @@
 use chrono::{TimeDelta, Utc};
 use rex::engine::{engine::Builder, program::Program};
-use rex_type_system::types::{ADTVariant, Type, ADT};
+use rex_type_system::{
+    types::{ADTVariant, Type, ADT},
+    uint,
+};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -227,7 +230,7 @@ fn generate_adts(mut params: Params) -> Vec<Arc<Type>> {
                 let mut entries: BTreeMap<String, Arc<Type>> = BTreeMap::new();
 
                 for field_no in 0..params.fields {
-                    entries.insert(format!("field{}", field_no), Arc::new(Type::Uint));
+                    entries.insert(format!("field{}", field_no), uint!());
                 }
                 adt.variants.push(ADTVariant {
                     name: variant_name,

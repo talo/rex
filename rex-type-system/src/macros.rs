@@ -87,6 +87,13 @@ macro_rules! tuple {
 }
 
 #[macro_export]
+macro_rules! promise {
+    ($t:expr) => {
+        ::std::sync::Arc::new($crate::types::Type::Promise($t))
+    };
+}
+
+#[macro_export]
 macro_rules! adt_variant {
     ($name:ident) => {{
         $crate::types::ADTVariant {

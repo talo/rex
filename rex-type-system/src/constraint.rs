@@ -584,9 +584,11 @@ mod tests {
     use rex_lexer::span::Span;
 
     use crate::{
+        arrow, bool, int, list,
         trace::{sprint_subst, sprint_type_env},
+        tuple,
         types::TypeEnv,
-        unify,
+        unify, var,
     };
 
     use super::*;
@@ -601,7 +603,7 @@ mod tests {
         let beta = Id::new();
 
         // α -> β
-        let ty = Type::Arrow(Arc::new(Type::Var(alpha)), Arc::new(Type::Var(beta)));
+        let ty = arrow!(var!(alpha) => var!(beta));
         let vars = free_vars(&ty);
         assert_eq!(vars.len(), 2);
         assert!(vars.contains(&alpha));
@@ -610,10 +612,7 @@ mod tests {
         // ∀α. α -> β
         let scheme = TypeScheme {
             ids: vec![alpha],
-            ty: Arc::new(Type::Arrow(
-                Arc::new(Type::Var(alpha)),
-                Arc::new(Type::Var(beta)),
-            )),
+            ty: arrow!(var!(alpha) => var!(beta)),
             deps: BTreeSet::new(),
         };
         let vars = free_vars_type_scheme(&scheme);
@@ -629,13 +628,10 @@ mod tests {
         let mut env = TypeEnv::new();
 
         // Environment with β free
-        insert_type(&mut env, "y", Arc::new(Type::Var(beta)));
+        insert_type(&mut env, "y", var!(beta));
 
         // Type to generalize: α -> β
-        let ty = Arc::new(Type::Arrow(
-            Arc::new(Type::Var(alpha)),
-            Arc::new(Type::Var(beta)),
-        ));
+        let ty = arrow!(var!(alpha) => var!(beta));
 
         // Should become ∀α. α -> β
         // (β isn't quantified because it appears in env)
@@ -643,8 +639,8 @@ mod tests {
         assert_eq!(*scheme.ids, vec![alpha]);
         match &*scheme.ty {
             Type::Arrow(arg, ret) => {
-                assert_eq!(**arg, Type::Var(alpha));
-                assert_eq!(**ret, Type::Var(beta));
+                assert_eq!(*arg, var!(alpha));
+                assert_eq!(*ret, var!(beta));
             }
             _ => panic!("Expected arrow type"),
         }
@@ -658,10 +654,7 @@ mod tests {
         // ∀α. α -> β
         let scheme = TypeScheme {
             ids: vec![alpha],
-            ty: Arc::new(Type::Arrow(
-                Arc::new(Type::Var(alpha)),
-                Arc::new(Type::Var(beta)),
-            )),
+            ty: arrow!(var!(alpha) => var!(beta)),
             deps: BTreeSet::new(),
         };
 
@@ -671,11 +664,11 @@ mod tests {
         match &*inst_ty {
             Type::Arrow(arg, ret) => {
                 // Arg should be a fresh variable
-                assert_ne!(*arg, Arc::new(Type::Var(alpha)));
-                assert_ne!(*arg, Arc::new(Type::Var(beta)));
+                assert_ne!(*arg, var!(alpha));
+                assert_ne!(*arg, var!(beta));
 
                 // Result should be original free variable
-                assert_eq!(*ret, Arc::new(Type::Var(beta)));
+                assert_eq!(*ret, var!(beta));
             }
             _ => panic!("Expected arrow type"),
         }
@@ -695,9 +688,9 @@ mod tests {
             ],
         );
 
-        insert_type(&mut env, "one", Arc::new(Type::Int));
-        insert_type(&mut env, "two", Arc::new(Type::Int));
-        insert_type(&mut env, "three", Arc::new(Type::Int));
+        insert_type(&mut env, "one", int!());
+        insert_type(&mut env, "two", int!());
+        insert_type(&mut env, "three", int!());
 
         let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
@@ -718,7 +711,7 @@ mod tests {
 
         // Final type should be [Int]
         let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, Arc::new(Type::List(Arc::new(Type::Int))));
+        assert_eq!(final_type, list!(int!()));
 
         // Test that lists of mixed types fail
         let expr = Expr::List(
@@ -729,7 +722,7 @@ mod tests {
             ],
         );
 
-        insert_type(&mut env, "true", Arc::new(Type::Bool));
+        insert_type(&mut env, "true", bool!());
 
         let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
@@ -799,15 +792,12 @@ mod tests {
             "head".to_string(),
             HashSet::from([TypeScheme {
                 ids: vec![elem_type],
-                ty: Arc::new(Type::Arrow(
-                    Arc::new(Type::List(Arc::new(Type::Var(elem_type)))),
-                    Arc::new(Type::Var(elem_type)),
-                )),
+                ty: arrow!(list!(var!(elem_type)) => var!(elem_type)),
                 deps: BTreeSet::new(),
             }]),
         );
-        insert_type(&mut env, "int_val", Arc::new(Type::Int));
-        insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
+        insert_type(&mut env, "int_val", int!());
+        insert_type(&mut env, "bool_val", bool!());
 
         let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
@@ -836,25 +826,14 @@ mod tests {
         let elem_id = Id::new();
         let head_scheme = TypeScheme {
             ids: vec![elem_id],
-            ty: Arc::new(Type::Arrow(
-                Arc::new(Type::List(Arc::new(Type::Var(elem_id)))),
-                Arc::new(Type::Var(elem_id)),
-            )),
+            ty: arrow!(list!(var!(elem_id)) => var!(elem_id)),
             deps: BTreeSet::new(),
         };
         env.insert("head".to_string(), HashSet::from([head_scheme]));
 
         // Add example lists to environment
-        insert_type(
-            &mut env,
-            "int_list",
-            Arc::new(Type::List(Arc::new(Type::Int))),
-        );
-        insert_type(
-            &mut env,
-            "bool_list",
-            Arc::new(Type::List(Arc::new(Type::Bool))),
-        );
+        insert_type(&mut env, "int_list", list!(int!()));
+        insert_type(&mut env, "bool_list", list!(bool!()));
 
         let expr = Expr::Tuple(
             Span::default(),
@@ -882,11 +861,7 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         let final_type = unify::apply_subst(&ty, &subst);
-
-        assert_eq!(
-            final_type,
-            Arc::new(Type::Tuple(vec![Arc::new(Type::Int), Arc::new(Type::Bool)]))
-        );
+        assert_eq!(final_type, tuple!(int!(), bool!()));
     }
 
     #[test]
@@ -910,7 +885,7 @@ mod tests {
             )),
         );
 
-        insert_type(&mut env, "one", Arc::new(Type::Int));
+        insert_type(&mut env, "one", int!());
 
         let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
@@ -923,7 +898,7 @@ mod tests {
 
         // Result should be Int
         let final_result = unify::apply_subst(&result_type, &subst);
-        assert_eq!(final_result, Arc::new(Type::Int));
+        assert_eq!(final_result, int!());
     }
 
     #[test]
@@ -961,8 +936,8 @@ mod tests {
         );
 
         // Set up environment
-        insert_type(&mut env, "int_val", Arc::new(Type::Int));
-        insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
+        insert_type(&mut env, "int_val", int!());
+        insert_type(&mut env, "bool_val", bool!());
 
         let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
@@ -975,10 +950,7 @@ mod tests {
 
         // The final type should be (Int, Bool)
         let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(
-            final_type,
-            Arc::new(Type::Tuple(vec![Arc::new(Type::Int), Arc::new(Type::Bool)]))
-        );
+        assert_eq!(final_type, tuple!(int!(), bool!()));
     }
 
     #[test]
@@ -994,9 +966,9 @@ mod tests {
         );
 
         // Set up environment
-        insert_type(&mut env, "true", Arc::new(Type::Bool));
-        insert_type(&mut env, "one", Arc::new(Type::Int));
-        insert_type(&mut env, "two", Arc::new(Type::Int));
+        insert_type(&mut env, "true", bool!());
+        insert_type(&mut env, "one", int!());
+        insert_type(&mut env, "two", int!());
 
         // Generate constraints
         let mut constraint_system = ConstraintSystem::default();
@@ -1010,7 +982,7 @@ mod tests {
 
         // Result should be Int
         let final_result = unify::apply_subst(&result_type, &subst);
-        assert_eq!(final_result, Arc::new(Type::Int));
+        assert_eq!(final_result, int!());
     }
 
     #[test]
@@ -1085,23 +1057,11 @@ mod tests {
         );
 
         // Set up environment
-        insert_type(
-            &mut env,
-            "not",
-            Arc::new(Type::Arrow(Arc::new(Type::Bool), Arc::new(Type::Bool))),
-        );
-        insert_type(
-            &mut env,
-            "inc",
-            Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-        );
-        insert_type(
-            &mut env,
-            "inc2",
-            Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-        );
-        insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
-        insert_type(&mut env, "int_val", Arc::new(Type::Int));
+        insert_type(&mut env, "not", arrow!(bool!() => bool!()));
+        insert_type(&mut env, "inc", arrow!(int!() => int!()));
+        insert_type(&mut env, "inc2", arrow!(int!() => int!()));
+        insert_type(&mut env, "bool_val", bool!());
+        insert_type(&mut env, "int_val", int!());
 
         let mut constraint_system = ConstraintSystem::default();
         let mut errors = BTreeSet::new();
@@ -1114,10 +1074,7 @@ mod tests {
 
         // The final type should be (Bool, Int)
         let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(
-            final_type,
-            Arc::new(Type::Tuple(vec![Arc::new(Type::Bool), Arc::new(Type::Int)]))
-        );
+        assert_eq!(final_type, tuple!(bool!(), int!()));
     }
 
     #[test]
@@ -1165,16 +1122,9 @@ mod tests {
         );
 
         // Set up environment
-        insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
-        insert_type(&mut env, "int_val", Arc::new(Type::Int));
-        insert_type(
-            &mut env,
-            "plus",
-            Arc::new(Type::Arrow(
-                Arc::new(Type::Int),
-                Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-            )),
-        );
+        insert_type(&mut env, "bool_val", bool!());
+        insert_type(&mut env, "int_val", int!());
+        insert_type(&mut env, "plus", arrow!(int!() => int!() => int!()));
 
         // This should fail with a type error
         let mut constraint_system = ConstraintSystem::default();
@@ -1214,13 +1164,13 @@ mod tests {
         let mut env = HashMap::new();
 
         let xor_type_id = Id::new();
-        insert_type(&mut env, "xor", Arc::new(Type::Var(xor_type_id)));
+        insert_type(&mut env, "xor", var!(xor_type_id));
 
         // Single-type variables
-        insert_type(&mut env, "true", Arc::new(Type::Bool));
-        insert_type(&mut env, "false", Arc::new(Type::Bool));
-        insert_type(&mut env, "one", Arc::new(Type::Int));
-        insert_type(&mut env, "two", Arc::new(Type::Int));
+        insert_type(&mut env, "true", bool!());
+        insert_type(&mut env, "false", bool!());
+        insert_type(&mut env, "one", int!());
+        insert_type(&mut env, "two", int!());
 
         // Test bool version: xor true false
         let bool_expr = Expr::App(
@@ -1235,16 +1185,10 @@ mod tests {
 
         let mut constraint_system = ConstraintSystem::with_constraints(vec![Constraint::OneOf(
             Span::default(),
-            Arc::new(Type::Var(xor_type_id)),
+            var!(xor_type_id),
             vec![
-                Arc::new(Type::Arrow(
-                    Arc::new(Type::Bool),
-                    Arc::new(Type::Arrow(Arc::new(Type::Bool), Arc::new(Type::Bool))),
-                )),
-                Arc::new(Type::Arrow(
-                    Arc::new(Type::Int),
-                    Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-                )),
+                arrow!(bool!() => bool!() => bool!()),
+                arrow!(int!() => int!() => int!()),
             ]
             .into_iter()
             .collect(),
@@ -1256,7 +1200,7 @@ mod tests {
         let subst = unify::unify_constraints(&constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
         let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, Arc::new(Type::Bool));
+        assert_eq!(final_type, bool!());
     }
 
     #[test]
@@ -1268,18 +1212,12 @@ mod tests {
             vec![
                 TypeScheme {
                     ids: Vec::new(),
-                    ty: Arc::new(Type::Arrow(
-                        Arc::new(Type::Bool),
-                        Arc::new(Type::Arrow(Arc::new(Type::Bool), Arc::new(Type::Bool))),
-                    )),
+                    ty: arrow!(bool!() => bool!() => bool!()),
                     deps: BTreeSet::new(),
                 },
                 TypeScheme {
                     ids: Vec::new(),
-                    ty: Arc::new(Type::Arrow(
-                        Arc::new(Type::Int),
-                        Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-                    )),
+                    ty: arrow!(int!() => int!() => int!()),
                     deps: BTreeSet::new(),
                 },
             ]
@@ -1288,10 +1226,10 @@ mod tests {
         );
 
         // Single-type variables
-        insert_type(&mut env, "true", Arc::new(Type::Bool));
-        insert_type(&mut env, "false", Arc::new(Type::Bool));
-        insert_type(&mut env, "one", Arc::new(Type::Int));
-        insert_type(&mut env, "two", Arc::new(Type::Int));
+        insert_type(&mut env, "true", bool!());
+        insert_type(&mut env, "false", bool!());
+        insert_type(&mut env, "one", int!());
+        insert_type(&mut env, "two", int!());
 
         // Test bool version: xor true false
         let bool_expr = Expr::App(
@@ -1363,10 +1301,7 @@ mod tests {
         println!("SUBST: {}", sprint_subst(&subst));
         println!("FINAL TYPE: {}", final_type);
 
-        assert_eq!(
-            final_type,
-            Arc::new(Type::Tuple(vec![Arc::new(Type::Bool), Arc::new(Type::Int)]))
-        );
+        assert_eq!(final_type, tuple!(bool!(), int!()));
     }
 
     #[test]
@@ -1374,25 +1309,11 @@ mod tests {
         let mut env = TypeEnv::new();
 
         let rand_type_id = Id::new();
-        insert_type(&mut env, "rand", Arc::new(Type::Var(rand_type_id)));
+        insert_type(&mut env, "rand", var!(rand_type_id));
 
         // Add functions that force return type selection
-        insert_type(
-            &mut env,
-            "sum",
-            Arc::new(Type::Arrow(
-                Arc::new(Type::List(Arc::new(Type::Int))),
-                Arc::new(Type::Int),
-            )),
-        );
-        insert_type(
-            &mut env,
-            "any",
-            Arc::new(Type::Arrow(
-                Arc::new(Type::List(Arc::new(Type::Bool))),
-                Arc::new(Type::Bool),
-            )),
-        );
+        insert_type(&mut env, "sum", arrow!(list!(int!()) => int!()));
+        insert_type(&mut env, "any", arrow!(list!(bool!()) => bool!()));
 
         // Test sum [rand, rand]
         let sum_expr = Expr::App(
@@ -1409,10 +1330,8 @@ mod tests {
 
         let mut constraint_system = ConstraintSystem::with_constraints(vec![Constraint::OneOf(
             Span::default(),
-            Arc::new(Type::Var(rand_type_id)),
-            vec![Arc::new(Type::Int), Arc::new(Type::Bool)]
-                .into_iter()
-                .collect(),
+            var!(rand_type_id),
+            vec![int!(), bool!()].into_iter().collect(),
         )]);
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&sum_expr, &env, &mut constraint_system, &mut errors);
@@ -1422,7 +1341,7 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, Arc::new(Type::Int));
+        assert_eq!(final_type, int!());
     }
 
     // TODO: get this test working again
@@ -1431,16 +1350,14 @@ mod tests {
         let mut env = HashMap::new();
 
         let rand_type_id = Id::new();
-        insert_type(&mut env, "rand", Arc::new(Type::Var(rand_type_id)));
+        insert_type(&mut env, "rand", var!(rand_type_id));
         // Test: just rand by itself (should be ambiguous)
         let expr = Expr::Var(Var::new("rand"));
 
         let mut constraint_system = ConstraintSystem::with_constraints(vec![Constraint::OneOf(
             Span::default(),
-            Arc::new(Type::Var(rand_type_id)),
-            vec![Arc::new(Type::Int), Arc::new(Type::Bool)]
-                .into_iter()
-                .collect(),
+            var!(rand_type_id),
+            vec![int!(), bool!()].into_iter().collect(),
         )]);
         let mut errors = BTreeSet::new();
         let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);

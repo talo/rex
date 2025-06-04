@@ -474,6 +474,7 @@ fn missing_keys_vec(
 mod tests {
     use std::collections::BTreeSet;
 
+    use crate::{arrow, bool, int, list, tuple, var};
     use rex_ast::id::Id;
 
     use super::*;
@@ -487,29 +488,17 @@ mod tests {
         let mut did_change = false;
 
         // Test case 1: α = Int
-        let t1 = Arc::new(Type::Var(alpha));
-        let t2 = Arc::new(Type::Int);
+        let t1 = var!(alpha);
+        let t2 = int!();
         assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
-        assert_eq!(
-            apply_subst(&Arc::new(Type::Var(alpha)), &subst),
-            Arc::new(Type::Int)
-        );
+        assert_eq!(apply_subst(&var!(alpha), &subst), int!());
 
         // Test case 2: (α -> β) = (Int -> Bool)
-        let t1 = Arc::new(Type::Arrow(
-            Arc::new(Type::Var(alpha)),
-            Arc::new(Type::Var(beta)),
-        ));
-        let t2 = Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Bool)));
+        let t1 = arrow!(var!(alpha) => var!(beta));
+        let t2 = arrow!(int!() => bool!());
         assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
-        assert_eq!(
-            apply_subst(&Arc::new(Type::Var(alpha)), &subst),
-            Arc::new(Type::Int)
-        );
-        assert_eq!(
-            apply_subst(&Arc::new(Type::Var(beta)), &subst),
-            Arc::new(Type::Bool)
-        );
+        assert_eq!(apply_subst(&var!(alpha), &subst), int!());
+        assert_eq!(apply_subst(&var!(beta), &subst), bool!());
     }
 
     #[test]
@@ -521,15 +510,12 @@ mod tests {
         let mut did_change = false;
 
         // Unify α = β
-        let t1 = Arc::new(Type::Var(alpha));
-        let t2 = Arc::new(Type::Var(beta));
+        let t1 = var!(alpha);
+        let t2 = var!(beta);
         assert!(unify_eq(&t1, &t2, &Span::default(), &mut subst, &mut did_change).is_ok());
 
         // Now α should be mapped to β
-        assert_eq!(
-            apply_subst(&Arc::new(Type::Var(alpha)), &subst),
-            Arc::new(Type::Var(beta))
-        );
+        assert_eq!(apply_subst(&var!(alpha), &subst), var!(beta));
     }
 
     #[test]
@@ -542,16 +528,10 @@ mod tests {
         let mut did_change = false;
 
         // f : α -> β
-        let f_type = Arc::new(Type::Arrow(
-            Arc::new(Type::Var(alpha)), // α
-            Arc::new(Type::Var(beta)),  // β
-        ));
+        let f_type = arrow!(var!(alpha) => var!(beta));
 
         // g : γ -> γ
-        let g_type = Arc::new(Type::Arrow(
-            Arc::new(Type::Var(gamma)), // γ
-            Arc::new(Type::Var(gamma)), // γ (same type)
-        ));
+        let g_type = arrow!(var!(gamma) => var!(gamma));
 
         // Unify f with g directly
         assert!(unify_eq(
@@ -571,13 +551,7 @@ mod tests {
         assert_eq!(final_f, final_g);
 
         // And specifically they should both be γ -> γ
-        assert_eq!(
-            final_f,
-            Arc::new(Type::Arrow(
-                Arc::new(Type::Var(gamma)),
-                Arc::new(Type::Var(gamma))
-            ))
-        );
+        assert_eq!(final_f, arrow!(var!(gamma) => var!(gamma)));
     }
 
     #[test]
@@ -590,20 +564,14 @@ mod tests {
         let mut did_change = false;
 
         // f : α -> β
-        let f_type = Arc::new(Type::Arrow(
-            Arc::new(Type::Var(alpha)), // α
-            Arc::new(Type::Var(beta)),  // β
-        ));
+        let f_type = arrow!(var!(alpha) => var!(beta));
 
         // g : γ -> γ
-        let g_type = Arc::new(Type::Arrow(
-            Arc::new(Type::Var(gamma)), // γ
-            Arc::new(Type::Var(gamma)), // γ (same type)
-        ));
+        let g_type = arrow!(var!(gamma) => var!(gamma));
 
         // Now unify g's output with f's input
-        let g_output = Arc::new(Type::Var(gamma)); // γ
-        let f_input = Arc::new(Type::Var(alpha)); // α
+        let g_output = var!(gamma); // γ
+        let f_input = var!(alpha); // α
         assert!(unify_eq(
             &g_output,
             &f_input,
@@ -615,8 +583,8 @@ mod tests {
 
         // Let's make g take an Int
         assert!(unify_eq(
-            &Arc::new(Type::Var(gamma)),
-            &Arc::new(Type::Int),
+            &var!(gamma),
+            &int!(),
             &Span::default(),
             &mut subst,
             &mut did_change
@@ -628,16 +596,10 @@ mod tests {
         let final_f = apply_subst(&f_type, &subst);
 
         // g should be Int -> Int
-        assert_eq!(
-            final_g,
-            Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int)))
-        );
+        assert_eq!(final_g, arrow!(int!() => int!()));
 
         // f should be Int -> β (where β is still free)
-        assert_eq!(
-            final_f,
-            Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Var(beta))))
-        );
+        assert_eq!(final_f, arrow!(int!() => var!(beta)));
     }
 
     #[test]
@@ -651,19 +613,10 @@ mod tests {
         let mut did_change = false;
 
         // f : (α -> β) -> γ
-        let f_type = Arc::new(Type::Arrow(
-            Arc::new(Type::Arrow(
-                Arc::new(Type::Var(alpha)), // α
-                Arc::new(Type::Var(beta)),  // β
-            )),
-            Arc::new(Type::Var(gamma)), // γ
-        ));
+        let f_type = arrow!(arrow!(var!(alpha) => var!(beta)) => var!(gamma));
 
         // g : (Int -> Bool) -> δ
-        let g_type = Arc::new(Type::Arrow(
-            Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Bool))),
-            Arc::new(Type::Var(delta)), // δ
-        ));
+        let g_type = arrow!(arrow!(int!() => bool!()) => var!(delta));
 
         // Unify f with g
         assert!(unify_eq(
@@ -679,13 +632,7 @@ mod tests {
         let final_f = apply_subst(&f_type, &subst);
 
         // final_f should be (Int -> Bool) -> δ
-        assert_eq!(
-            final_f,
-            Arc::new(Type::Arrow(
-                Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Bool))),
-                Arc::new(Type::Var(delta))
-            ))
-        );
+        assert_eq!(final_f, arrow!(arrow!(int!() => bool!()) => var!(delta)));
     }
 
     #[test]
@@ -696,57 +643,25 @@ mod tests {
         let var = alpha.clone();
 
         // Simple variable occurrence
-        assert!(occurs_check(&var, &Arc::new(Type::Var(alpha))));
-        assert!(!occurs_check(&var, &Arc::new(Type::Var(beta))));
+        assert!(occurs_check(&var, &var!(alpha)));
+        assert!(!occurs_check(&var, &var!(beta)));
 
         // Arrow type occurrences
-        assert!(occurs_check(
-            &var,
-            &Arc::new(Type::Arrow(Arc::new(Type::Var(alpha)), Arc::new(Type::Int)))
-        ));
-        assert!(occurs_check(
-            &var,
-            &Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Var(alpha))))
-        ));
+        assert!(occurs_check(&var, &arrow!(var!(alpha) => int!())));
+        assert!(occurs_check(&var, &arrow!(int!() => var!(alpha))));
 
         // Tuple occurrences - would have failed before our fix
-        assert!(occurs_check(
-            &var,
-            &Arc::new(Type::Tuple(vec![
-                Arc::new(Type::Int),
-                Arc::new(Type::Var(alpha)),
-                Arc::new(Type::Bool)
-            ]))
-        ));
-        assert!(!occurs_check(
-            &var,
-            &Arc::new(Type::Tuple(vec![
-                Arc::new(Type::Int),
-                Arc::new(Type::Var(beta)),
-                Arc::new(Type::Bool)
-            ]))
-        ));
+        assert!(occurs_check(&var, &tuple!(int!(), var!(alpha), bool!())));
+        assert!(!occurs_check(&var, &tuple!(int!(), var!(beta), bool!())));
 
         // List occurrences - would have failed before our fix
-        assert!(occurs_check(
-            &var,
-            &Arc::new(Type::List(Arc::new(Type::Var(alpha))))
-        ));
-        assert!(!occurs_check(
-            &var,
-            &Arc::new(Type::List(Arc::new(Type::Var(beta))))
-        ));
+        assert!(occurs_check(&var, &list!(var!(alpha))));
+        assert!(!occurs_check(&var, &list!(var!(beta))));
 
         // Nested structures - would have failed before our fix
         assert!(occurs_check(
             &var,
-            &Arc::new(Type::Tuple(vec![
-                Arc::new(Type::List(Arc::new(Type::Var(alpha)))),
-                Arc::new(Type::Arrow(
-                    Arc::new(Type::Int),
-                    Arc::new(Type::List(Arc::new(Type::Bool)))
-                ))
-            ]))
+            &tuple!(list!(var!(alpha)), arrow!(int!() => list!(bool!())))
         ));
 
         // ForAll cases - would have failed before our fix
@@ -755,7 +670,7 @@ mod tests {
             &var,
             &TypeScheme {
                 ids: vec![alpha],
-                ty: Arc::new(Type::Var(alpha)),
+                ty: var!(alpha),
                 deps: BTreeSet::new(),
             }
         ));
@@ -766,10 +681,7 @@ mod tests {
             &var2,
             &TypeScheme {
                 ids: vec![alpha],
-                ty: Arc::new(Type::Arrow(
-                    Arc::new(Type::Var(beta)),
-                    Arc::new(Type::Var(alpha))
-                )),
+                ty: arrow!(var!(beta) => var!(alpha)),
                 deps: BTreeSet::new()
             }
         ));

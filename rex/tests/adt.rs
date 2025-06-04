@@ -10,7 +10,7 @@ use rex::{
     json::{expr_to_json, json_to_expr},
     lexer::span::Span,
     type_system::{
-        adt, adt_variant, bool, float, int, list, string, tuple,
+        adt, adt_variant, bool, float, int, list, option, promise, result, string, tuple,
         types::{ADTVariant, ToType, Type, ADT},
         uint,
     },
@@ -106,7 +106,7 @@ async fn test_struct_single_unnamed_field() {
         docs: None,
         variants: vec![ADTVariant {
             name: "Foo".to_string(),
-            t: Some(Arc::new(Type::String)),
+            t: Some(string!()),
             docs: None,
             t_docs: None,
             discriminant: None,
@@ -351,8 +351,8 @@ async fn test_field_optional() {
     let expected_type = Arc::new(Type::ADT(adt! {
         Foo = Foo {
             a: string!(),
-            b: Arc::new(Type::Option(uint!())),
-            c: Arc::new(Type::Option(uint!())),
+            b: option!(uint!()),
+            c: option!(uint!()),
         }
     }));
 
@@ -425,8 +425,8 @@ async fn test_field_result() {
     let expected_type = Arc::new(Type::ADT(adt! {
         Foo = Foo {
             a: string!(),
-            i1: Arc::new(Type::Result(uint!(), string!())),
-            i2: Arc::new(Type::Result(uint!(), string!())),
+            i1: result!(uint!(), string!()),
+            i2: result!(uint!(), string!()),
         }
     }));
 
@@ -479,8 +479,8 @@ async fn test_field_promise() {
     let expected_type = Arc::new(Type::ADT(adt! {
         Foo = Foo {
             a: string!(),
-            i1: Arc::new(Type::Promise(Arc::new(Type::String))),
-            i2: Arc::new(Type::Promise(Arc::new(Type::Uint))),
+            i1: promise!(string!()),
+            i2: promise!(uint!()),
         }
     }));
 
@@ -917,7 +917,7 @@ async fn test_json_field() {
                 variants: vec![
                     ADTVariant {
                         name: "serde_json::Value".to_string(),
-                        t: Some(Arc::new(Type::String)),
+                        t: Some(string!()),
                         docs: None,
                         t_docs: None,
                         discriminant: None,
