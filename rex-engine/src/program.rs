@@ -44,7 +44,7 @@ where
         })?;
 
         let (ftable, type_env) = builder.build();
-        let mut constraint_system = ConstraintSystem::default();
+        let mut constraint_system = ConstraintSystem::new();
 
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&expr, &type_env, &mut constraint_system, &mut errors);
