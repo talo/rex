@@ -247,7 +247,7 @@ impl Decode for bool {
         match &**v {
             Expr::Bool(_, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Int),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -260,7 +260,7 @@ impl Decode for u8 {
         match &**v {
             Expr::Uint(_, x) => Ok(*x as u8),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Uint),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -273,7 +273,7 @@ impl Decode for u16 {
         match &**v {
             Expr::Uint(_, x) => Ok(*x as u16),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Uint),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -286,7 +286,7 @@ impl Decode for u32 {
         match &**v {
             Expr::Uint(_, x) => Ok(*x as u32),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Uint),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -298,7 +298,7 @@ impl Decode for u64 {
         match &**v {
             Expr::Uint(_, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Uint),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -311,7 +311,7 @@ impl Decode for u128 {
         match &**v {
             Expr::Uint(_, x) => Ok(*x as u128),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Uint),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -324,7 +324,7 @@ impl Decode for i8 {
         match &**v {
             Expr::Int(_, x) => Ok(*x as i8),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Int),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -337,7 +337,7 @@ impl Decode for i16 {
         match &**v {
             Expr::Int(_, x) => Ok(*x as i16),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Int),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -350,7 +350,7 @@ impl Decode for i32 {
         match &**v {
             Expr::Int(_, x) => Ok(*x as i32),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Int),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -363,7 +363,7 @@ impl Decode for i64 {
         match &**v {
             Expr::Int(_, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Int),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -376,7 +376,7 @@ impl Decode for i128 {
         match &**v {
             Expr::Int(_, x) => Ok(*x as i128),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Int),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -389,7 +389,7 @@ impl Decode for f32 {
         match &**v {
             Expr::Float(_, x) => Ok(*x as f32),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Float),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -402,7 +402,7 @@ impl Decode for f64 {
         match &**v {
             Expr::Float(_, x) => Ok(*x),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Float),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -415,7 +415,7 @@ impl Decode for String {
         match &**v {
             Expr::String(_, x) => Ok(x.clone()),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Int),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -567,7 +567,7 @@ where
 
 impl<T> Decode for Vec<T>
 where
-    T: Decode,
+    T: Decode + ToType,
 {
     fn try_decode(v: &Arc<Expr>) -> Result<Self, Error> {
         match &**v {
@@ -579,7 +579,7 @@ where
                 Ok(ys)
             }
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Int),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -597,7 +597,7 @@ where
             Expr::Named(_span, name, Some(x)) if name == "Ok" => Ok(Ok(T::try_decode(x)?)),
             Expr::Named(_span, name, Some(x)) if name == "Err" => Ok(Err(E::try_decode(x)?)),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Result(Arc::new(T::to_type()), Arc::new(E::to_type()))),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
@@ -614,7 +614,7 @@ where
             Expr::Named(_span, name, Some(x)) if name == "Some" => Ok(Some(T::try_decode(x)?)),
             Expr::Named(_span, name, None) if name == "None" => Ok(None),
             _ => Err(Error::ExpectedTypeGotValue {
-                expected: Arc::new(Type::Option(Arc::new(T::to_type()))),
+                expected: Arc::new(Self::to_type()),
                 got: v.clone(),
                 trace: Default::default(),
             }),
