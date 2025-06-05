@@ -427,7 +427,7 @@ pub mod test {
 
     #[tokio::test]
     async fn test_negate() {
-        let (res, res_type) = parse_infer_and_eval(r#"-(int 420)"#).await.unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"-420"#).await.unwrap();
         assert_eq!(res_type, int!());
         assert_expr_eq!(res, i!(-420); ignore span);
 
@@ -435,14 +435,13 @@ pub mod test {
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(-3.14); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"(-3.14, -(int 69))"#).await.unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"(-3.14, -69)"#).await.unwrap();
         assert_eq!(res_type, tuple!(float!(), int!()));
         assert_expr_eq!(res, tup!(f!(-3.14), i!(-69)); ignore span);
 
-        let (res, res_type) =
-            parse_infer_and_eval(r#"[-(int 0), -(int 314), -(int 69), -(int 420)]"#)
-                .await
-                .unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"[-0, -314, -69, -420]"#)
+            .await
+            .unwrap();
         assert_eq!(res_type, list!(int!()));
         assert_expr_eq!(res, l!(i!(0), i!(-314), i!(-69), i!(-420)); ignore span);
 
@@ -452,7 +451,7 @@ pub mod test {
         assert_eq!(res_type, list!(float!()));
         assert_expr_eq!(res, l!(f!(-0.0), f!(-3.14), f!(-6.9), f!(-42.0)); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"{ x = -3.14, y = -(int 69) }"#)
+        let (res, res_type) = parse_infer_and_eval(r#"{ x = -3.14, y = -69 }"#)
             .await
             .unwrap();
         assert_eq!(res_type, dict! { x: float!(), y: int!() });
@@ -469,15 +468,11 @@ pub mod test {
         assert_eq!(res_type, uint!());
         assert_expr_eq!(res, u!(15); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"(-(int 4)) + (-(int 20))"#)
-            .await
-            .unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"(-4) + (-20)"#).await.unwrap();
         assert_eq!(res_type, int!());
         assert_expr_eq!(res, i!(-24); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"(-(int 4)) + (int 20)"#)
-            .await
-            .unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"(-4) + (int 20)"#).await.unwrap();
         assert_eq!(res_type, int!());
         assert_expr_eq!(res, i!(16); ignore span);
 
@@ -913,7 +908,7 @@ pub mod test {
     #[tokio::test]
     async fn test_polymorphism() {
         let (res, res_type) =
-            parse_infer_and_eval(r#"identity (identity 6.9, identity 420, identity (-(int 420)))"#)
+            parse_infer_and_eval(r#"identity (identity 6.9, identity 420, identity (-420))"#)
                 .await
                 .unwrap();
         assert_eq!(res_type, tuple!(float!(), uint!(), int!()));
@@ -960,7 +955,7 @@ pub mod test {
     #[tokio::test]
     async fn test_let_overloaded_polymorphism() {
         let (res, res_type) =
-            parse_infer_and_eval(r#"let f = λx → -x in (f 6.9, f (int 420), f (int 314))"#)
+            parse_infer_and_eval(r#"let f = λx → -x in (f 6.9, f 420, f (int 314))"#)
                 .await
                 .unwrap();
         assert_eq!(res_type, tuple!(float!(), int!(), int!()));
@@ -980,7 +975,7 @@ pub mod test {
 
     #[tokio::test]
     async fn test_let_bind_to_ftable() {
-        let (res, res_type) = parse_infer_and_eval(r#"let f = negate in f (int 420)"#)
+        let (res, res_type) = parse_infer_and_eval(r#"let f = negate in f 420"#)
             .await
             .unwrap();
         assert_eq!(res_type, int!());
@@ -1114,7 +1109,7 @@ pub mod test {
                     a = Ok "one",
                     b = Err 0,
                     c = Err 1,
-                    f = or_else_result (\x -> if x == 0 then Ok "yes" else Err 3.14)
+                    f = or_else (\x -> if x == 0 then Ok "yes" else Err 3.14)
                 in
                     map f [a, b, c]
                 "#,
@@ -1138,7 +1133,7 @@ pub mod test {
                 let
                     a = Ok 4,
                     b = Err "bad",
-                    f = unwrap_or_else_result (\x -> 99)
+                    f = unwrap_or_else (\x -> 99)
                 in
                     map f [a, b]
                 "#,
@@ -1240,7 +1235,7 @@ pub mod test {
                 let
                     a = Some 5.1,
                     b = None,
-                    f = or_else_option (\x -> Some 3.14)
+                    f = or_else (\x -> Some 3.14)
                 in
                     map f [a, b]
                 "#,
@@ -1260,7 +1255,7 @@ pub mod test {
                 let
                     a = Some 5.1,
                     b = None,
-                    f = or_else_option (\x -> None)
+                    f = or_else (\x -> None)
                 in
                     map f [a, b]
                 "#,
@@ -1277,13 +1272,47 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_or_else_overload() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+                let
+                    template = λa b c → or_else (λx → if (a x) then b else c),
+                    f = template (λx → x == 0) (Ok "yes") (Err 2),
+                    g = template (λx → true) (Some 1.5) (Some 2.5),
+                in (
+                    map f [Ok "one", Err 0, Err 1],
+                    map g [Some 3.5, None]
+                )
+                "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            res_type,
+            tuple!(list!(result!(uint!(), string!())), list!(option!(float!())),)
+        );
+        assert_expr_eq!(
+            res,
+            tup!(
+                l!(
+                    n!("Ok", Some(s!("one"))),
+                    n!("Ok", Some(s!("yes"))),
+                    n!("Err", Some(u!(2)))),
+                l!(n!("Some", Some(f!(3.5))),
+                    n!("Some", Some(f!(1.5)))))
+
+            ;
+            ignore span);
+    }
+
+    #[tokio::test]
     async fn test_unwrap_or_else_option() {
         let (res, res_type) = parse_infer_and_eval(
             r#"
                 let
                     a = Some 4,
                     b = None,
-                    f = unwrap_or_else_option (\x -> 99)
+                    f = unwrap_or_else (\x -> 99)
                 in
                     map f [a, b]
                 "#,
@@ -1292,6 +1321,70 @@ pub mod test {
         .unwrap();
         assert_eq!(res_type, list!(uint!()));
         assert_expr_eq!(res, l!(u!(4), u!(99)); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_unwrap_or_else_overload() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"(
+                map (unwrap_or_else (\z -> 99)) [Ok 4, Err "bad"],
+                map (unwrap_or_else (\z -> 2.5)) [Some 4.5, None]
+            )
+            "#,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(res_type, tuple!(list!(uint!()), list!(float!())));
+        assert_expr_eq!(res,tup!(l!(u!(4), u!(99)), l!(f!(4.5), f!(2.5))); ignore span);
+
+        // FIXME(peter): let bindings are not properly generalized in this case
+        // let (res, res_type) = parse_infer_and_eval(
+        //     r#"
+        //     let
+        //         u = unwrap_or_else
+        //     in (
+        //         map (u (\z -> 99)) [Ok 4, Err "bad"],
+        //         map (u (\z -> 2.5)) [Some 4.5, None]
+        //     )
+        //     "#,
+        // )
+        // .await
+        // .unwrap();
+        // assert_eq!(res_type, tuple!(list!(uint!()), list!(float!())));
+        // assert_expr_eq!(res,tup!(l!(u!(4), u!(99)), l!(f!(4.5), f!(2.5))); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+            let
+                f = (unwrap_or_else (\z -> 99)),
+                g = (unwrap_or_else (\z -> 99)),
+            in (
+                map f [Ok 4, Err "bad"],
+                map g [Some 5, None]
+            )
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, tuple!(list!(uint!()), list!(uint!())));
+        assert_expr_eq!(res,tup!(l!(u!(4), u!(99)), l!(u!(5), u!(99))); ignore span);
+
+        // FIXME(peter): let bindings are not properly generalized in this case
+        // let (res, res_type) = parse_infer_and_eval(
+        //     r#"
+        //     let
+        //         f = (unwrap_or_else (\z -> 99)),
+        //     in (
+        //         map f [Ok 4, Err "bad"],
+        //         map f [Some 5, None]
+        //     )
+        //     "#,
+        // )
+        // .await
+        // .unwrap();
+        // assert_eq!(res_type, tuple!(list!(uint!()), list!(uint!())));
+        // assert_expr_eq!(res,tup!(l!(u!(4), u!(99)), l!(u!(5), u!(99))); ignore span);
     }
 
     #[tokio::test]
@@ -1387,7 +1480,7 @@ pub mod test {
         assert_eq!(res_type, list!(float!()));
         assert_expr_eq!(res, l!(f!(-3.14)); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"let n = (λx → - x) in (n (int 4), n 4.2)"#)
+        let (res, res_type) = parse_infer_and_eval(r#"let n = (λx → - x) in (n 4, n 4.2)"#)
             .await
             .unwrap();
         assert_eq!(res_type, tuple!(int!(), float!()));
@@ -1444,7 +1537,7 @@ pub mod test {
             let
                 results = [Ok "one", Err 2, Ok "three", Err 4],
             in
-                filter_map (unwrap_or_else_result (λy → None)) (map (λx → map Some x) results)
+                filter_map (unwrap_or_else (λy → None)) (map (λx → map Some x) results)
             "#,
         )
         .await
@@ -1457,7 +1550,7 @@ pub mod test {
             let
                 results = [Ok "one", Err 2, Ok "three", Err 4],
                 only_successful_results = λr →
-                    filter_map (unwrap_or_else_result (λy → None)) (map (λx → map Some x) r),
+                    filter_map (unwrap_or_else (λy → None)) (map (λx → map Some x) r),
             in
                 only_successful_results results
             "#,
@@ -1472,7 +1565,7 @@ pub mod test {
             r#"
             let
                 results = [Ok "one", Err 2, Ok "three", Err 4],
-                result_to_option = (λx → unwrap_or_else_result (λy → None) (map Some x)),
+                result_to_option = (λx → unwrap_or_else (λy → None) (map Some x)),
                 only_successful_results = λr → filter_map result_to_option r
             in
                 only_successful_results results
@@ -1560,7 +1653,7 @@ pub mod test {
                         g)
                     (let
                         f = λx → -(identity x),
-                        h = map f (map f [-(int 1), -(int 2), -(int 3), -(int 4)])
+                        h = map f (map f [-1, -2, -3, -4])
                     in
                         map
                             f
@@ -1603,7 +1696,7 @@ pub mod test {
     async fn test_lambda_scope() {
         let (res, res_type) = parse_infer_and_eval(
             r#"
-            let foo = [int 1, int 2, int 3] in map (\foo -> negate foo) foo
+            let foo = [1, 2, 3] in map (\foo -> negate foo) foo
             "#,
         )
         .await
@@ -1613,7 +1706,7 @@ pub mod test {
 
         let (res, res_type) = parse_infer_and_eval(
             r#"
-            let foo = ["one"] in (\foo -> negate foo) (int 2)
+            let foo = ["one"] in (\foo -> negate foo) 2
             "#,
         )
         .await

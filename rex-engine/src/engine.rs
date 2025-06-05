@@ -235,6 +235,7 @@ where
         this.register("float", fn1(|_, x: i64| Ok(x as f64)));
         this.register("float", fn1(|_, x: String| Ok(x.parse::<f64>()?)));
 
+        this.register("negate", fn1(|_, x: u64| Ok(-(x as i64))));
         this.register("negate", fn1(|_, x: i64| Ok(-x)));
         this.register("negate", fn1(|_, x: f64| Ok(-x)));
 
@@ -517,7 +518,7 @@ where
             }),
         );
         this.register(
-            "or_else_result",
+            "or_else",
             fn_async2(|ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
                 Box::pin(async move {
                     match x {
@@ -530,7 +531,7 @@ where
             }),
         );
         this.register(
-            "unwrap_or_else_result",
+            "unwrap_or_else",
             fn_async2(|ctx, f: Func<E, A>, x: Result<A, E>| {
                 Box::pin(async move {
                     match x {
@@ -586,7 +587,7 @@ where
             }),
         );
         this.register(
-            "or_else_option",
+            "or_else",
             fn_async2(|ctx, f: Func<(), Option<A>>, x: Option<A>| {
                 Box::pin(async move {
                     match x {
@@ -601,7 +602,7 @@ where
             }),
         );
         this.register(
-            "unwrap_or_else_option",
+            "unwrap_or_else",
             fn_async2(|ctx, f: Func<(), A>, x: Option<A>| {
                 Box::pin(async move {
                     match x {
