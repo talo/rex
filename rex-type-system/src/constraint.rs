@@ -407,13 +407,13 @@ fn instantiate(
         return scheme.ty.clone();
     }
 
-    let mut type_subst = Subst::new();
+    let mut type_subst = Subst::default();
     let mut var_subst: HashMap<TypeVar, TypeVar> = HashMap::new();
 
     // Create fresh type variables
     for var in scheme.vars.iter() {
         let fresh_var = TypeVar::new_with_kind(var.kind());
-        type_subst.insert(*var, Arc::new(Type::Var(fresh_var)));
+        type_subst = type_subst.insert(*var, Arc::new(Type::Var(fresh_var)));
         var_subst.insert(*var, fresh_var);
     }
 
@@ -422,7 +422,7 @@ fn instantiate(
     for dep_var in scheme.deps.iter() {
         let fresh_dep_var = TypeVar::new_with_kind(dep_var.kind());
         // Add equality constraint between old and new var
-        type_subst.insert(*dep_var, Arc::new(Type::Var(fresh_dep_var)));
+        type_subst = type_subst.insert(*dep_var, Arc::new(Type::Var(fresh_dep_var)));
 
         for constraint in constraint_system.constraints() {
             match constraint {
@@ -600,7 +600,7 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
         for constraint in constraint_system.constraints() {
             match constraint {
@@ -632,7 +632,7 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // This should fail unification
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
         let result = constraint_system
             .constraints()
@@ -713,7 +713,7 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // This should fail unification because the list elements don't match
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
         let result = constraint_system
             .constraints()
@@ -1044,7 +1044,7 @@ mod tests {
         ))
         .and_then(|ty| {
             assert_eq!(errors.len(), 0);
-            let mut subst = Subst::new();
+            let mut subst = Subst::default();
             let mut did_change = false;
             for constraint in constraint_system.constraints() {
                 match constraint {
@@ -1265,7 +1265,7 @@ mod tests {
         let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
 
         // This should fail because both types are possible

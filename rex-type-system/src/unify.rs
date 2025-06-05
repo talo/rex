@@ -1,10 +1,11 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     fmt,
     sync::Arc,
 };
 
 use rex_lexer::span::Span;
+use rpds::HashTrieMapSync;
 
 use crate::{
     constraint::{Constraint, ConstraintSystem},
@@ -12,14 +13,14 @@ use crate::{
     types::{Type, TypeVar},
 };
 
-pub type Subst = HashMap<TypeVar, Arc<Type>>;
+pub type Subst = HashTrieMapSync<TypeVar, Arc<Type>>;
 
 // NOTE(loong): We do not support overloaded parametric polymorphism.
 pub fn unify_constraints(
     zconstraint_system: &ConstraintSystem,
     errors: &mut BTreeSet<TypeError>,
 ) -> Subst {
-    let mut subst = Subst::new();
+    let mut subst = Subst::default();
 
     let mut eq_constraints: Vec<Constraint> = Vec::new();
     let mut one_of_constraints: Vec<Constraint> = Vec::new();
@@ -211,7 +212,7 @@ pub fn unify_eq_r(
         // Type variable case requires occurs check
         (Type::Var(v1), Type::Var(v2)) => {
             if v1 != v2 {
-                subst.insert(*v1, Arc::new(Type::Var(*v2)));
+                *subst = subst.insert(*v1, Arc::new(Type::Var(*v2)));
                 *did_change = true;
             }
         }
@@ -221,7 +222,7 @@ pub fn unify_eq_r(
             if t2.occurs_check(v) {
                 errors.push(TypeError::OccursCheckFailed(*span, path.to_string()));
             } else {
-                subst.insert(*v, t2);
+                *subst = subst.insert(*v, t2);
                 *did_change = true;
             }
         }
@@ -229,7 +230,7 @@ pub fn unify_eq_r(
             if t1.occurs_check(v) {
                 errors.push(TypeError::OccursCheckFailed(*span, path.to_string()));
             } else {
-                subst.insert(*v, t1.clone());
+                *subst = subst.insert(*v, t1.clone());
                 *did_change = true;
             }
         }
@@ -355,7 +356,7 @@ mod tests {
         let alpha = TypeVar::new();
         let beta = TypeVar::new();
 
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
 
         // Test case 1: α = Int
@@ -377,7 +378,7 @@ mod tests {
         let alpha = TypeVar::new();
         let beta = TypeVar::new();
 
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
 
         // Unify α = β
@@ -395,7 +396,7 @@ mod tests {
         let beta = TypeVar::new();
         let gamma = TypeVar::new();
 
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
 
         // f : α -> β
@@ -431,7 +432,7 @@ mod tests {
         let beta = TypeVar::new();
         let gamma = TypeVar::new();
 
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
 
         // f : α -> β
@@ -480,7 +481,7 @@ mod tests {
         let gamma = TypeVar::new();
         let delta = TypeVar::new();
 
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
 
         // f : (α -> β) -> γ
@@ -548,7 +549,7 @@ mod tests {
         let alpha = TypeVar::new_with_kind(Kind(1));
         let beta = TypeVar::new_with_kind(Kind(2));
 
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
         match unify_eq(
             &Arc::new(Type::Var(alpha)),
