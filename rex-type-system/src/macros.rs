@@ -1,35 +1,35 @@
 #[macro_export]
 macro_rules! bool {
     () => {
-        ::std::sync::Arc::new($crate::types::Type::Bool)
+        ::std::sync::Arc::new($crate::types::Type::Con($crate::types::TypeCon::Bool))
     };
 }
 
 #[macro_export]
 macro_rules! uint {
     () => {
-        ::std::sync::Arc::new($crate::types::Type::Uint)
+        ::std::sync::Arc::new($crate::types::Type::Con($crate::types::TypeCon::Uint))
     };
 }
 
 #[macro_export]
 macro_rules! int {
     () => {
-        ::std::sync::Arc::new($crate::types::Type::Int)
+        ::std::sync::Arc::new($crate::types::Type::Con($crate::types::TypeCon::Int))
     };
 }
 
 #[macro_export]
 macro_rules! float {
     () => {
-        ::std::sync::Arc::new($crate::types::Type::Float)
+        ::std::sync::Arc::new($crate::types::Type::Con($crate::types::TypeCon::Float))
     };
 }
 
 #[macro_export]
 macro_rules! string {
     () => {
-        ::std::sync::Arc::new($crate::types::Type::String)
+        ::std::sync::Arc::new($crate::types::Type::Con($crate::types::TypeCon::String))
     };
 }
 
@@ -49,8 +49,8 @@ macro_rules! var {
 
 #[macro_export]
 macro_rules! result {
-    ($t:expr, $e:expr) => {
-        ::std::sync::Arc::new($crate::types::Type::Result($t, $e))
+    ($e:expr, $t:expr) => {
+        $crate::types::Type::result($e, $t)
     };
 }
 
@@ -68,14 +68,14 @@ macro_rules! dict {
 #[macro_export]
 macro_rules! option {
     ($t:expr) => {
-        ::std::sync::Arc::new($crate::types::Type::Option($t))
+        $crate::types::Type::option($t)
     };
 }
 
 #[macro_export]
 macro_rules! list {
     ($t:expr) => {
-        ::std::sync::Arc::new($crate::types::Type::List($t))
+        $crate::types::Type::list($t)
     };
 }
 
@@ -83,6 +83,13 @@ macro_rules! list {
 macro_rules! tuple {
     ($($t:expr),* $(,)?) => {
         ::std::sync::Arc::new($crate::types::Type::Tuple(vec![$($t),*]))
+    };
+}
+
+#[macro_export]
+macro_rules! promise {
+    ($t:expr) => {
+        $crate::types::Type::promise($t)
     };
 }
 
@@ -151,55 +158,54 @@ macro_rules! arrow {
     };
 
     ($a0:expr => $b:expr) => {
-        ::std::sync::Arc::new($crate::types::Type::Arrow(($a0).into(), ($b).into()))
+        $crate::types::Type::arrow(($a0).into(), ($b).into())
     };
 
     ($a0:expr => $a1:expr => $b:expr) => {
-        ::std::sync::Arc::new($crate::types::Type::Arrow(
+        $crate::types::Type::arrow(
             ($a0).into(),
-            ::std::sync::Arc::new($crate::types::Type::Arrow(($a1).into(), ($b).into())),
-        ))
+            $crate::types::Type::arrow(($a1).into(), ($b).into()),
+        )
     };
 
     ($a0:expr => $a1:expr => $a2:expr => $b:expr) => {
-        ::std::sync::Arc::new($crate::types::Type::Arrow(
+        $crate::types::Type::arrow(
             ($a0).into(),
-            ::std::sync::Arc::new($crate::types::Type::Arrow(
+            $crate::types::Type::arrow(
                 ($a1).into(),
-                ::std::sync::Arc::new($crate::types::Type::Arrow(($a2).into(), ($b).into())),
-            )),
-        ))
+                $crate::types::Type::arrow(($a2).into(), ($b).into()),
+            ),
+        )
     };
 
     ($a0:expr => $a1:expr => $a2:expr => $a3:expr => $b:expr) => {
-        ::std::sync::Arc::new($crate::types::Type::Arrow(
+        $crate::types::Type::arrow(
             ($a0).into(),
-            ::std::sync::Arc::new($crate::types::Type::Arrow(
+            $crate::types::Type::arrow(
                 ($a1).into(),
-                ::std::sync::Arc::new($crate::types::Type::Arrow(
+                $crate::types::Type::arrow(
                     ($a2).into(),
-                    ::std::sync::Arc::new($crate::types::Type::Arrow(($a3).into(), ($b).into())),
-                )),
-            )),
-        ))
+                    $crate::types::Type::arrow(($a3).into(), ($b).into()),
+                ),
+            ),
+        )
     };
 }
 
 #[cfg(test)]
 mod test {
-    use rex_ast::id::Id;
     use uuid::Uuid;
 
-    use crate::types::{ADTVariant, Type, ADT};
+    use crate::types::{ADTVariant, Type, TypeCon, TypeVar, ADT};
     use std::sync::Arc;
 
     #[test]
     fn test_basic_type_macros() {
-        assert_eq!(bool!(), Arc::new(Type::Bool));
-        assert_eq!(uint!(), Arc::new(Type::Uint));
-        assert_eq!(int!(), Arc::new(Type::Int));
-        assert_eq!(float!(), Arc::new(Type::Float));
-        assert_eq!(string!(), Arc::new(Type::String));
+        assert_eq!(bool!(), Arc::new(Type::Con(TypeCon::Bool)));
+        assert_eq!(uint!(), Arc::new(Type::Con(TypeCon::Uint)));
+        assert_eq!(int!(), Arc::new(Type::Con(TypeCon::Int)));
+        assert_eq!(float!(), Arc::new(Type::Con(TypeCon::Float)));
+        assert_eq!(string!(), Arc::new(Type::Con(TypeCon::String)));
     }
 
     #[test]
@@ -217,15 +223,21 @@ mod test {
             Arc::new(Type::UnresolvedVar("c".to_string()))
         );
         assert_eq!(
-            var!(Id(Uuid::default())),
-            Arc::new(Type::Var(Id(Uuid::default())))
+            var!(TypeVar::from_uuid(Uuid::default())),
+            Arc::new(Type::Var(TypeVar::from_uuid(Uuid::default())))
         );
-        assert_eq!(var!(Id(Uuid::max())), Arc::new(Type::Var(Id(Uuid::max()))));
+        assert_eq!(
+            var!(TypeVar::from_uuid(Uuid::max())),
+            Arc::new(Type::Var(TypeVar::from_uuid(Uuid::max())))
+        );
     }
 
     #[test]
     fn test_list_type_macro() {
-        assert_eq!(list!(float!()), Arc::new(Type::List(float!())));
+        assert_eq!(
+            list!(float!()),
+            Arc::new(Type::App(Arc::new(Type::Con(TypeCon::List)), float!()))
+        );
     }
 
     #[test]
@@ -310,41 +322,29 @@ mod test {
 
     #[test]
     fn test_arrow_type_macro() {
-        assert_eq!(arrow!(bool!()), Arc::new(Type::Bool));
+        assert_eq!(arrow!(bool!()), Arc::new(Type::Con(TypeCon::Bool)));
 
-        assert_eq!(
-            arrow!(bool!() => uint!()),
-            Arc::new(Type::Arrow(bool!(), uint!()))
-        );
+        assert_eq!(arrow!(bool!() => uint!()), Type::arrow(bool!(), uint!()));
 
         assert_eq!(
             arrow!(bool!() => uint!() => int!()),
-            Arc::new(Type::Arrow(bool!(), Arc::new(Type::Arrow(uint!(), int!()))))
+            Type::arrow(bool!(), Type::arrow(uint!(), int!()))
         );
 
         assert_eq!(
             arrow!(bool!() => uint!() => int!() => float!()),
-            Arc::new(Type::Arrow(
-                bool!(),
-                Arc::new(Type::Arrow(
-                    uint!(),
-                    Arc::new(Type::Arrow(int!(), float!()))
-                ))
-            ))
+            Type::arrow(bool!(), Type::arrow(uint!(), Type::arrow(int!(), float!())))
         );
 
         assert_eq!(
             arrow!(bool!() => uint!() => int!() => float!() => string!()),
-            Arc::new(Type::Arrow(
+            Type::arrow(
                 bool!(),
-                Arc::new(Type::Arrow(
+                Type::arrow(
                     uint!(),
-                    Arc::new(Type::Arrow(
-                        int!(),
-                        Arc::new(Type::Arrow(float!(), string!()))
-                    ))
-                ))
-            ))
+                    Type::arrow(int!(), Type::arrow(float!(), string!()))
+                )
+            )
         );
     }
 }

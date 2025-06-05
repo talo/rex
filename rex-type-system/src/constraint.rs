@@ -1,63 +1,69 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::{self, Display, Formatter},
     sync::Arc,
 };
 
-use rex_ast::{expr::Expr, id::Id};
+use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
 
 use crate::{
     error::TypeError,
-    types::{ADTVariant, Type, TypeEnv, TypeScheme, ADT},
+    types::{ADTVariant, AppliedType, Type, TypeCon, TypeEnv, TypeScheme, TypeVar, ADT},
     unify::{self, Subst},
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct ConstraintSystem {
-    pub local_constraints: Vec<Constraint>,
-    pub global_constraints: Vec<Constraint>,
+    pub constraints: Vec<Constraint>,
+    pub subst: Subst,
+    pub errors: BTreeSet<TypeError>,
 }
 
 impl ConstraintSystem {
-    pub fn with_global_constraints(global_constraints: Vec<Constraint>) -> Self {
+    pub fn new() -> Self {
         Self {
-            local_constraints: vec![],
-            global_constraints,
+            constraints: Vec::new(),
+            subst: Subst::default(),
+            errors: BTreeSet::new(),
         }
     }
 
-    pub fn add_global_constraint(&mut self, constraint: Constraint) {
-        if !self.has_constraint_globally(&constraint) {
-            self.global_constraints.push(constraint);
-        }
+    pub fn add_eq(&mut self, span: Span, t1: Arc<Type>, t2: Arc<Type>) {
+        self.add_constraint(Constraint::Eq(span, t1, t2));
     }
 
-    pub fn add_local_constraint(&mut self, constraint: Constraint) {
-        if !self.has_constraint_globally(&constraint) && !self.has_constraint_locally(&constraint) {
-            self.local_constraints.push(constraint);
+    pub fn add_one_of(&mut self, span: Span, var: TypeVar, ts: BTreeSet<Arc<Type>>) {
+        self.add_constraint(Constraint::OneOf(span, var, ts));
+    }
+
+    pub fn add_constraint(&mut self, constraint: Constraint) {
+        if !self.has_constraint(&constraint) {
+            self.constraints.push(constraint);
         }
     }
 
     pub fn extend(&mut self, other: ConstraintSystem) {
-        for constraint in other.global_constraints {
-            self.add_global_constraint(constraint);
-        }
-        for constraint in other.local_constraints {
-            self.add_local_constraint(constraint);
+        for constraint in other.constraints {
+            self.add_constraint(constraint);
         }
     }
 
-    pub fn apply_subst(&mut self, subst: &Subst) {
-        Self::apply_subst_to_constraints(subst, self.constraints_mut());
-    }
-
-    pub fn has_constraint_globally(&self, constraint: &Constraint) -> bool {
-        Self::constraints_has_constraint(constraint, self.global_constraints.iter())
-    }
-
-    pub fn has_constraint_locally(&self, constraint: &Constraint) -> bool {
-        Self::constraints_has_constraint(constraint, self.local_constraints.iter())
+    pub fn apply_subst(&mut self, type_subst: &Subst, var_subst: &HashMap<TypeVar, TypeVar>) {
+        self.constraints
+            .iter_mut()
+            .for_each(|constraint| match constraint {
+                Constraint::Eq(_, t1, t2) => {
+                    *t1 = t1.apply(type_subst);
+                    *t2 = t2.apply(type_subst);
+                }
+                Constraint::OneOf(_, v, ts) => {
+                    if let Some(new_v) = var_subst.get(v) {
+                        *v = *new_v;
+                    }
+                    *ts = ts.iter().map(|t| t.apply(type_subst)).collect();
+                }
+            });
     }
 
     pub fn has_constraint(&self, constraint: &Constraint) -> bool {
@@ -65,19 +71,15 @@ impl ConstraintSystem {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.local_constraints.is_empty() && self.global_constraints.is_empty()
+        self.constraints.is_empty()
     }
 
     pub fn constraints(&self) -> impl Iterator<Item = &Constraint> {
-        self.local_constraints
-            .iter()
-            .chain(self.global_constraints.iter())
+        self.constraints.iter()
     }
 
     pub fn constraints_mut(&mut self) -> impl Iterator<Item = &mut Constraint> {
-        self.local_constraints
-            .iter_mut()
-            .chain(self.global_constraints.iter_mut())
+        self.constraints.iter_mut()
     }
 
     fn constraints_has_constraint<'a>(
@@ -101,39 +103,18 @@ impl ConstraintSystem {
         }
         false
     }
-
-    fn apply_subst_to_constraints<'a>(
-        subst: &Subst,
-        constraints: impl Iterator<Item = &'a mut Constraint>,
-    ) {
-        constraints.for_each(|constraint| match constraint {
-            Constraint::Eq(_, t1, t2) => {
-                *t1 = unify::apply_subst(t1, subst);
-                *t2 = unify::apply_subst(t2, subst);
-            }
-            Constraint::OneOf(_, t, ts) => {
-                *t = unify::apply_subst(t, subst);
-                *ts = ts.iter().map(|t| unify::apply_subst(t, subst)).collect();
-            }
-        });
-    }
 }
 
 impl Display for ConstraintSystem {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "local = [{}], global = [{}]",
-            self.local_constraints
+            "{}",
+            self.constraints
                 .iter()
                 .map(|c| c.to_string())
                 .collect::<Vec<_>>()
                 .join(", \n"),
-            self.global_constraints
-                .iter()
-                .map(|c| c.to_string())
-                .collect::<Vec<_>>()
-                .join(", \n")
         )
     }
 }
@@ -143,7 +124,7 @@ pub enum Constraint {
     Eq(Span, Arc<Type>, Arc<Type>),
     // NOTE(loong): this constraint is mostly used to define overloaded
     // functions.
-    OneOf(Span, Arc<Type>, BTreeSet<Arc<Type>>),
+    OneOf(Span, TypeVar, BTreeSet<Arc<Type>>),
 }
 
 impl Display for Constraint {
@@ -171,15 +152,16 @@ pub fn generate_constraints(
     expr: &Expr,
     env: &TypeEnv,
     constraint_system: &mut ConstraintSystem,
-    errors: &mut BTreeSet<TypeError>,
 ) -> Arc<Type> {
     match expr {
         Expr::Var(var) => {
             let possible_schemes = match env.get(&var.name) {
                 Some(ps) => ps,
                 None => {
-                    errors.insert(TypeError::UnboundVariable(*expr.span(), var.name.clone()));
-                    return Arc::new(Type::Var(Id::new()));
+                    constraint_system
+                        .errors
+                        .insert(TypeError::UnboundVariable(*expr.span(), var.name.clone()));
+                    return Arc::new(Type::Var(TypeVar::new()));
                 }
             };
 
@@ -192,17 +174,12 @@ pub fn generate_constraints(
                 possible_types.into_iter().next().unwrap()
             } else {
                 // Create fresh type variable for this use
-                let fresh_id = Id::new();
-                let fresh_var = Arc::new(Type::Var(fresh_id));
+                let fresh_var = TypeVar::new();
 
                 // Add OneOf constraint with same possibilities
-                constraint_system.add_local_constraint(Constraint::OneOf(
-                    *expr.span(),
-                    fresh_var.clone(),
-                    possible_types.clone(),
-                ));
+                constraint_system.add_one_of(*expr.span(), fresh_var, possible_types.clone());
 
-                fresh_var
+                Arc::new(Type::Var(fresh_var))
             }
         }
 
@@ -211,7 +188,7 @@ pub fn generate_constraints(
 
             // Generate constraints for each expression in the tuple
             for (key, expr) in exprs {
-                let ty = generate_constraints(expr, env, constraint_system, errors);
+                let ty = generate_constraints(expr, env, constraint_system);
                 kvs.insert(key.clone(), ty);
             }
 
@@ -239,7 +216,7 @@ pub fn generate_constraints(
 
             // Generate constraints for each expression in the tuple
             for expr in exprs {
-                let ty = generate_constraints(expr, env, constraint_system, errors);
+                let ty = generate_constraints(expr, env, constraint_system);
                 types.push(ty);
             }
 
@@ -249,44 +226,40 @@ pub fn generate_constraints(
         Expr::List(span, exprs) => {
             // If list is empty, create a fresh type variable for element type
             if exprs.is_empty() {
-                let elem_ty = Type::Var(Id::new());
-                return Arc::new(Type::List(Arc::new(elem_ty)));
+                let elem_ty = Arc::new(Type::Var(TypeVar::new()));
+                return Type::list(elem_ty);
             }
 
             // Generate constraints for all expressions
             let mut types = Vec::new();
             for expr in exprs {
-                let ty = generate_constraints(expr, env, constraint_system, errors);
+                let ty = generate_constraints(expr, env, constraint_system);
                 types.push(ty);
             }
 
             // Add constraints that all elements must have the same type
             for ty in &types[1..] {
-                constraint_system.add_local_constraint(Constraint::Eq(
-                    *span,
-                    types[0].clone(),
-                    ty.clone(),
-                ));
+                constraint_system.add_eq(*span, types[0].clone(), ty.clone());
             }
 
-            Arc::new(Type::List(types[0].clone()))
+            Type::list(types[0].clone())
         }
 
         Expr::App(span, f, x) => {
-            let f_type = generate_constraints(f, env, constraint_system, errors);
-            let x_type = generate_constraints(x, env, constraint_system, errors);
+            let f_type = generate_constraints(f, env, constraint_system);
+            let x_type = generate_constraints(x, env, constraint_system);
 
-            let result_type = Arc::new(Type::Var(Id::new()));
+            let result_type = Arc::new(Type::Var(TypeVar::new()));
 
-            let expected_f_type = Arc::new(Type::Arrow(x_type.clone(), result_type.clone()));
+            let expected_f_type = Type::arrow(x_type.clone(), result_type.clone());
 
-            constraint_system.add_local_constraint(Constraint::Eq(*span, f_type, expected_f_type));
+            constraint_system.add_eq(*span, f_type, expected_f_type);
 
             result_type
         }
 
         Expr::Lam(_span, _scope, param, body) => {
-            let param_type = Arc::new(Type::Var(Id::new()));
+            let param_type = Arc::new(Type::Var(TypeVar::new()));
 
             let mut new_env = env.clone();
             new_env.insert(
@@ -294,9 +267,9 @@ pub fn generate_constraints(
                 HashSet::from([TypeScheme::from(param_type.clone())]),
             );
 
-            let body_type = generate_constraints(body, &new_env, constraint_system, errors);
+            let body_type = generate_constraints(body, &new_env, constraint_system);
 
-            Arc::new(Type::Arrow(param_type, body_type))
+            Type::arrow(param_type, body_type)
         }
 
         Expr::Let(_span, var, def, body) => {
@@ -315,29 +288,27 @@ pub fn generate_constraints(
             //     global_constraints: constraint_system.global_constraints.clone(),
             // };
             // ```
-            let mut def_constraint_system = constraint_system.clone();
-
-            let def_type = generate_constraints(def, env, &mut def_constraint_system, errors);
+            let old_len = constraint_system.constraints.len();
+            let def_type = generate_constraints(def, env, constraint_system);
 
             // Solve definition constraints to get its type
-            let def_subst = unify::unify_constraints(&def_constraint_system, errors);
-            let solved_def_type = unify::apply_subst(&def_type, &def_subst);
-            constraint_system.extend(def_constraint_system.clone());
+            unify::unify_constraints(constraint_system);
+            let solved_def_type = def_type.apply(&constraint_system.subst);
 
             // Generalize the type
-            let gen_deps = def_constraint_system
-                .constraints()
-                .filter_map(|c| match c {
-                    Constraint::OneOf(_, x, _) => match &**x {
-                        Type::Var(id) => Some(*id),
-                        _ => None,
-                    },
-                    Constraint::Eq(_, x, _) => match &**x {
-                        Type::Var(id) => Some(*id),
-                        _ => None,
-                    },
-                })
-                .collect();
+            let mut gen_deps: BTreeSet<TypeVar> = BTreeSet::new();
+            for i in old_len..constraint_system.constraints.len() {
+                match &constraint_system.constraints[i] {
+                    Constraint::OneOf(_, v, _) => {
+                        gen_deps.insert(*v);
+                    }
+                    Constraint::Eq(_, x, _) => {
+                        if let Type::Var(id) = &**x {
+                            gen_deps.insert(*id);
+                        }
+                    }
+                }
+            }
 
             // TODO(loong): is this safe to do? We only generalize the
             // let-binding if it is a function. It is possible that the binding
@@ -362,8 +333,8 @@ pub fn generate_constraints(
             //
             // New version:
             // ```rex
-            let type_scheme = match &*solved_def_type {
-                Type::Arrow(..) => generalize(env, &solved_def_type, gen_deps),
+            let type_scheme = match solved_def_type.as_applied_type() {
+                Some(AppliedType::Arrow(_, _)) => generalize(env, &solved_def_type, gen_deps),
                 _ => TypeScheme::from(solved_def_type),
             };
             // ```
@@ -373,38 +344,30 @@ pub fn generate_constraints(
             new_env.insert(var.name.clone(), HashSet::from([type_scheme]));
 
             // Generate constraints for the body with the new environment
-            generate_constraints(body, &new_env, constraint_system, errors)
+            generate_constraints(body, &new_env, constraint_system)
         }
 
         Expr::Ite(span, cond, then_branch, else_branch) => {
             // Generate constraints for all parts
-            let cond_type = generate_constraints(cond, env, constraint_system, errors);
-            let then_type = generate_constraints(then_branch, env, constraint_system, errors);
-            let else_type = generate_constraints(else_branch, env, constraint_system, errors);
+            let cond_type = generate_constraints(cond, env, constraint_system);
+            let then_type = generate_constraints(then_branch, env, constraint_system);
+            let else_type = generate_constraints(else_branch, env, constraint_system);
 
             // Condition must be boolean
-            constraint_system.add_local_constraint(Constraint::Eq(
-                *cond.span(),
-                cond_type,
-                Arc::new(Type::Bool),
-            ));
+            constraint_system.add_eq(*cond.span(), cond_type, Arc::new(Type::Con(TypeCon::Bool)));
             // Then and else branches must have the same type
-            constraint_system.add_local_constraint(Constraint::Eq(
-                *span,
-                then_type.clone(),
-                else_type,
-            ));
+            constraint_system.add_eq(*span, then_type.clone(), else_type);
 
             then_type
         }
 
-        Expr::Bool(_span, _x) => Arc::new(Type::Bool),
-        Expr::Uint(_span, _x) => Arc::new(Type::Uint),
-        Expr::Int(_span, _x) => Arc::new(Type::Int),
-        Expr::Float(_span, _x) => Arc::new(Type::Float),
-        Expr::String(_span, _x) => Arc::new(Type::String),
-        Expr::Uuid(_span, _x) => Arc::new(Type::Uuid),
-        Expr::DateTime(_span, _x) => Arc::new(Type::DateTime),
+        Expr::Bool(_span, _x) => Arc::new(Type::Con(TypeCon::Bool)),
+        Expr::Uint(_span, _x) => Arc::new(Type::Con(TypeCon::Uint)),
+        Expr::Int(_span, _x) => Arc::new(Type::Con(TypeCon::Int)),
+        Expr::Float(_span, _x) => Arc::new(Type::Con(TypeCon::Float)),
+        Expr::String(_span, _x) => Arc::new(Type::Con(TypeCon::String)),
+        Expr::Uuid(_span, _x) => Arc::new(Type::Con(TypeCon::Uuid)),
+        Expr::DateTime(_span, _x) => Arc::new(Type::Con(TypeCon::DateTime)),
 
         Expr::Curry(..) => {
             todo!("generate_constraints for Expr::Curry just like we do for Expr::App")
@@ -412,85 +375,21 @@ pub fn generate_constraints(
     }
 }
 
-// For generalization, we need to find free type variables in a type
-fn free_vars_type_scheme(scheme: &TypeScheme) -> HashSet<Id> {
-    let mut set = free_vars(&scheme.ty);
-    for id in scheme.ids.iter() {
-        set.remove(id);
-    }
-    set
-}
-
-fn free_vars(ty: &Type) -> HashSet<Id> {
-    match ty {
-        Type::UnresolvedVar(_) => todo!("free_vars should return a result"),
-        Type::Var(id) => {
-            let mut set = HashSet::new();
-            set.insert(*id);
-            set
-        }
-        Type::ADT(adt) => {
-            let mut set = HashSet::new();
-            for variant in &adt.variants {
-                if let Some(t) = &variant.t {
-                    set.extend(free_vars(t));
-                }
-            }
-            set
-        }
-        Type::Arrow(a, b) => {
-            let mut set = free_vars(a);
-            set.extend(free_vars(b));
-            set
-        }
-        Type::Result(t, e) => {
-            let mut set = free_vars(t);
-            set.extend(free_vars(e));
-            set
-        }
-        Type::Option(t) => free_vars(t),
-        Type::Promise(t) => free_vars(t),
-        Type::List(t) => free_vars(t),
-        Type::Dict(kts) => {
-            let mut vars = HashSet::new();
-            for t in kts.values() {
-                vars.extend(free_vars(t));
-            }
-            vars
-        }
-        Type::Tuple(ts) => {
-            let mut vars = HashSet::new();
-            for t in ts {
-                vars.extend(free_vars(t));
-            }
-            vars
-        }
-
-        Type::Bool
-        | Type::Uint
-        | Type::Int
-        | Type::Float
-        | Type::String
-        | Type::Uuid
-        | Type::DateTime => HashSet::new(),
-    }
-}
-
 // For generalization, we also need to know which variables are free in the environment
-fn env_free_vars(env: &TypeEnv) -> HashSet<Id> {
+fn env_free_vars(env: &TypeEnv) -> HashSet<TypeVar> {
     let mut vars = HashSet::new();
     for entry in env.values() {
         for scheme in entry {
-            vars.extend(free_vars_type_scheme(scheme))
+            vars.extend(scheme.free_vars())
         }
     }
     vars
 }
 
 // Generalize a type by quantifying over any type variables that aren't free in the environment
-fn generalize(env: &TypeEnv, ty: &Arc<Type>, deps: BTreeSet<Id>) -> TypeScheme {
+fn generalize(env: &TypeEnv, ty: &Arc<Type>, deps: BTreeSet<TypeVar>) -> TypeScheme {
     let env_vars = env_free_vars(env);
-    let ty_vars = free_vars(ty);
+    let ty_vars = ty.free_vars();
 
     // Find variables that are free in ty but not in env
     let mut to_quantify: Vec<_> = ty_vars.difference(&env_vars).cloned().collect();
@@ -498,7 +397,7 @@ fn generalize(env: &TypeEnv, ty: &Arc<Type>, deps: BTreeSet<Id>) -> TypeScheme {
     to_quantify.reverse(); // TODO: remove this
 
     TypeScheme {
-        ids: to_quantify,
+        vars: to_quantify,
         ty: ty.clone(),
         deps: deps.into_iter().collect(),
     }
@@ -510,57 +409,53 @@ fn instantiate(
     span: &Span,
     constraint_system: &mut ConstraintSystem,
 ) -> Arc<Type> {
-    if scheme.ids.is_empty() {
+    if scheme.vars.is_empty() {
         return scheme.ty.clone();
     }
 
-    let mut subst = Subst::new();
+    let mut type_subst = Subst::default();
+    let mut var_subst: HashMap<TypeVar, TypeVar> = HashMap::new();
 
     // Create fresh type variables
-    for id in scheme.ids.iter() {
-        let fresh_id = Id::new();
-        subst.insert(*id, Arc::new(Type::Var(fresh_id)));
+    for var in scheme.vars.iter() {
+        let fresh_var = TypeVar::new_with_kind(var.kind());
+        type_subst = type_subst.insert(*var, Arc::new(Type::Var(fresh_var)));
+        var_subst.insert(*var, fresh_var);
     }
 
     // Create fresh vars for dependencies
-    let mut new_constraint_sytem = ConstraintSystem::default();
-    for dep_id in scheme.deps.iter() {
-        let fresh_dep_id = Id::new();
+    let mut new_constraint_sytem = ConstraintSystem::new();
+    for dep_var in scheme.deps.iter() {
+        let fresh_dep_var = TypeVar::new_with_kind(dep_var.kind());
         // Add equality constraint between old and new var
-        subst.insert(*dep_id, Arc::new(Type::Var(fresh_dep_id)));
+        type_subst = type_subst.insert(*dep_var, Arc::new(Type::Var(fresh_dep_var)));
 
         for constraint in constraint_system.constraints() {
             match constraint {
                 Constraint::Eq(_, x1, t2) => {
                     if let Type::Var(t1) = &**x1 {
-                        if t1 == dep_id {
-                            new_constraint_sytem.add_local_constraint(Constraint::Eq(
+                        if t1 == dep_var {
+                            new_constraint_sytem.add_eq(
                                 *span,
-                                Arc::new(Type::Var(fresh_dep_id)),
+                                Arc::new(Type::Var(fresh_dep_var)),
                                 t2.clone(),
-                            ));
+                            );
                         }
                     }
                 }
-                Constraint::OneOf(_, x1, ts) => {
-                    if let Type::Var(t1) = &**x1 {
-                        if t1 == dep_id {
-                            new_constraint_sytem.add_local_constraint(Constraint::OneOf(
-                                *span,
-                                Arc::new(Type::Var(fresh_dep_id)),
-                                ts.clone(),
-                            ));
-                        }
+                Constraint::OneOf(_, t1, ts) => {
+                    if t1 == dep_var {
+                        new_constraint_sytem.add_one_of(*span, fresh_dep_var, ts.clone());
                     }
                 }
             }
         }
     }
 
-    new_constraint_sytem.apply_subst(&subst);
+    new_constraint_sytem.apply_subst(&type_subst, &var_subst);
     constraint_system.extend(new_constraint_sytem);
 
-    inst_helper(&scheme.ty, &mut subst)
+    inst_helper(&scheme.ty, &mut type_subst)
 }
 
 fn inst_helper(ty: &Arc<Type>, subst: &mut Subst) -> Arc<Type> {
@@ -585,11 +480,7 @@ fn inst_helper(ty: &Arc<Type>, subst: &mut Subst) -> Arc<Type> {
                 })
                 .collect(),
         })),
-        Type::Arrow(a, b) => Arc::new(Type::Arrow(inst_helper(a, subst), inst_helper(b, subst))),
-        Type::Result(t, e) => Arc::new(Type::Result(inst_helper(t, subst), inst_helper(e, subst))),
-        Type::Option(t) => Arc::new(Type::Option(inst_helper(t, subst))),
-        Type::Promise(t) => Arc::new(Type::Promise(inst_helper(t, subst))),
-        Type::List(t) => Arc::new(Type::List(inst_helper(t, subst))),
+        Type::App(a, b) => Arc::new(Type::App(inst_helper(a, subst), inst_helper(b, subst))),
         Type::Dict(kts) => Arc::new(Type::Dict(
             kts.iter()
                 .map(|(k, t)| (k.clone(), inst_helper(t, subst)))
@@ -598,14 +489,7 @@ fn inst_helper(ty: &Arc<Type>, subst: &mut Subst) -> Arc<Type> {
         Type::Tuple(ts) => Arc::new(Type::Tuple(
             ts.iter().map(|t| inst_helper(t, subst)).collect(),
         )),
-
-        Type::Bool
-        | Type::Uint
-        | Type::Int
-        | Type::Float
-        | Type::String
-        | Type::Uuid
-        | Type::DateTime => ty.clone(),
+        Type::Con(_) => ty.clone(),
     }
 }
 
@@ -618,9 +502,11 @@ mod tests {
     use rex_lexer::span::Span;
 
     use crate::{
+        arrow, bool, int, list,
         trace::{sprint_subst, sprint_type_env},
+        tuple,
         types::TypeEnv,
-        unify,
+        unify, var,
     };
 
     use super::*;
@@ -631,87 +517,68 @@ mod tests {
 
     #[test]
     fn test_free_vars() {
-        let alpha = Id::new();
-        let beta = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
 
         // α -> β
-        let ty = Type::Arrow(Arc::new(Type::Var(alpha)), Arc::new(Type::Var(beta)));
-        let vars = free_vars(&ty);
+        let ty = arrow!(var!(alpha) => var!(beta));
+        let vars = ty.free_vars();
         assert_eq!(vars.len(), 2);
         assert!(vars.contains(&alpha));
         assert!(vars.contains(&beta));
 
         // ∀α. α -> β
-        let scheme = TypeScheme {
-            ids: vec![alpha],
-            ty: Arc::new(Type::Arrow(
-                Arc::new(Type::Var(alpha)),
-                Arc::new(Type::Var(beta)),
-            )),
-            deps: BTreeSet::new(),
-        };
-        let vars = free_vars_type_scheme(&scheme);
+        let scheme = TypeScheme::new(vec![alpha], arrow!(var!(alpha) => var!(beta)));
+        let vars = scheme.free_vars();
         assert_eq!(vars.len(), 1);
         assert!(vars.contains(&beta));
     }
 
     #[test]
     fn test_generalize() {
-        let alpha = Id::new();
-        let beta = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
 
         let mut env = TypeEnv::new();
 
         // Environment with β free
-        insert_type(&mut env, "y", Arc::new(Type::Var(beta)));
+        insert_type(&mut env, "y", var!(beta));
 
         // Type to generalize: α -> β
-        let ty = Arc::new(Type::Arrow(
-            Arc::new(Type::Var(alpha)),
-            Arc::new(Type::Var(beta)),
-        ));
+        let ty = arrow!(var!(alpha) => var!(beta));
 
         // Should become ∀α. α -> β
         // (β isn't quantified because it appears in env)
         let scheme = generalize(&env, &ty, BTreeSet::new());
-        assert_eq!(*scheme.ids, vec![alpha]);
-        match &*scheme.ty {
-            Type::Arrow(arg, ret) => {
-                assert_eq!(**arg, Type::Var(alpha));
-                assert_eq!(**ret, Type::Var(beta));
-            }
-            _ => panic!("Expected arrow type"),
+        assert_eq!(*scheme.vars, vec![alpha]);
+        if let Some(AppliedType::Arrow(arg, ret)) = scheme.ty.as_applied_type() {
+            assert_eq!(*arg, var!(alpha));
+            assert_eq!(*ret, var!(beta));
+        } else {
+            panic!("Expected arrow type");
         }
     }
 
     #[test]
     fn test_instantiate() {
-        let alpha = Id::new();
-        let beta = Id::new();
+        let alpha = TypeVar::new();
+        let beta = TypeVar::new();
 
         // ∀α. α -> β
-        let scheme = TypeScheme {
-            ids: vec![alpha],
-            ty: Arc::new(Type::Arrow(
-                Arc::new(Type::Var(alpha)),
-                Arc::new(Type::Var(beta)),
-            )),
-            deps: BTreeSet::new(),
-        };
+        let scheme = TypeScheme::new(vec![alpha], arrow!(var!(alpha) => var!(beta)));
 
-        let inst_ty = instantiate(&scheme, &Span::default(), &mut ConstraintSystem::default());
+        let inst_ty = instantiate(&scheme, &Span::default(), &mut ConstraintSystem::new());
 
         // Should become γ -> β where γ is fresh
-        match &*inst_ty {
-            Type::Arrow(arg, ret) => {
-                // Arg should be a fresh variable
-                assert_ne!(*arg, Arc::new(Type::Var(alpha)));
-                assert_ne!(*arg, Arc::new(Type::Var(beta)));
+        if let Some(AppliedType::Arrow(arg, ret)) = inst_ty.as_applied_type() {
+            // Arg should be a fresh variable
+            assert_ne!(*arg, var!(alpha));
+            assert_ne!(*arg, var!(beta));
 
-                // Result should be original free variable
-                assert_eq!(*ret, Arc::new(Type::Var(beta)));
-            }
-            _ => panic!("Expected arrow type"),
+            // Result should be original free variable
+            assert_eq!(*ret, var!(beta));
+        } else {
+            panic!("Expected arrow type");
         }
     }
 
@@ -723,23 +590,22 @@ mod tests {
         let expr = Expr::List(
             Span::default(),
             vec![
-                Expr::Var(Var::new("one")),
-                Expr::Var(Var::new("two")),
-                Expr::Var(Var::new("three")),
+                Arc::new(Expr::Var(Var::new("one"))),
+                Arc::new(Expr::Var(Var::new("two"))),
+                Arc::new(Expr::Var(Var::new("three"))),
             ],
         );
 
-        insert_type(&mut env, "one", Arc::new(Type::Int));
-        insert_type(&mut env, "two", Arc::new(Type::Int));
-        insert_type(&mut env, "three", Arc::new(Type::Int));
+        insert_type(&mut env, "one", int!());
+        insert_type(&mut env, "two", int!());
+        insert_type(&mut env, "three", int!());
 
-        let mut constraint_system = ConstraintSystem::default();
-        let mut errors = BTreeSet::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        let ty = generate_constraints(&expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // Solve constraints
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
         for constraint in constraint_system.constraints() {
             match constraint {
@@ -751,24 +617,26 @@ mod tests {
         }
 
         // Final type should be [Int]
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, Arc::new(Type::List(Arc::new(Type::Int))));
+        let final_type = ty.apply(&subst);
+        assert_eq!(final_type, list!(int!()));
 
         // Test that lists of mixed types fail
         let expr = Expr::List(
             Span::default(),
-            vec![Expr::Var(Var::new("one")), Expr::Var(Var::new("true"))],
+            vec![
+                Arc::new(Expr::Var(Var::new("one"))),
+                Arc::new(Expr::Var(Var::new("true"))),
+            ],
         );
 
-        insert_type(&mut env, "true", Arc::new(Type::Bool));
+        insert_type(&mut env, "true", bool!());
 
-        let mut constraint_system = ConstraintSystem::default();
-        let mut errors = BTreeSet::new();
-        let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        let _ty = generate_constraints(&expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // This should fail unification
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
         let result = constraint_system
             .constraints()
@@ -782,11 +650,17 @@ mod tests {
 
         // Test empty list
         let expr = Expr::List(Span::default(), vec![]);
-        let mut constraint_system = ConstraintSystem::default();
-        let mut errors = BTreeSet::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
-        assert!(matches!(&*ty, Type::List(_)));
+        let mut constraint_system = ConstraintSystem::new();
+        let ty = generate_constraints(&expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
+        match &*ty {
+            Type::App(a, _) => {
+                assert!(matches!(&**a, Type::Con(TypeCon::List)));
+            }
+            _ => {
+                panic!("Expected list");
+            }
+        }
         assert!(constraint_system.is_empty());
     }
 
@@ -800,53 +674,48 @@ mod tests {
             Span::default(),
             Var::new("f"),
             // \xs -> head xs
-            Box::new(Expr::Lam(
+            Arc::new(Expr::Lam(
                 Span::default(),
                 Scope::new_sync(),
                 Var::new("xs"),
-                Box::new(Expr::App(
+                Arc::new(Expr::App(
                     Span::default(),
-                    Box::new(Expr::Var(Var::new("head"))),
-                    Box::new(Expr::Var(Var::new("xs"))),
+                    Arc::new(Expr::Var(Var::new("head"))),
+                    Arc::new(Expr::Var(Var::new("xs"))),
                 )),
             )),
             // f [1, true]
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 Span::default(),
-                Box::new(Expr::Var(Var::new("f"))),
-                Box::new(Expr::List(
+                Arc::new(Expr::Var(Var::new("f"))),
+                Arc::new(Expr::List(
                     Span::default(),
                     vec![
-                        Expr::Var(Var::new("int_val")),
-                        Expr::Var(Var::new("bool_val")),
+                        Arc::new(Expr::Var(Var::new("int_val"))),
+                        Arc::new(Expr::Var(Var::new("bool_val"))),
                     ],
                 )),
             )),
         );
 
         // Set up environment
-        let elem_type = Id::new();
+        let elem_var = TypeVar::new();
         env.insert(
             "head".to_string(),
-            HashSet::from([TypeScheme {
-                ids: vec![elem_type],
-                ty: Arc::new(Type::Arrow(
-                    Arc::new(Type::List(Arc::new(Type::Var(elem_type)))),
-                    Arc::new(Type::Var(elem_type)),
-                )),
-                deps: BTreeSet::new(),
-            }]),
+            HashSet::from([TypeScheme::new(
+                vec![elem_var],
+                arrow!(list!(var!(elem_var)) => var!(elem_var)),
+            )]),
         );
-        insert_type(&mut env, "int_val", Arc::new(Type::Int));
-        insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
+        insert_type(&mut env, "int_val", int!());
+        insert_type(&mut env, "bool_val", bool!());
 
-        let mut constraint_system = ConstraintSystem::default();
-        let mut errors = BTreeSet::new();
-        let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        let _ty = generate_constraints(&expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // This should fail unification because the list elements don't match
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
         let result = constraint_system
             .constraints()
@@ -864,60 +733,43 @@ mod tests {
         let mut env = TypeEnv::new();
 
         // Set up environment with polymorphic head : ∀α. [α] -> α
-        let elem_id = Id::new();
-        let head_scheme = TypeScheme {
-            ids: vec![elem_id],
-            ty: Arc::new(Type::Arrow(
-                Arc::new(Type::List(Arc::new(Type::Var(elem_id)))),
-                Arc::new(Type::Var(elem_id)),
-            )),
-            deps: BTreeSet::new(),
-        };
+        let elem_var = TypeVar::new();
+        let head_scheme = TypeScheme::new(
+            vec![elem_var],
+            arrow!(list!(var!(elem_var)) => var!(elem_var)),
+        );
         env.insert("head".to_string(), HashSet::from([head_scheme]));
 
         // Add example lists to environment
-        insert_type(
-            &mut env,
-            "int_list",
-            Arc::new(Type::List(Arc::new(Type::Int))),
-        );
-        insert_type(
-            &mut env,
-            "bool_list",
-            Arc::new(Type::List(Arc::new(Type::Bool))),
-        );
+        insert_type(&mut env, "int_list", list!(int!()));
+        insert_type(&mut env, "bool_list", list!(bool!()));
 
         let expr = Expr::Tuple(
             Span::default(),
             vec![
-                Expr::App(
+                Arc::new(Expr::App(
                     Span::default(),
-                    Box::new(Expr::Var(Var::new("head"))),
-                    Box::new(Expr::Var(Var::new("int_list"))),
-                ),
-                Expr::App(
+                    Arc::new(Expr::Var(Var::new("head"))),
+                    Arc::new(Expr::Var(Var::new("int_list"))),
+                )),
+                Arc::new(Expr::App(
                     Span::default(),
-                    Box::new(Expr::Var(Var::new("head"))),
-                    Box::new(Expr::Var(Var::new("bool_list"))),
-                ),
+                    Arc::new(Expr::Var(Var::new("head"))),
+                    Arc::new(Expr::Var(Var::new("bool_list"))),
+                )),
             ],
         );
 
-        let mut constraint_system = ConstraintSystem::default();
-        let mut errors = BTreeSet::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        let ty = generate_constraints(&expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        unify::unify_constraints(&mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
-        let final_type = unify::apply_subst(&ty, &subst);
-
-        assert_eq!(
-            final_type,
-            Arc::new(Type::Tuple(vec![Arc::new(Type::Int), Arc::new(Type::Bool)]))
-        );
+        let final_type = ty.apply(&constraint_system.subst);
+        assert_eq!(final_type, tuple!(int!(), bool!()));
     }
 
     #[test]
@@ -928,33 +780,32 @@ mod tests {
         let expr = Expr::Let(
             Span::default(),
             Var::new("id"),
-            Box::new(Expr::Lam(
+            Arc::new(Expr::Lam(
                 Span::default(),
                 Scope::new_sync(),
                 Var::new("x"),
-                Box::new(Expr::Var(Var::new("x"))),
+                Arc::new(Expr::Var(Var::new("x"))),
             )),
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 Span::default(),
-                Box::new(Expr::Var(Var::new("id"))),
-                Box::new(Expr::Var(Var::new("one"))),
+                Arc::new(Expr::Var(Var::new("id"))),
+                Arc::new(Expr::Var(Var::new("one"))),
             )),
         );
 
-        insert_type(&mut env, "one", Arc::new(Type::Int));
+        insert_type(&mut env, "one", int!());
 
-        let mut constraint_system = ConstraintSystem::default();
-        let mut errors = BTreeSet::new();
-        let result_type = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        let result_type = generate_constraints(&expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        unify::unify_constraints(&mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // Result should be Int
-        let final_result = unify::apply_subst(&result_type, &subst);
-        assert_eq!(final_result, Arc::new(Type::Int));
+        let final_result = result_type.apply(&constraint_system.subst);
+        assert_eq!(final_result, int!());
     }
 
     #[test]
@@ -967,49 +818,45 @@ mod tests {
             Span::default(),
             Var::new("id"),
             // \x -> x
-            Box::new(Expr::Lam(
+            Arc::new(Expr::Lam(
                 Span::default(),
                 Scope::new_sync(),
                 Var::new("x"),
-                Box::new(Expr::Var(Var::new("x"))),
+                Arc::new(Expr::Var(Var::new("x"))),
             )),
             // Create tuple of (id 1, id true)
-            Box::new(Expr::Tuple(
+            Arc::new(Expr::Tuple(
                 Span::default(),
                 vec![
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::Var(Var::new("id"))),
-                        Box::new(Expr::Var(Var::new("int_val"))),
-                    ),
-                    Expr::App(
+                        Arc::new(Expr::Var(Var::new("id"))),
+                        Arc::new(Expr::Var(Var::new("int_val"))),
+                    )),
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::Var(Var::new("id"))),
-                        Box::new(Expr::Var(Var::new("bool_val"))),
-                    ),
+                        Arc::new(Expr::Var(Var::new("id"))),
+                        Arc::new(Expr::Var(Var::new("bool_val"))),
+                    )),
                 ],
             )),
         );
 
         // Set up environment
-        insert_type(&mut env, "int_val", Arc::new(Type::Int));
-        insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
+        insert_type(&mut env, "int_val", int!());
+        insert_type(&mut env, "bool_val", bool!());
 
-        let mut constraint_system = ConstraintSystem::default();
-        let mut errors = BTreeSet::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        let ty = generate_constraints(&expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        unify::unify_constraints(&mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // The final type should be (Int, Bool)
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(
-            final_type,
-            Arc::new(Type::Tuple(vec![Arc::new(Type::Int), Arc::new(Type::Bool)]))
-        );
+        let final_type = ty.apply(&constraint_system.subst);
+        assert_eq!(final_type, tuple!(int!(), bool!()));
     }
 
     #[test]
@@ -1019,29 +866,28 @@ mod tests {
         // Test expression: if true then 1 else 2
         let expr = Expr::Ite(
             Span::default(),
-            Box::new(Expr::Var(Var::new("true"))),
-            Box::new(Expr::Var(Var::new("one"))),
-            Box::new(Expr::Var(Var::new("two"))),
+            Arc::new(Expr::Var(Var::new("true"))),
+            Arc::new(Expr::Var(Var::new("one"))),
+            Arc::new(Expr::Var(Var::new("two"))),
         );
 
         // Set up environment
-        insert_type(&mut env, "true", Arc::new(Type::Bool));
-        insert_type(&mut env, "one", Arc::new(Type::Int));
-        insert_type(&mut env, "two", Arc::new(Type::Int));
+        insert_type(&mut env, "true", bool!());
+        insert_type(&mut env, "one", int!());
+        insert_type(&mut env, "two", int!());
 
         // Generate constraints
-        let mut constraint_system = ConstraintSystem::default();
-        let mut errors = BTreeSet::new();
-        let result_type = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        let result_type = generate_constraints(&expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        unify::unify_constraints(&mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // Result should be Int
-        let final_result = unify::apply_subst(&result_type, &subst);
-        assert_eq!(final_result, Arc::new(Type::Int));
+        let final_result = result_type.apply(&constraint_system.subst);
+        assert_eq!(final_result, int!());
     }
 
     #[test]
@@ -1056,99 +902,83 @@ mod tests {
         let expr = Expr::Let(
             Span::default(),
             Var::new("compose"),
-            Box::new(Expr::Lam(
+            Arc::new(Expr::Lam(
                 Span::default(),
                 Scope::new_sync(),
                 Var::new("f"),
-                Box::new(Expr::Lam(
+                Arc::new(Expr::Lam(
                     Span::default(),
                     Scope::new_sync(),
                     Var::new("g"),
-                    Box::new(Expr::Lam(
+                    Arc::new(Expr::Lam(
                         Span::default(),
                         Scope::new_sync(),
                         Var::new("x"),
-                        Box::new(Expr::App(
+                        Arc::new(Expr::App(
                             Span::default(),
-                            Box::new(Expr::Var(Var::new("f"))),
-                            Box::new(Expr::App(
+                            Arc::new(Expr::Var(Var::new("f"))),
+                            Arc::new(Expr::App(
                                 Span::default(),
-                                Box::new(Expr::Var(Var::new("g"))),
-                                Box::new(Expr::Var(Var::new("x"))),
+                                Arc::new(Expr::Var(Var::new("g"))),
+                                Arc::new(Expr::Var(Var::new("x"))),
                             )),
                         )),
                     )),
                 )),
             )),
-            Box::new(Expr::Tuple(
+            Arc::new(Expr::Tuple(
                 Span::default(),
                 vec![
                     // compose not not true
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::App(
+                        Arc::new(Expr::App(
                             Span::default(),
-                            Box::new(Expr::App(
+                            Arc::new(Expr::App(
                                 Span::default(),
-                                Box::new(Expr::Var(Var::new("compose"))),
-                                Box::new(Expr::Var(Var::new("not"))),
+                                Arc::new(Expr::Var(Var::new("compose"))),
+                                Arc::new(Expr::Var(Var::new("not"))),
                             )),
-                            Box::new(Expr::Var(Var::new("not"))),
+                            Arc::new(Expr::Var(Var::new("not"))),
                         )),
-                        Box::new(Expr::Var(Var::new("bool_val"))),
-                    ),
+                        Arc::new(Expr::Var(Var::new("bool_val"))),
+                    )),
                     // compose (+1) (+2) 3
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::App(
+                        Arc::new(Expr::App(
                             Span::default(),
-                            Box::new(Expr::App(
+                            Arc::new(Expr::App(
                                 Span::default(),
-                                Box::new(Expr::Var(Var::new("compose"))),
-                                Box::new(Expr::Var(Var::new("inc"))),
+                                Arc::new(Expr::Var(Var::new("compose"))),
+                                Arc::new(Expr::Var(Var::new("inc"))),
                             )),
-                            Box::new(Expr::Var(Var::new("inc2"))),
+                            Arc::new(Expr::Var(Var::new("inc2"))),
                         )),
-                        Box::new(Expr::Var(Var::new("int_val"))),
-                    ),
+                        Arc::new(Expr::Var(Var::new("int_val"))),
+                    )),
                 ],
             )),
         );
 
         // Set up environment
-        insert_type(
-            &mut env,
-            "not",
-            Arc::new(Type::Arrow(Arc::new(Type::Bool), Arc::new(Type::Bool))),
-        );
-        insert_type(
-            &mut env,
-            "inc",
-            Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-        );
-        insert_type(
-            &mut env,
-            "inc2",
-            Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-        );
-        insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
-        insert_type(&mut env, "int_val", Arc::new(Type::Int));
+        insert_type(&mut env, "not", arrow!(bool!() => bool!()));
+        insert_type(&mut env, "inc", arrow!(int!() => int!()));
+        insert_type(&mut env, "inc2", arrow!(int!() => int!()));
+        insert_type(&mut env, "bool_val", bool!());
+        insert_type(&mut env, "int_val", int!());
 
-        let mut constraint_system = ConstraintSystem::default();
-        let mut errors = BTreeSet::new();
-        let ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        let ty = generate_constraints(&expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        unify::unify_constraints(&mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         // The final type should be (Bool, Int)
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(
-            final_type,
-            Arc::new(Type::Tuple(vec![Arc::new(Type::Bool), Arc::new(Type::Int)]))
-        );
+        let final_type = ty.apply(&constraint_system.subst);
+        assert_eq!(final_type, tuple!(bool!(), int!()));
     }
 
     #[test]
@@ -1160,76 +990,63 @@ mod tests {
         let expr = Expr::Let(
             Span::default(),
             Var::new("id"),
-            Box::new(Expr::Lam(
+            Arc::new(Expr::Lam(
                 Span::default(),
                 Scope::new_sync(),
                 Var::new("x"),
-                Box::new(Expr::Var(Var::new("x"))),
+                Arc::new(Expr::Var(Var::new("x"))),
             )),
-            Box::new(Expr::Tuple(
+            Arc::new(Expr::Tuple(
                 Span::default(),
                 vec![
                     // id true - ok
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::Var(Var::new("id"))),
-                        Box::new(Expr::Var(Var::new("bool_val"))),
-                    ),
+                        Arc::new(Expr::Var(Var::new("id"))),
+                        Arc::new(Expr::Var(Var::new("bool_val"))),
+                    )),
                     // id 1 - ok
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::Var(Var::new("id"))),
-                        Box::new(Expr::Var(Var::new("int_val"))),
-                    ),
+                        Arc::new(Expr::Var(Var::new("id"))),
+                        Arc::new(Expr::Var(Var::new("int_val"))),
+                    )),
                     // id true + 1 - should fail!
-                    Expr::App(
+                    Arc::new(Expr::App(
                         Span::default(),
-                        Box::new(Expr::Var(Var::new("plus"))),
-                        Box::new(Expr::App(
+                        Arc::new(Expr::Var(Var::new("plus"))),
+                        Arc::new(Expr::App(
                             Span::default(),
-                            Box::new(Expr::Var(Var::new("id"))),
-                            Box::new(Expr::Var(Var::new("bool_val"))),
+                            Arc::new(Expr::Var(Var::new("id"))),
+                            Arc::new(Expr::Var(Var::new("bool_val"))),
                         )),
-                    ),
+                    )),
                 ],
             )),
         );
 
         // Set up environment
-        insert_type(&mut env, "bool_val", Arc::new(Type::Bool));
-        insert_type(&mut env, "int_val", Arc::new(Type::Int));
-        insert_type(
-            &mut env,
-            "plus",
-            Arc::new(Type::Arrow(
-                Arc::new(Type::Int),
-                Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-            )),
-        );
+        insert_type(&mut env, "bool_val", bool!());
+        insert_type(&mut env, "int_val", int!());
+        insert_type(&mut env, "plus", arrow!(int!() => int!() => int!()));
 
         // This should fail with a type error
-        let mut constraint_system = ConstraintSystem::default();
-        let mut errors = BTreeSet::new();
-        let result: Result<Arc<Type>, Vec<TypeError>> = Ok(generate_constraints(
-            &expr,
-            &env,
-            &mut constraint_system,
-            &mut errors,
-        ))
-        .and_then(|ty| {
-            assert_eq!(errors.len(), 0);
-            let mut subst = Subst::new();
-            let mut did_change = false;
-            for constraint in constraint_system.constraints() {
-                match constraint {
-                    Constraint::Eq(_, t1, t2) => {
-                        unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)?
+        let mut constraint_system = ConstraintSystem::new();
+        let result: Result<Arc<Type>, Vec<TypeError>> =
+            Ok(generate_constraints(&expr, &env, &mut constraint_system)).and_then(|ty| {
+                assert_eq!(constraint_system.errors.len(), 0);
+                let mut subst = Subst::default();
+                let mut did_change = false;
+                for constraint in constraint_system.constraints() {
+                    match constraint {
+                        Constraint::Eq(_, t1, t2) => {
+                            unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)?
+                        }
+                        _ => panic!("Expected equality constraint"),
                     }
-                    _ => panic!("Expected equality constraint"),
                 }
-            }
-            Ok(unify::apply_subst(&ty, &subst))
-        });
+                Ok(ty.apply(&subst))
+            });
 
         match result {
             Ok(_) => panic!("Expected an error"),
@@ -1244,51 +1061,44 @@ mod tests {
     fn test_overloading_with_arguments() {
         let mut env = HashMap::new();
 
-        let xor_type_id = Id::new();
-        insert_type(&mut env, "xor", Arc::new(Type::Var(xor_type_id)));
+        let xor_type_var = TypeVar::new();
+        insert_type(&mut env, "xor", var!(xor_type_var));
 
         // Single-type variables
-        insert_type(&mut env, "true", Arc::new(Type::Bool));
-        insert_type(&mut env, "false", Arc::new(Type::Bool));
-        insert_type(&mut env, "one", Arc::new(Type::Int));
-        insert_type(&mut env, "two", Arc::new(Type::Int));
+        insert_type(&mut env, "true", bool!());
+        insert_type(&mut env, "false", bool!());
+        insert_type(&mut env, "one", int!());
+        insert_type(&mut env, "two", int!());
 
         // Test bool version: xor true false
         let bool_expr = Expr::App(
             Span::default(),
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 Span::default(),
-                Box::new(Expr::Var(Var::new("xor"))),
-                Box::new(Expr::Var(Var::new("true"))),
+                Arc::new(Expr::Var(Var::new("xor"))),
+                Arc::new(Expr::Var(Var::new("true"))),
             )),
-            Box::new(Expr::Var(Var::new("false"))),
+            Arc::new(Expr::Var(Var::new("false"))),
         );
 
-        let mut constraint_system =
-            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
-                Span::default(),
-                Arc::new(Type::Var(xor_type_id)),
-                vec![
-                    Arc::new(Type::Arrow(
-                        Arc::new(Type::Bool),
-                        Arc::new(Type::Arrow(Arc::new(Type::Bool), Arc::new(Type::Bool))),
-                    )),
-                    Arc::new(Type::Arrow(
-                        Arc::new(Type::Int),
-                        Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-                    )),
-                ]
-                .into_iter()
-                .collect(),
-            )]);
-        let mut errors = BTreeSet::new();
-        let ty = generate_constraints(&bool_expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        constraint_system.add_one_of(
+            Span::default(),
+            xor_type_var,
+            vec![
+                arrow!(bool!() => bool!() => bool!()),
+                arrow!(int!() => int!() => int!()),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let ty = generate_constraints(&bool_expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, Arc::new(Type::Bool));
+        unify::unify_constraints(&mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
+        let final_type = ty.apply(&constraint_system.subst);
+        assert_eq!(final_type, bool!());
     }
 
     #[test]
@@ -1298,68 +1108,59 @@ mod tests {
         env.insert(
             "xor".to_string(),
             vec![
-                TypeScheme {
-                    ids: Vec::new(),
-                    ty: Arc::new(Type::Arrow(
-                        Arc::new(Type::Bool),
-                        Arc::new(Type::Arrow(Arc::new(Type::Bool), Arc::new(Type::Bool))),
-                    )),
-                    deps: BTreeSet::new(),
-                },
-                TypeScheme {
-                    ids: Vec::new(),
-                    ty: Arc::new(Type::Arrow(
-                        Arc::new(Type::Int),
-                        Arc::new(Type::Arrow(Arc::new(Type::Int), Arc::new(Type::Int))),
-                    )),
-                    deps: BTreeSet::new(),
-                },
+                TypeScheme::new(Vec::new(), arrow!(bool!() => bool!() => bool!())),
+                TypeScheme::new(Vec::new(), arrow!(int!() => int!() => int!())),
             ]
             .into_iter()
             .collect(),
         );
 
         // Single-type variables
-        insert_type(&mut env, "true", Arc::new(Type::Bool));
-        insert_type(&mut env, "false", Arc::new(Type::Bool));
-        insert_type(&mut env, "one", Arc::new(Type::Int));
-        insert_type(&mut env, "two", Arc::new(Type::Int));
+        insert_type(&mut env, "true", bool!());
+        insert_type(&mut env, "false", bool!());
+        insert_type(&mut env, "one", int!());
+        insert_type(&mut env, "two", int!());
 
         // Test bool version: xor true false
         let bool_expr = Expr::App(
             Span::default(),
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 Span::default(),
-                Box::new(Expr::Var(Var::new("xor"))),
-                Box::new(Expr::Var(Var::new("true"))),
+                Arc::new(Expr::Var(Var::new("xor"))),
+                Arc::new(Expr::Var(Var::new("true"))),
             )),
-            Box::new(Expr::Var(Var::new("false"))),
+            Arc::new(Expr::Var(Var::new("false"))),
         );
         // Test int version: xor true false
         let int_expr = Expr::App(
             Span::default(),
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 Span::default(),
-                Box::new(Expr::Var(Var::new("xor"))),
-                Box::new(Expr::Var(Var::new("one"))),
+                Arc::new(Expr::Var(Var::new("xor"))),
+                Arc::new(Expr::Var(Var::new("one"))),
             )),
-            Box::new(Expr::Var(Var::new("two"))),
+            Arc::new(Expr::Var(Var::new("two"))),
         );
-        let tuple_expr = Expr::Tuple(Span::default(), vec![bool_expr, int_expr]);
+        let tuple_expr = Expr::Tuple(
+            Span::default(),
+            vec![Arc::new(bool_expr), Arc::new(int_expr)],
+        );
         // let xor_lam_expr = Expr::Lam(
         //     Span::default(),
+        //     Scope::default(),
         //     Var::new("x"),
-        //     Box::new(Expr::Lam(
+        //     Arc::new(Expr::Lam(
         //         Span::default(),
+        //         Scope::default(),
         //         Var::new("y"),
-        //         Box::new(Expr::App(
+        //         Arc::new(Expr::App(
         //             Span::default(),
-        //             Box::new(Expr::App(
+        //             Arc::new(Expr::App(
         //                 Span::default(),
-        //                 Box::new(Expr::Var(Var::new("xor"))),
-        //                 Box::new(Expr::Var(Var::new("x"))),
+        //                 Arc::new(Expr::Var(Var::new("xor"))),
+        //                 Arc::new(Expr::Var(Var::new("x"))),
         //             )),
-        //             Box::new(Expr::Var(Var::new("y"))),
+        //             Arc::new(Expr::Var(Var::new("y"))),
         //         )),
         //     )),
         // );
@@ -1367,14 +1168,13 @@ mod tests {
         //     Span::default(),
         //     Var::new("f"),
         //     // Box::new(xor_lam_expr),
-        //     Box::new(Expr::Var(Var::new("xor"))),
-        //     Box::new(tuple_expr),
+        //     Arc::new(Expr::Var(Var::new("xor"))),
+        //     Arc::new(tuple_expr),
         // );
 
-        let mut constraint_system = ConstraintSystem::with_global_constraints(vec![]);
-        let mut errors = BTreeSet::new();
-        let ty = generate_constraints(&tuple_expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        let ty = generate_constraints(&tuple_expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
         println!(
             "TYPES:\n{}\n\nCONSTRAINTS:\n{}",
@@ -1382,72 +1182,55 @@ mod tests {
             &constraint_system
         );
 
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        unify::unify_constraints(&mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
-        let final_type = unify::apply_subst(&ty, &subst);
+        let final_type = ty.apply(&constraint_system.subst);
 
-        println!("SUBST: {}", sprint_subst(&subst));
+        println!("SUBST: {}", sprint_subst(&constraint_system.subst));
         println!("FINAL TYPE: {}", final_type);
 
-        assert_eq!(
-            final_type,
-            Arc::new(Type::Tuple(vec![Arc::new(Type::Bool), Arc::new(Type::Int)]))
-        );
+        assert_eq!(final_type, tuple!(bool!(), int!()));
     }
 
     #[test]
     fn test_overloading_with_return() {
         let mut env = TypeEnv::new();
 
-        let rand_type_id = Id::new();
-        insert_type(&mut env, "rand", Arc::new(Type::Var(rand_type_id)));
+        let rand_type_var = TypeVar::new();
+        insert_type(&mut env, "rand", var!(rand_type_var));
 
         // Add functions that force return type selection
-        insert_type(
-            &mut env,
-            "sum",
-            Arc::new(Type::Arrow(
-                Arc::new(Type::List(Arc::new(Type::Int))),
-                Arc::new(Type::Int),
-            )),
-        );
-        insert_type(
-            &mut env,
-            "any",
-            Arc::new(Type::Arrow(
-                Arc::new(Type::List(Arc::new(Type::Bool))),
-                Arc::new(Type::Bool),
-            )),
-        );
+        insert_type(&mut env, "sum", arrow!(list!(int!()) => int!()));
+        insert_type(&mut env, "any", arrow!(list!(bool!()) => bool!()));
 
         // Test sum [rand, rand]
         let sum_expr = Expr::App(
             Span::default(),
-            Box::new(Expr::Var(Var::new("sum"))),
-            Box::new(Expr::List(
+            Arc::new(Expr::Var(Var::new("sum"))),
+            Arc::new(Expr::List(
                 Span::default(),
-                vec![Expr::Var(Var::new("rand")), Expr::Var(Var::new("rand"))],
+                vec![
+                    Arc::new(Expr::Var(Var::new("rand"))),
+                    Arc::new(Expr::Var(Var::new("rand"))),
+                ],
             )),
         );
 
-        let mut constraint_system =
-            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
-                Span::default(),
-                Arc::new(Type::Var(rand_type_id)),
-                vec![Arc::new(Type::Int), Arc::new(Type::Bool)]
-                    .into_iter()
-                    .collect(),
-            )]);
-        let mut errors = BTreeSet::new();
-        let ty = generate_constraints(&sum_expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        constraint_system.add_one_of(
+            Span::default(),
+            rand_type_var,
+            vec![int!(), bool!()].into_iter().collect(),
+        );
+        let ty = generate_constraints(&sum_expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        unify::unify_constraints(&mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
-        let final_type = unify::apply_subst(&ty, &subst);
-        assert_eq!(final_type, Arc::new(Type::Int));
+        let final_type = ty.apply(&constraint_system.subst);
+        assert_eq!(final_type, int!());
     }
 
     // TODO: get this test working again
@@ -1455,24 +1238,21 @@ mod tests {
     fn _test_overloading_with_ambiguity() {
         let mut env = HashMap::new();
 
-        let rand_type_id = Id::new();
-        insert_type(&mut env, "rand", Arc::new(Type::Var(rand_type_id)));
+        let rand_type_var = TypeVar::new();
+        insert_type(&mut env, "rand", var!(rand_type_var));
         // Test: just rand by itself (should be ambiguous)
         let expr = Expr::Var(Var::new("rand"));
 
-        let mut constraint_system =
-            ConstraintSystem::with_global_constraints(vec![Constraint::OneOf(
-                Span::default(),
-                Arc::new(Type::Var(rand_type_id)),
-                vec![Arc::new(Type::Int), Arc::new(Type::Bool)]
-                    .into_iter()
-                    .collect(),
-            )]);
-        let mut errors = BTreeSet::new();
-        let _ty = generate_constraints(&expr, &env, &mut constraint_system, &mut errors);
-        assert_eq!(errors.len(), 0);
+        let mut constraint_system = ConstraintSystem::new();
+        constraint_system.add_one_of(
+            Span::default(),
+            rand_type_var,
+            vec![int!(), bool!()].into_iter().collect(),
+        );
+        let _ty = generate_constraints(&expr, &env, &mut constraint_system);
+        assert_eq!(constraint_system.errors.len(), 0);
 
-        let mut subst = Subst::new();
+        let mut subst = Subst::default();
         let mut did_change = false;
 
         // This should fail because both types are possible
@@ -1483,7 +1263,7 @@ mod tests {
                     unify::unify_eq(t1, t2, &Span::default(), &mut subst, &mut did_change)
                 }
                 Constraint::OneOf(_, t1, t2_possibilties) => unify::unify_one_of(
-                    t1,
+                    &Arc::new(Type::Var(*t1)),
                     &t2_possibilties,
                     &Span::default(),
                     &mut subst,

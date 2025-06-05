@@ -37,7 +37,7 @@ pub enum Error {
     #[error("expected {expected}, got {got}{trace}")]
     ExpectedTypeGotValue {
         expected: Arc<Type>,
-        got: Expr,
+        got: Arc<Expr>,
         trace: Trace,
     },
     #[error("expected {expected}, got {got}{trace}")]

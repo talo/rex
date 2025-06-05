@@ -59,13 +59,13 @@ impl<'a> Stack<'a> {
 #[async_recursion::async_recursion]
 pub async fn eval<State>(
     ctx: &Context<State>,
-    expr: &Expr,
+    expr: &Arc<Expr>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
-    match expr {
+    match &**expr {
         Expr::Bool(..)
         | Expr::Uint(..)
         | Expr::Int(..)
@@ -75,68 +75,95 @@ where
         | Expr::DateTime(..)
         | Expr::Named(..)
         | Expr::Promise(..) => Ok(expr.clone()),
-        Expr::Tuple(span, tuple) => eval_tuple(ctx, span, tuple, stack).await,
-        Expr::List(span, list) => eval_list(ctx, span, list, stack).await,
-        Expr::Dict(span, dict) => eval_dict(ctx, span, dict, stack).await,
+        Expr::Tuple(span, tuple) => Ok(eval_tuple(ctx, span, tuple, stack)
+            .await?
+            .unwrap_or_else(|| expr.clone())),
+        Expr::List(span, list) => Ok(eval_list(ctx, span, list, stack)
+            .await?
+            .unwrap_or_else(|| expr.clone())),
+        Expr::Dict(span, dict) => Ok(eval_dict(ctx, span, dict, stack)
+            .await?
+            .unwrap_or_else(|| expr.clone())),
         Expr::Var(var) => eval_var(ctx, var, stack).await,
         Expr::App(span, f, x) => eval_app(ctx, span, f, x, stack).await,
         Expr::Lam(span, scope, param, body) => eval_lam(ctx, span, scope, param, body).await,
         Expr::Let(span, var, def, body) => eval_let(ctx, span, var, def, body, stack).await,
         Expr::Ite(span, cond, then, r#else) => eval_ite(ctx, span, cond, then, r#else, stack).await,
-        Expr::Curry(span, f, args) => Ok(Expr::Curry(*span, f.clone(), args.clone())),
+        Expr::Curry(span, f, args) => Ok(Arc::new(Expr::Curry(*span, f.clone(), args.clone()))),
     }
 }
 
 pub async fn eval_tuple<State>(
     ctx: &Context<State>,
     span: &Span,
-    tuple: &Vec<Expr>,
+    tuple: &[Arc<Expr>],
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Option<Arc<Expr>>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
-    let mut result = Vec::with_capacity(tuple.len());
-    for v in tuple {
-        result.push(eval(ctx, v, stack));
+    // Evaluate all elements of the tuple in parallel
+    let futures = tuple
+        .iter()
+        .map(|v| eval(ctx, v, stack))
+        .collect::<Vec<_>>();
+    let results = future::join_all(futures)
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Check if any of the eval calls returned a different value to what was passed in.
+    // If they are all the same, just return the original expression, instead of wasting
+    // memory by keeping an identical copy.
+    if expr_list_ptr_eq(tuple, &results) {
+        return Ok(None);
     }
-    Ok(Expr::Tuple(
-        *span,
-        future::join_all(result)
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?,
-    ))
+
+    Ok(Some(Arc::new(Expr::Tuple(*span, results))))
 }
 
 pub async fn eval_list<State>(
     ctx: &Context<State>,
     span: &Span,
-    list: &Vec<Expr>,
+    list: &[Arc<Expr>],
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Option<Arc<Expr>>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
-    let mut result = Vec::with_capacity(list.len());
-    for v in list {
-        result.push(eval(ctx, v, stack));
+    // Evaluate all elements of the list in parallel
+    let futures = list.iter().map(|v| eval(ctx, v, stack)).collect::<Vec<_>>();
+    let results = future::join_all(futures)
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Check if any of the eval calls returned a different value to what was passed in.
+    // If they are all the same, just return the original expression, instead of wasting
+    // memory by keeping an identical copy.
+    if expr_list_ptr_eq(list, &results) {
+        return Ok(None);
     }
-    Ok(Expr::List(
-        *span,
-        future::join_all(result)
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?,
-    ))
+
+    Ok(Some(Arc::new(Expr::List(*span, results))))
+}
+
+fn expr_list_ptr_eq(vals: &[Arc<Expr>], results: &[Arc<Expr>]) -> bool {
+    if vals.len() != results.len() {
+        false
+    } else {
+        vals.iter()
+            .zip(results.iter())
+            .all(|(a, b)| Arc::ptr_eq(a, b))
+    }
 }
 
 pub async fn eval_dict<State>(
     ctx: &Context<State>,
     span: &Span,
-    dict: &BTreeMap<String, Expr>,
+    dict: &BTreeMap<String, Arc<Expr>>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Option<Arc<Expr>>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -144,14 +171,28 @@ where
     let mut vals = Vec::with_capacity(dict.len());
     for (k, v) in dict {
         keys.push(k);
-        vals.push(eval(ctx, v, stack));
+        vals.push(v.clone());
+    }
+
+    // Evaluate all entries in the dictionary in parallel
+    let futures = vals.iter().map(|v| eval(ctx, v, stack)).collect::<Vec<_>>();
+    let results = future::join_all(futures)
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Check if any of the eval calls returned a different value to what was passed in.
+    // If they are all the same, just return the original expression, instead of wasting
+    // memory by keeping an identical copy.
+    if expr_list_ptr_eq(&vals, &results) {
+        return Ok(None);
     }
 
     let mut result = BTreeMap::new();
-    for (k, v) in keys.into_iter().zip(future::join_all(vals).await) {
-        result.insert(k.clone(), v?);
+    for (k, v) in keys.into_iter().zip(results) {
+        result.insert(k.clone(), v);
     }
-    Ok(Expr::Dict(*span, result))
+    Ok(Some(Arc::new(Expr::Dict(*span, result))))
 }
 
 #[async_recursion::async_recursion]
@@ -159,7 +200,7 @@ pub async fn eval_var<State>(
     ctx: &Context<State>,
     var: &Var,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -176,7 +217,11 @@ where
                     return Ok(res);
                 }
 
-                return Ok(Expr::Curry(Span::default(), var.clone(), Vec::new()));
+                return Ok(Arc::new(Expr::Curry(
+                    Span::default(),
+                    var.clone(),
+                    Vec::new(),
+                )));
             }
 
             Err(Error::VarNotFound {
@@ -190,10 +235,10 @@ where
 pub async fn eval_app<State>(
     ctx: &Context<State>,
     span: &Span,
-    f: &Expr,
-    x: &Expr,
+    f: &Arc<Expr>,
+    x: &Arc<Expr>,
     parent: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -203,10 +248,10 @@ where
 
 pub async fn apply<State>(
     ctx: &Context<State>,
-    f: impl Borrow<Expr>,
-    x: impl Borrow<Expr>,
+    f: impl Borrow<Arc<Expr>>,
+    x: impl Borrow<Arc<Expr>>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -269,7 +314,7 @@ where
                 }
                 Ordering::Greater => {
                     // TODO(loong): fix the span.
-                    Ok(Expr::Curry(*span, var.clone(), args))
+                    Ok(Arc::new(Expr::Curry(*span, var.clone(), args)))
                 }
             }
         }
@@ -285,8 +330,8 @@ pub async fn eval_lam<State>(
     span: &Span,
     scope: &Scope,
     param: &Var,
-    body: &Expr,
-) -> Result<Expr, Error>
+    body: &Arc<Expr>,
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -294,22 +339,22 @@ where
     for entry in ctx.scope.iter() {
         scope.insert_mut(entry.0.clone(), entry.1.clone());
     }
-    Ok(Expr::Lam(
+    Ok(Arc::new(Expr::Lam(
         *span,
         scope,
         param.clone(),
-        Box::new(body.clone()),
-    ))
+        body.clone(),
+    )))
 }
 
 pub async fn eval_let<State>(
     ctx: &Context<State>,
     _span: &Span,
     var: &Var,
-    def: &Expr,
-    body: &Expr,
+    def: &Arc<Expr>,
+    body: &Arc<Expr>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -322,16 +367,16 @@ where
 pub async fn eval_ite<State>(
     ctx: &Context<State>,
     _span: &Span,
-    cond: &Expr,
-    then: &Expr,
-    r#else: &Expr,
+    cond: &Arc<Expr>,
+    then: &Arc<Expr>,
+    r#else: &Arc<Expr>,
     stack: Option<&Stack<'_>>,
-) -> Result<Expr, Error>
+) -> Result<Arc<Expr>, Error>
 where
     State: Clone + Send + Sync + 'static,
 {
     let cond = eval(ctx, cond, stack).await?;
-    match cond {
+    match &*cond {
         Expr::Bool(_, true) => eval(ctx, then, stack).await,
         Expr::Bool(_, false) => eval(ctx, r#else, stack).await,
         _ => unimplemented!(),
@@ -343,7 +388,9 @@ pub mod test {
     use crate::{codec::Encode, engine::Builder, program::Program};
     use rex_ast::{assert_expr_eq, b, d, f, i, l, n, s, tup, u};
     use rex_type_system::{
-        bool, dict, float, int, list, option, result, string, tuple, types::Type, uint,
+        bool, dict, float, int, list, option, result, string, tuple,
+        types::{Type, TypeCon},
+        uint,
     };
 
     use super::*;
@@ -351,7 +398,7 @@ pub mod test {
     /// Helper function for parsing, inferring, and evaluating a given code
     /// snippet. Pretty much all of the test suites can use this flow for
     /// testing that the engine is correctly evaluating types and expressions.
-    async fn parse_infer_and_eval(code: &str) -> Result<(Expr, Arc<Type>), Error> {
+    async fn parse_infer_and_eval(code: &str) -> Result<(Arc<Expr>, Arc<Type>), Error> {
         let builder: Builder<()> = Builder::with_prelude().unwrap();
         let program = Program::compile(builder, code)?;
         let res_type = program.res_type.clone();
@@ -721,6 +768,13 @@ pub mod test {
         .unwrap();
         assert_eq!(res_type, tuple!(float!(), uint!(), int!(), bool!()));
         assert_expr_eq!(res, tup!(f!(21.666), u!(80), i!(420), b!(true)); ignore span);
+
+        // Check logic for tuple eval where some elements eval to the same value, some different
+        let (res, res_type) = parse_infer_and_eval(r#"(1, 2 + 3, 4, 5 + 6)"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, tuple!(uint!(), uint!(), uint!(), uint!()));
+        assert_expr_eq!(res, tup!(u!(1), u!(5), u!(4), u!(11)); ignore span);
     }
 
     #[tokio::test]
@@ -728,7 +782,12 @@ pub mod test {
         // Empty list
         let (res, res_type) = parse_infer_and_eval(r#"[]"#).await.unwrap();
         assert!(match &*res_type {
-            Type::List(inner) => matches!(&**inner, Type::Var(_)),
+            Type::App(a, inner) => {
+                match &**a {
+                    Type::Con(TypeCon::List) => matches!(&**inner, Type::Var(_)),
+                    _ => false,
+                }
+            }
             _ => false,
         });
         assert_expr_eq!(res, l!(); ignore span);
@@ -752,6 +811,13 @@ pub mod test {
         let (res, res_type) = parse_infer_and_eval(r#"[420, 69, 555,]"#).await.unwrap();
         assert_eq!(res_type, list!(uint!()));
         assert_expr_eq!(res, l!(u!(420), u!(69), u!(555)); ignore span);
+
+        // Check logic for list eval where some elements eval to the same value, some different
+        let (res, res_type) = parse_infer_and_eval(r#"[1, 2 + 3, 4, 5 + 6]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(1), u!(5), u!(4), u!(11)); ignore span);
     }
 
     #[tokio::test]
@@ -784,28 +850,38 @@ pub mod test {
             .unwrap();
         assert_eq!(res_type, dict! { a: uint!(), b: float!(), c: string!() });
         assert_expr_eq!(res, d!(a = u!(420), b = f!(3.14), c = s!("hello")); ignore span);
+
+        // Check logic for list eval where some elements eval to the same value, some different
+        let (res, res_type) = parse_infer_and_eval(r#"{a = 1, b = 2 + 3, c = 4, d = 5 + 6 }"#)
+            .await
+            .unwrap();
+        assert_eq!(
+            res_type,
+            dict! { a: uint!(), b: uint!(), c: uint!(), d: uint!() }
+        );
+        assert_expr_eq!(res, d!(a = u!(1), b = u!(5), c = u!(4), d = u!(11)); ignore span);
     }
 
     #[tokio::test]
     async fn test_uuid() {
         let (res, res_type) = parse_infer_and_eval(r#"random_uuid"#).await.unwrap();
-        assert!(matches!(&*res_type, Type::Uuid));
-        assert!(matches!(res, Expr::Uuid(..))); // Don't check value; it's random!
+        assert!(matches!(&*res_type, Type::Con(TypeCon::Uuid)));
+        assert!(matches!(&*res, Expr::Uuid(..))); // Don't check value; it's random!
 
         let (res, res_type) = parse_infer_and_eval(r#"string random_uuid"#).await.unwrap();
-        assert!(matches!(&*res_type, Type::String));
-        assert!(matches!(res, Expr::String(..))); // Don't check value; it's random!
+        assert!(matches!(&*res_type, Type::Con(TypeCon::String)));
+        assert!(matches!(&*res, Expr::String(..))); // Don't check value; it's random!
     }
 
     #[tokio::test]
     async fn test_datetime() {
         let (res, res_type) = parse_infer_and_eval(r#"now"#).await.unwrap();
-        assert!(matches!(&*res_type, Type::DateTime));
-        assert!(matches!(res, Expr::DateTime(..))); // Don't check value; depends on current time
+        assert!(matches!(&*res_type, Type::Con(TypeCon::DateTime)));
+        assert!(matches!(&*res, Expr::DateTime(..))); // Don't check value; depends on current time
 
         let (res, res_type) = parse_infer_and_eval(r#"string now"#).await.unwrap();
-        assert!(matches!(&*res_type, Type::String));
-        assert!(matches!(res, Expr::String(..))); // Don't check value; depends on current time
+        assert!(matches!(&*res_type, Type::Con(TypeCon::String)));
+        assert!(matches!(&*res, Expr::String(..))); // Don't check value; depends on current time
     }
 
     #[tokio::test]
@@ -962,7 +1038,7 @@ pub mod test {
         let (res, res_type) = parse_infer_and_eval(r#"let a = Ok 4, b = Err "bad" in [a, b]"#)
             .await
             .unwrap();
-        assert_eq!(res_type, list!(result!(uint!(), string!())));
+        assert_eq!(res_type, list!(result!(string!(), uint!())));
         assert_expr_eq!(res, l!(n!("Ok", Some(u!(4))), n!("Err", Some(s!("bad")))); ignore span);
 
         let (res, res_type) = parse_infer_and_eval(r#"map is_ok [Ok 3, Err "bad"]"#)
@@ -992,7 +1068,7 @@ pub mod test {
         )
         .await
         .unwrap();
-        assert_eq!(res_type, list!(result!(list!(uint!()), string!())));
+        assert_eq!(res_type, list!(result!(string!(), list!(uint!()))));
         assert_expr_eq!(
             res,
             l!(n!("Ok", Some(l!(u!(4), u!(5), u!(6)))),
@@ -1015,7 +1091,7 @@ pub mod test {
         )
         .await
         .unwrap();
-        assert_eq!(res_type, list!(result!(float!(), string!())));
+        assert_eq!(res_type, list!(result!(string!(), float!())));
         assert_expr_eq!(
             res,
             l!(
@@ -1040,7 +1116,7 @@ pub mod test {
         )
         .await
         .unwrap();
-        assert_eq!(res_type, list!(result!(string!(), float!())));
+        assert_eq!(res_type, list!(result!(float!(), string!())));
         assert_expr_eq!(
             res,
             l!(
@@ -1213,7 +1289,7 @@ pub mod test {
         .unwrap();
         assert_eq!(
             res_type,
-            tuple!(list!(result!(string!(), uint!())), list!(option!(float!())),)
+            tuple!(list!(result!(uint!(), string!())), list!(option!(float!())),)
         );
         assert_expr_eq!(
             res,

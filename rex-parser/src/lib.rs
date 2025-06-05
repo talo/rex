@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, vec};
+use std::{collections::VecDeque, sync::Arc, vec};
 
 use rex_ast::expr::{Expr, Scope, Var};
 use rex_lexer::{
@@ -85,7 +85,7 @@ impl Parser {
         self.errors.push(e);
     }
 
-    pub fn parse_program(&mut self) -> Result<Expr, Vec<ParserErr>> {
+    pub fn parse_program(&mut self) -> Result<Arc<Expr>, Vec<ParserErr>> {
         match self.parse_expr() {
             Ok(expr) => {
                 // Make sure there's no trailing tokens. The whole program
@@ -101,7 +101,7 @@ impl Parser {
                 if !self.errors.is_empty() {
                     Err(self.errors.clone())
                 } else {
-                    Ok(expr)
+                    Ok(Arc::new(expr))
                 }
             }
             Err(e) => {
@@ -192,15 +192,15 @@ impl Parser {
 
         self.parse_binary_expr(Expr::App(
             outer_span,
-            Box::new(Expr::App(
+            Arc::new(Expr::App(
                 inner_span,
-                Box::new(Expr::Var(Var::with_span(
+                Arc::new(Expr::Var(Var::with_span(
                     *operator_span,
                     operator.to_string(),
                 ))),
-                Box::new(lhs_expr),
+                Arc::new(lhs_expr),
             )),
-            Box::new(rhs_expr),
+            Arc::new(rhs_expr),
         ))
     }
 
@@ -254,8 +254,8 @@ impl Parser {
             let call_arg_expr_span_end = call_arg_expr.span().end;
             call_base_expr = Expr::App(
                 Span::from_begin_end(call_base_expr_span.begin, call_arg_expr_span_end),
-                Box::new(call_base_expr),
-                Box::new(call_arg_expr),
+                Arc::new(call_base_expr),
+                Arc::new(call_arg_expr),
             );
         }
         Ok(call_base_expr)
@@ -277,7 +277,7 @@ impl Parser {
         };
 
         // Parse the inner expression.
-        let mut expr = match self.current_token() {
+        let expr = match self.current_token() {
             Token::ParenR(span, ..) => {
                 self.next_token();
                 // Empty tuple
@@ -375,13 +375,13 @@ impl Parser {
             }
         };
 
-        expr.set_span_begin_end(span_begin.begin, span_end.end);
+        let expr = expr.with_span_begin_end(span_begin.begin, span_end.end);
 
         Ok(expr)
     }
 
     fn parse_tuple(&mut self, span_begin: Span, first_item: Expr) -> Result<Expr, ParserErr> {
-        let mut items = vec![first_item];
+        let mut items = vec![Arc::new(first_item)];
         loop {
             // eat the comma
             match self.current_token() {
@@ -393,7 +393,7 @@ impl Parser {
                         items,
                     ));
                 }
-                _ => items.push(self.parse_expr()?),
+                _ => items.push(Arc::new(self.parse_expr()?)),
             }
         }
     }
@@ -420,7 +420,7 @@ impl Parser {
             }
 
             // Parse the next expression.
-            exprs.push(self.parse_expr()?);
+            exprs.push(Arc::new(self.parse_expr()?));
             // Eat the comma.
             match self.current_token() {
                 Token::Comma(..) => self.next_token(),
@@ -494,7 +494,7 @@ impl Parser {
                 }
             };
             // Parse the expression.
-            kvs.push((var.name, self.parse_expr()?));
+            kvs.push((var.name, Arc::new(self.parse_expr()?)));
             // Eat the comma.
             match self.current_token() {
                 Token::Comma(..) => self.next_token(),
@@ -555,8 +555,8 @@ impl Parser {
         // Return the negative expression.
         Ok(Expr::App(
             Span::from_begin_end(span_token.begin, expr_span_end),
-            Box::new(Expr::Var(Var::with_span(span_token, "negate"))),
-            Box::new(expr),
+            Arc::new(Expr::Var(Var::with_span(span_token, "negate"))),
+            Arc::new(expr),
         ))
     }
 
@@ -605,12 +605,12 @@ impl Parser {
                 Span::from_begin_end(param_span.begin, body_span_end),
                 Scope::new_sync(),
                 Var::with_span(param_span, param),
-                Box::new(body),
+                Arc::new(body),
             );
             body_span_end = body.span().end;
         }
         // Adjust the outer most lambda to include the initial backslash
-        body.set_span_begin(span_begin);
+        let body = body.with_span_begin(span_begin);
 
         Ok(body)
     }
@@ -689,14 +689,14 @@ impl Parser {
             body = Expr::Let(
                 Span::from_begin_end(var_span.begin, body_span_end),
                 Var::with_span(var_span, var),
-                Box::new(def),
-                Box::new(body),
+                Arc::new(def),
+                Arc::new(body),
             );
             body_span_end = body.span().end;
         }
         // Adjust the outer most let-in expression to include the initial let
         // token
-        body.set_span_begin(span_begin);
+        let body = body.with_span_begin(span_begin);
 
         Ok(body)
     }
@@ -757,9 +757,9 @@ impl Parser {
 
         Ok(Expr::Ite(
             Span::from_begin_end(span_begin, else_span_end),
-            Box::new(cond),
-            Box::new(then),
-            Box::new(r#else),
+            Arc::new(cond),
+            Arc::new(then),
+            Arc::new(r#else),
         ))
     }
 

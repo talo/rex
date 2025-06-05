@@ -1,6 +1,6 @@
-use rex_type_system::types::{Dispatch, ToType, Type, TypeEnv, TypeScheme, ADT};
+use rex_type_system::types::{Dispatch, ToType, Type, TypeEnv, TypeScheme, TypeVar, ADT};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt,
     future::Future,
     pin::Pin,
@@ -17,11 +17,63 @@ use crate::{
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use rex_ast::expr::Expr;
-use rex_ast::id::Id;
 use rex_lexer::span::Span;
 use uuid::Uuid;
 
 const MAX_TUPLE_LEN: usize = 8; // register elem_M_N functions for tuple sizes up to M
+
+macro_rules! ftable_fn {
+    ($f:ident $(, $($param:ident),*)?) => {{
+        TypedFunction {
+            t: Arc::new(<fn($($($param,)*)?) -> B as ToType>::to_type()),
+            f: Box::new(move |ctx, args| {
+                let f = ($f).clone();
+                Box::pin(async move {
+                    let mut i = 0;
+                    let mut r = f(ctx $(, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*)?)?
+                        .try_encode(Span::default())?; // FIXME(loong): assign a proper span
+                    while i < args.len() {
+                        r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }], None).await?;
+                    }
+                    Ok(r)
+                })
+            }),
+        }
+    }}
+}
+
+macro_rules! ftable_async_fn {
+    ($f:ident $(, $($param:ident),*)?) => {{
+        TypedFunction {
+            t: Arc::new(<fn($($($param,)*)?) -> B as ToType>::to_type()),
+            f: Box::new(move |ctx, args| {
+                let f = ($f).clone();
+                Box::pin(async move {
+                    let mut i = 0;
+                    let mut r = f(ctx $(, $(decode_arg::<$param>(args, { let j = i; i += 1; j })?),*)?)
+                        .await?
+                        .try_encode(Span::default())?; // FIXME(loong): assign a proper span
+                    while i < args.len() {
+                        r = $crate::eval::apply(ctx, r, &args[{ let j = i; i += 1; j }], None).await?;
+                    }
+                    Ok(r)
+                })
+            }),
+        }
+    }}
+}
+
+fn decode_arg<A>(args: &[Arc<Expr>], i: usize) -> Result<A, Error>
+where
+    A: Decode,
+{
+    args.get(i)
+        .ok_or(Error::MissingArgument {
+            argument: i,
+            trace: Default::default(),
+        })
+        .and_then(|a0| A::try_decode(a0))
+}
 
 fn register_fn_core<State>(builder: &mut Builder<State>, n: &str, t: Arc<Type>) -> Result<(), Error>
 where
@@ -33,25 +85,21 @@ where
         let mut assignments = HashMap::new();
         for var in &unresolved_vars {
             if !assignments.contains_key(var) {
-                assignments.insert(var.clone(), Arc::new(Type::Var(Id::new())));
+                assignments.insert(var.clone(), Arc::new(Type::Var(TypeVar::new())));
             }
         }
 
         let t = t.resolve_vars(&assignments);
 
-        let mut ids: Vec<Id> = Vec::new();
+        let mut vars: Vec<TypeVar> = Vec::new();
         for var in assignments.into_values() {
             if let Type::Var(var) = *var {
-                ids.push(var);
+                vars.push(var);
             } else {
                 panic!("Expected a type variable");
             }
         }
-        TypeScheme {
-            ids,
-            ty: t,
-            deps: BTreeSet::new(),
-        }
+        TypeScheme::new(vars, t)
     } else {
         TypeScheme::from(t)
     };
@@ -81,24 +129,14 @@ where
     Ok(())
 }
 
-macro_rules! impl_register_fn_core {
-    ($self:expr, $n:expr, $f:expr, $name:ident $(,$($param:ident),*)?) => {{
-        let n = $n.to_string();
-        let t = Arc::new(<fn($($($param,)*)?) -> B as ToType>::to_type());
-        register_fn_core($self, &n, t).unwrap();
-        $self.ftable.$name(n, $f);
-    }}
-}
-
-macro_rules! impl_register_fn {
+macro_rules! impl_fn {
     ($name:ident $(,$($param:ident),*)?) => {
-        pub fn $name <$($($param,)*)? B, F>(
-            &mut self,
-            n: impl ToString,
+        pub fn $name <$($($param,)*)? B, F, State>(
             f: F,
-        )
+        ) -> TypedFunction<State>
         where
             $($($param : Decode + Send + ToType,)*)?
+            State: Clone + Sync + Send + 'static,
             B: Encode + ToType,
             F: Fn(
                 &Context<State>,
@@ -109,34 +147,51 @@ macro_rules! impl_register_fn {
                 + Sync
                 + 'static
         {
-            impl_register_fn_core!(self, n, f, $name $(,$($param),*)?)
+            ftable_fn!(f, $($($param),*)?)
         }
     };
 }
 
-macro_rules! impl_register_fn_async {
-    ($name:ident, $($param:ident),*) => {
-        #[allow(unused_assignments)] // This is a workaround for the unused_assignments lint for the last `i += 1` in the macro expansion.
-        pub fn $name <$($param,)* B, F>(
-            &mut self,
-            n: impl ToString,
+macro_rules! impl_fn_async {
+    ($name:ident $(,$($param:ident),*)?) => {
+        pub fn $name <$($($param,)*)? B, F, State>(
             f: F,
-        )
+        ) -> TypedFunction<State>
         where
-            $($param : Decode + Send + ToType,)*
+            $($($param : Decode + Send + ToType,)*)?
+            State: Clone + Sync + Send + 'static,
             B: Encode + ToType,
             for<'c> F: Fn(
                 &'c Context<State>,
-                $($param,)*
+                $($($param,)*)?
             ) -> Pin<Box<dyn Future<Output = Result<B, Error>> + Send + 'c>>
                 + Clone
                 + Send
                 + Sync
                 + 'static,
         {
-            impl_register_fn_core!(self, n, f, $name, $($param),*)
+            ftable_async_fn!(f, $($($param),*)?)
         }
     };
+}
+
+impl_fn!(fn0);
+impl_fn!(fn1, A0);
+impl_fn!(fn2, A0, A1);
+impl_fn!(fn3, A0, A1, A2);
+impl_fn!(fn4, A0, A1, A2, A3);
+
+impl_fn_async!(fn_async1, A0);
+impl_fn_async!(fn_async2, A0, A1);
+impl_fn_async!(fn_async3, A0, A1, A2);
+impl_fn_async!(fn_async4, A0, A1, A2, A3);
+
+pub struct TypedFunction<State>
+where
+    State: Clone + Sync + 'static,
+{
+    pub t: Arc<Type>,
+    pub f: FtableFn<State>,
 }
 
 pub struct Builder<State>
@@ -161,121 +216,121 @@ where
             accessors: Default::default(),
         };
 
-        this.register_fn1("swap", |_ctx: &Context<_>, (x, y): (A, B)| Ok((y, x)));
+        this.register("swap", fn1(|_, (x, y): (A, B)| Ok((y, x))));
 
-        this.register_fn1("string", |_ctx: &Context<_>, x: bool| Ok(format!("{}", x)));
-        this.register_fn1("string", |_ctx: &Context<_>, x: u64| Ok(format!("{}", x)));
-        this.register_fn1("string", |_ctx: &Context<_>, x: i64| Ok(format!("{}", x)));
-        this.register_fn1("string", |_ctx: &Context<_>, x: f64| Ok(format!("{}", x)));
+        this.register("string", fn1(|_, x: bool| Ok(format!("{}", x))));
+        this.register("string", fn1(|_, x: u64| Ok(format!("{}", x))));
+        this.register("string", fn1(|_, x: i64| Ok(format!("{}", x))));
+        this.register("string", fn1(|_, x: f64| Ok(format!("{}", x))));
 
-        this.register_fn1("uint", |_ctx: &Context<_>, x: i64| Ok(x as u64));
-        this.register_fn1("uint", |_ctx: &Context<_>, x: f64| Ok(x as u64));
-        this.register_fn1("uint", |_ctx: &Context<_>, x: String| {
-            x.parse::<u64>().map_err(|e| e.into())
-        });
+        this.register("uint", fn1(|_, x: i64| Ok(x as u64)));
+        this.register("uint", fn1(|_, x: f64| Ok(x as u64)));
+        this.register("uint", fn1(|_, x: String| Ok(x.parse::<u64>()?)));
 
-        this.register_fn1("int", |_ctx: &Context<_>, x: u64| Ok(x as i64));
-        this.register_fn1("int", |_ctx: &Context<_>, x: f64| Ok(x as i64));
-        this.register_fn1("int", |_ctx: &Context<_>, x: String| {
-            x.parse::<i64>().map_err(|e| e.into())
-        });
+        this.register("int", fn1(|_, x: u64| Ok(x as i64)));
+        this.register("int", fn1(|_, x: f64| Ok(x as i64)));
+        this.register("int", fn1(|_, x: String| Ok(x.parse::<i64>()?)));
 
-        this.register_fn1("float", |_ctx: &Context<_>, x: u64| Ok(x as f64));
-        this.register_fn1("float", |_ctx: &Context<_>, x: i64| Ok(x as f64));
-        this.register_fn1("float", |_ctx: &Context<_>, x: String| {
-            x.parse::<f64>().map_err(|e| e.into())
-        });
+        this.register("float", fn1(|_, x: u64| Ok(x as f64)));
+        this.register("float", fn1(|_, x: i64| Ok(x as f64)));
+        this.register("float", fn1(|_, x: String| Ok(x.parse::<f64>()?)));
 
-        this.register_fn1("negate", |_ctx: &Context<_>, x: u64| Ok(-(x as i64)));
-        this.register_fn1("negate", |_ctx: &Context<_>, x: i64| Ok(-x));
-        this.register_fn1("negate", |_ctx: &Context<_>, x: f64| Ok(-x));
+        this.register("negate", fn1(|_, x: u64| Ok(-(x as i64))));
+        this.register("negate", fn1(|_, x: i64| Ok(-x)));
+        this.register("negate", fn1(|_, x: f64| Ok(-x)));
 
-        this.register_fn2("&&", |_ctx: &Context<_>, x: bool, y: bool| Ok(x && y));
-        this.register_fn2("||", |_ctx: &Context<_>, x: bool, y: bool| Ok(x || y));
+        this.register("&&", fn2(|_, x: bool, y: bool| Ok(x && y)));
+        this.register("||", fn2(|_, x: bool, y: bool| Ok(x || y)));
 
-        this.register_fn2("==", |_ctx: &Context<_>, x: u64, y: u64| Ok(x == y));
-        this.register_fn2("==", |_ctx: &Context<_>, x: i64, y: i64| Ok(x == y));
-        this.register_fn2("==", |_ctx: &Context<_>, x: f64, y: f64| Ok(x == y));
-        this.register_fn2("==", |_ctx: &Context<_>, x: String, y: String| Ok(x == y));
+        this.register("==", fn2(|_, x: u64, y: u64| Ok(x == y)));
+        this.register("==", fn2(|_, x: i64, y: i64| Ok(x == y)));
+        this.register("==", fn2(|_, x: f64, y: f64| Ok(x == y)));
+        this.register("==", fn2(|_, x: String, y: String| Ok(x == y)));
 
-        this.register_fn2("!=", |_ctx: &Context<_>, x: u64, y: u64| Ok(x != y));
-        this.register_fn2("!=", |_ctx: &Context<_>, x: i64, y: i64| Ok(x != y));
-        this.register_fn2("!=", |_ctx: &Context<_>, x: f64, y: f64| Ok(x != y));
-        this.register_fn2("!=", |_ctx: &Context<_>, x: String, y: String| Ok(x != y));
+        this.register("!=", fn2(|_, x: u64, y: u64| Ok(x != y)));
+        this.register("!=", fn2(|_, x: i64, y: i64| Ok(x != y)));
+        this.register("!=", fn2(|_, x: f64, y: f64| Ok(x != y)));
+        this.register("!=", fn2(|_, x: String, y: String| Ok(x != y)));
 
-        this.register_fn2(">", |_ctx: &Context<_>, x: u64, y: u64| Ok(x > y));
-        this.register_fn2(">", |_ctx: &Context<_>, x: i64, y: i64| Ok(x > y));
-        this.register_fn2(">", |_ctx: &Context<_>, x: f64, y: f64| Ok(x > y));
-        this.register_fn2(">", |_ctx: &Context<_>, x: String, y: String| Ok(x > y));
+        this.register(">", fn2(|_, x: u64, y: u64| Ok(x > y)));
+        this.register(">", fn2(|_, x: i64, y: i64| Ok(x > y)));
+        this.register(">", fn2(|_, x: f64, y: f64| Ok(x > y)));
+        this.register(">", fn2(|_, x: String, y: String| Ok(x > y)));
 
-        this.register_fn2(">=", |_ctx: &Context<_>, x: u64, y: u64| Ok(x >= y));
-        this.register_fn2(">=", |_ctx: &Context<_>, x: i64, y: i64| Ok(x >= y));
-        this.register_fn2(">=", |_ctx: &Context<_>, x: f64, y: f64| Ok(x >= y));
-        this.register_fn2(">=", |_ctx: &Context<_>, x: String, y: String| Ok(x >= y));
+        this.register(">=", fn2(|_, x: u64, y: u64| Ok(x >= y)));
+        this.register(">=", fn2(|_, x: i64, y: i64| Ok(x >= y)));
+        this.register(">=", fn2(|_, x: f64, y: f64| Ok(x >= y)));
+        this.register(">=", fn2(|_, x: String, y: String| Ok(x >= y)));
 
-        this.register_fn2("<", |_ctx: &Context<_>, x: u64, y: u64| Ok(x < y));
-        this.register_fn2("<", |_ctx: &Context<_>, x: i64, y: i64| Ok(x < y));
-        this.register_fn2("<", |_ctx: &Context<_>, x: f64, y: f64| Ok(x < y));
-        this.register_fn2("<", |_ctx: &Context<_>, x: String, y: String| Ok(x < y));
+        this.register("<", fn2(|_, x: u64, y: u64| Ok(x < y)));
+        this.register("<", fn2(|_, x: i64, y: i64| Ok(x < y)));
+        this.register("<", fn2(|_, x: f64, y: f64| Ok(x < y)));
+        this.register("<", fn2(|_, x: String, y: String| Ok(x < y)));
 
-        this.register_fn2("<=", |_ctx: &Context<_>, x: u64, y: u64| Ok(x <= y));
-        this.register_fn2("<=", |_ctx: &Context<_>, x: i64, y: i64| Ok(x <= y));
-        this.register_fn2("<=", |_ctx: &Context<_>, x: f64, y: f64| Ok(x <= y));
-        this.register_fn2("<=", |_ctx: &Context<_>, x: String, y: String| Ok(x <= y));
+        this.register("<=", fn2(|_, x: u64, y: u64| Ok(x <= y)));
+        this.register("<=", fn2(|_, x: i64, y: i64| Ok(x <= y)));
+        this.register("<=", fn2(|_, x: f64, y: f64| Ok(x <= y)));
+        this.register("<=", fn2(|_, x: String, y: String| Ok(x <= y)));
 
-        this.register_fn2("+", |_ctx: &Context<_>, x: u64, y: u64| Ok(x + y));
-        this.register_fn2("+", |_ctx: &Context<_>, x: i64, y: i64| Ok(x + y));
-        this.register_fn2("+", |_ctx: &Context<_>, x: f64, y: f64| Ok(x + y));
+        this.register("+", fn2(|_, x: u64, y: u64| Ok(x + y)));
+        this.register("+", fn2(|_, x: i64, y: i64| Ok(x + y)));
+        this.register("+", fn2(|_, x: f64, y: f64| Ok(x + y)));
 
-        this.register_fn2("-", |_ctx: &Context<_>, x: u64, y: u64| Ok(x - y));
-        this.register_fn2("-", |_ctx: &Context<_>, x: i64, y: i64| Ok(x - y));
-        this.register_fn2("-", |_ctx: &Context<_>, x: f64, y: f64| Ok(x - y));
+        this.register("-", fn2(|_, x: u64, y: u64| Ok(x - y)));
+        this.register("-", fn2(|_, x: i64, y: i64| Ok(x - y)));
+        this.register("-", fn2(|_, x: f64, y: f64| Ok(x - y)));
 
-        this.register_fn2("*", |_ctx: &Context<_>, x: u64, y: u64| Ok(x * y));
-        this.register_fn2("*", |_ctx: &Context<_>, x: i64, y: i64| Ok(x * y));
-        this.register_fn2("*", |_ctx: &Context<_>, x: f64, y: f64| Ok(x * y));
+        this.register("*", fn2(|_, x: u64, y: u64| Ok(x * y)));
+        this.register("*", fn2(|_, x: i64, y: i64| Ok(x * y)));
+        this.register("*", fn2(|_, x: f64, y: f64| Ok(x * y)));
 
-        this.register_fn2("/", |_ctx: &Context<_>, x: u64, y: u64| Ok(x / y));
-        this.register_fn2("/", |_ctx: &Context<_>, x: i64, y: i64| Ok(x / y));
-        this.register_fn2("/", |_ctx: &Context<_>, x: f64, y: f64| Ok(x / y));
+        this.register("/", fn2(|_, x: u64, y: u64| Ok(x / y)));
+        this.register("/", fn2(|_, x: i64, y: i64| Ok(x / y)));
+        this.register("/", fn2(|_, x: f64, y: f64| Ok(x / y)));
 
-        this.register_fn2("%", |_ctx: &Context<_>, x: u64, y: u64| Ok(x % y));
-        this.register_fn2("%", |_ctx: &Context<_>, x: i64, y: i64| Ok(x % y));
-        this.register_fn2("%", |_ctx: &Context<_>, x: f64, y: f64| Ok(x % y));
+        this.register("%", fn2(|_, x: u64, y: u64| Ok(x % y)));
+        this.register("%", fn2(|_, x: i64, y: i64| Ok(x % y)));
+        this.register("%", fn2(|_, x: f64, y: f64| Ok(x % y)));
 
-        this.register_fn1("abs", |_ctx: &Context<_>, x: i64| Ok(x.abs()));
-        this.register_fn1("abs", |_ctx: &Context<_>, x: f64| Ok(x.abs()));
+        this.register("abs", fn1(|_, x: i64| Ok(x.abs())));
+        this.register("abs", fn1(|_, x: f64| Ok(x.abs())));
 
-        this.register_fn1("sqrt", |_ctx: &Context<_>, x: f64| Ok(x.sqrt()));
+        this.register("sqrt", fn1(|_, x: f64| Ok(x.sqrt())));
 
-        this.register_fn2("pow", |_ctx: &Context<_>, x: f64, y: i32| Ok(x.powi(y)));
-        this.register_fn2("pow", |_ctx: &Context<_>, x: f64, y: f64| Ok(x.powf(y)));
+        this.register("pow", fn2(|_, x: f64, y: i32| Ok(x.powi(y))));
+        this.register("pow", fn2(|_, x: f64, y: f64| Ok(x.powf(y))));
 
-        this.register_fn1("identity", |_ctx: &Context<_>, x: A| Ok(x));
+        this.register("identity", fn1(|_, x: A| Ok(x)));
 
-        this.register_fn2("get", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
-            Ok(xs[n as usize].clone())
-        });
+        this.register(
+            "get",
+            fn2(|_, n: u64, xs: Vec<A>| Ok(xs[n as usize].clone())),
+        );
 
         this.register_elem_functions();
 
-        this.register_fn2("++", |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<A>| {
-            let mut zs = Vec::with_capacity(xs.len() + ys.len());
-            zs.extend(xs);
-            zs.extend(ys);
-            Ok(zs)
-        });
+        this.register(
+            "++",
+            fn2(|_, xs: Vec<A>, ys: Vec<A>| {
+                let mut zs = Vec::with_capacity(xs.len() + ys.len());
+                zs.extend(xs);
+                zs.extend(ys);
+                Ok(zs)
+            }),
+        );
 
-        this.register_fn2("++", |_ctx: &Context<_>, a: String, b: String| {
-            Ok(format!("{}{}", a, b))
-        });
+        this.register(
+            "++",
+            fn2(|_, a: String, b: String| Ok(format!("{}{}", a, b))),
+        );
 
-        this.register_fn1("len", |_ctx, x: String| Ok(x.len() as u64));
-        this.register_fn1("len", |_ctx, x: Vec<A>| Ok(x.len() as u64));
+        this.register("len", fn1(|_ctx, x: String| Ok(x.len() as u64)));
+        this.register("len", fn1(|_ctx, x: Vec<A>| Ok(x.len() as u64)));
 
-        this.register_fn2("take", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
-            Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
-        });
+        this.register(
+            "take",
+            fn2(|_, n: u64, xs: Vec<A>| Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())),
+        );
 
         // Registers function with two parameters to match a regex pattern,
         // Returns True if there is a match, orelse False
@@ -283,14 +338,14 @@ where
         // hay : to match against the re-created from pattern
 
         // Possibly a costly computation while looping, since fn essentially recompiles pattern multiple times (no cache)
-        this.register_fn2(
+        this.register(
             "regex_matches",
-            |_ctx: &Context<_>, pattern: String, hay: String| match Regex::new(&pattern)
-                .map_err(Error::from)
-            {
-                Ok(re) => Ok(re.is_match(&hay)),
-                Err(err) => Err(err), // Return Err(Error)
-            },
+            fn2(|_, pattern: String, hay: String| {
+                match Regex::new(&pattern).map_err(Error::from) {
+                    Ok(re) => Ok(re.is_match(&hay)),
+                    Err(err) => Err(err), // Return Err(Error)
+                }
+            }),
         );
 
         // Registers function with two parameters to return successive non-overlapping matches in given haystack
@@ -298,89 +353,103 @@ where
         // hay : to match against the re-created from pattern
 
         // Possibly a costly computation while looping, since fn essentially recompiles pattern multiple times (no cache)
-        this.register_fn2(
+        this.register(
             "regex_captures",
-            |_ctx: &Context<_>, pattern: String, hay: String| match Regex::new(&pattern)
-                .map_err(Error::from)
-            {
-                Ok(re) => {
-                    let matches: Vec<_> =
-                        re.find_iter(&hay).map(|m| m.as_str().to_string()).collect();
-                    Ok(matches)
+            fn2(|_, pattern: String, hay: String| {
+                match Regex::new(&pattern).map_err(Error::from) {
+                    Ok(re) => {
+                        let matches: Vec<_> =
+                            re.find_iter(&hay).map(|m| m.as_str().to_string()).collect();
+                        Ok(matches)
+                    }
+                    Err(err) => Err(err),
                 }
-                Err(err) => Err(err),
-            },
+            }),
         );
 
-        this.register_fn2("skip", |_ctx: &Context<_>, n: u64, xs: Vec<A>| {
-            Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())
-        });
+        this.register(
+            "skip",
+            fn2(|_, n: u64, xs: Vec<A>| Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())),
+        );
 
-        this.register_fn2("zip", |_ctx: &Context<_>, xs: Vec<A>, ys: Vec<B>| {
-            Ok(xs.into_iter().zip(ys).collect::<Vec<_>>())
-        });
+        this.register(
+            "zip",
+            fn2(|_, xs: Vec<A>, ys: Vec<B>| Ok(xs.into_iter().zip(ys).collect::<Vec<_>>())),
+        );
 
-        this.register_fn1("unzip", |_ctx: &Context<_>, zs: Vec<(A, B)>| {
-            let mut xs = Vec::with_capacity(zs.len());
-            let mut ys = Vec::with_capacity(zs.len());
-            for (x, y) in zs {
-                xs.push(x);
-                ys.push(y);
-            }
-            Ok((xs, ys))
-        });
+        this.register(
+            "unzip",
+            fn1(|_, zs: Vec<(A, B)>| {
+                let mut xs = Vec::with_capacity(zs.len());
+                let mut ys = Vec::with_capacity(zs.len());
+                for (x, y) in zs {
+                    xs.push(x);
+                    ys.push(y);
+                }
+                Ok((xs, ys))
+            }),
+        );
 
-        this.register_fn_async3(
+        this.register(
             "flip",
-            |ctx: &Context<_>, f: Func<A, Func<B, C>>, x: B, y: A| {
+            fn_async3(|ctx, f: Func<A, Func<B, C>>, x: B, y: A| {
                 Box::pin(async move {
                     let g = apply(ctx, &f, &y, None).await?;
                     let z = apply(ctx, &g, &x, None).await?;
                     Ok(C(z))
                 })
-            },
+            }),
         );
 
-        this.register_fn_async2("map", |ctx, f: Func<A, B>, xs: Vec<A>| {
-            Box::pin(async move {
-                let mut ys: Vec<B> = Vec::with_capacity(xs.len());
-                for x in xs {
-                    let y = apply(ctx, &f, &x, None).await?;
-                    ys.push(B(y));
-                }
-                Ok(ys)
-            })
-        });
-
-        this.register_fn_async2("filter", |ctx, f: Func<A, bool>, xs: Vec<A>| {
-            Box::pin(async move {
-                let mut ys: Vec<A> = Vec::with_capacity(xs.len());
-                for x in xs {
-                    let b = bool::try_decode(&apply(ctx, &f, &x, None).await?)?;
-                    if b {
-                        ys.push(x);
+        this.register(
+            "map",
+            fn_async2(|ctx, f: Func<A, B>, xs: Vec<A>| {
+                Box::pin(async move {
+                    let mut ys: Vec<B> = Vec::with_capacity(xs.len());
+                    for x in xs {
+                        let y = apply(ctx, &f, &x, None).await?;
+                        ys.push(B(y));
                     }
-                }
-                Ok(ys)
-            })
-        });
+                    Ok(ys)
+                })
+            }),
+        );
 
-        this.register_fn_async2("filter_map", |ctx, f: Func<A, Option<B>>, xs: Vec<A>| {
-            Box::pin(async move {
-                let mut ys: Vec<B> = Vec::with_capacity(xs.len());
-                for x in xs {
-                    let y = <Option<B>>::try_decode(&apply(ctx, &f, &x, None).await?)?;
-                    if let Some(y) = y {
-                        ys.push(y);
+        this.register(
+            "filter",
+            fn_async2(|ctx, f: Func<A, bool>, xs: Vec<A>| {
+                Box::pin(async move {
+                    let mut ys: Vec<A> = Vec::with_capacity(xs.len());
+                    for x in xs {
+                        let b = bool::try_decode(&apply(ctx, &f, &x, None).await?)?;
+                        if b {
+                            ys.push(x);
+                        }
                     }
-                }
-                Ok(ys)
-            })
-        });
+                    Ok(ys)
+                })
+            }),
+        );
 
-        this.register_fn_async3(
+        this.register(
+            "filter_map",
+            fn_async2(|ctx, f: Func<A, Option<B>>, xs: Vec<A>| {
+                Box::pin(async move {
+                    let mut ys: Vec<B> = Vec::with_capacity(xs.len());
+                    for x in xs {
+                        let y = <Option<B>>::try_decode(&apply(ctx, &f, &x, None).await?)?;
+                        if let Some(y) = y {
+                            ys.push(y);
+                        }
+                    }
+                    Ok(ys)
+                })
+            }),
+        );
+
+        this.register(
             "foldl",
-            |ctx, f: Func<A, Func<B, A>>, base: A, xs: Vec<B>| {
+            fn_async3(|ctx, f: Func<A, Func<B, A>>, base: A, xs: Vec<B>| {
                 Box::pin(async move {
                     let mut res = base;
                     for x in xs {
@@ -390,12 +459,12 @@ where
                     }
                     Ok(res)
                 })
-            },
+            }),
         );
 
-        this.register_fn_async3(
+        this.register(
             "foldr",
-            |ctx, f: Func<A, Func<B, B>>, base: B, xs: Vec<A>| {
+            fn_async3(|ctx, f: Func<A, Func<B, B>>, base: B, xs: Vec<A>| {
                 Box::pin(async move {
                     let mut res = base;
                     for x in xs.iter().rev() {
@@ -405,33 +474,39 @@ where
                     }
                     Ok(res)
                 })
-            },
+            }),
         );
 
-        this.register_fn_async3(".", |ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
-            Box::pin(async move {
-                let x = apply(ctx, &g, &x, None).await?;
-                let x = apply(ctx, &f, &x, None).await?;
-                Ok(C(x))
-            })
-        });
+        this.register(
+            ".",
+            fn_async3(|ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
+                Box::pin(async move {
+                    let x = apply(ctx, &g, &x, None).await?;
+                    let x = apply(ctx, &f, &x, None).await?;
+                    Ok(C(x))
+                })
+            }),
+        );
 
         // Result
-        this.register_fn1("Ok", |_ctx: &Context<_>, x: A| Ok(Ok::<A, B>(x)));
-        this.register_fn1("Err", |_ctx: &Context<_>, x: B| Ok(Err::<A, B>(x)));
-        this.register_fn1("is_ok", |_ctx, x: Result<A, E>| Ok(x.is_ok()));
-        this.register_fn1("is_err", |_ctx, x: Result<A, E>| Ok(x.is_err()));
-        this.register_fn_async2("map", |ctx, f: Func<A, B>, x: Result<A, E>| {
-            Box::pin(async move {
-                match x {
-                    Ok(x) => Ok(Ok(B(apply(ctx, &f, &x, None).await?))),
-                    Err(e) => Ok(Err(e)),
-                }
-            })
-        });
-        this.register_fn_async2(
+        this.register("Ok", fn1(|_, x: A| Ok(Ok::<A, B>(x))));
+        this.register("Err", fn1(|_, x: B| Ok(Err::<A, B>(x))));
+        this.register("is_ok", fn1(|_ctx, x: Result<A, E>| Ok(x.is_ok())));
+        this.register("is_err", fn1(|_ctx, x: Result<A, E>| Ok(x.is_err())));
+        this.register(
+            "map",
+            fn_async2(|ctx, f: Func<A, B>, x: Result<A, E>| {
+                Box::pin(async move {
+                    match x {
+                        Ok(x) => Ok(Ok(B(apply(ctx, &f, &x, None).await?))),
+                        Err(e) => Ok(Err(e)),
+                    }
+                })
+            }),
+        );
+        this.register(
             "and_then",
-            |ctx, f: Func<A, Result<B, E>>, x: Result<A, E>| {
+            fn_async2(|ctx, f: Func<A, Result<B, E>>, x: Result<A, E>| {
                 Box::pin(async move {
                     match x {
                         Ok(x) => Ok(Result::<B, E>::try_decode(
@@ -440,11 +515,11 @@ where
                         Err(e) => Ok(Err(e)),
                     }
                 })
-            },
+            }),
         );
-        this.register_fn_async2(
+        this.register(
             "or_else",
-            |ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
+            fn_async2(|ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
                 Box::pin(async move {
                     match x {
                         Ok(x) => Ok(Ok(x)),
@@ -453,124 +528,141 @@ where
                         )?),
                     }
                 })
-            },
+            }),
         );
-        this.register_fn_async2("unwrap_or_else", |ctx, f: Func<E, A>, x: Result<A, E>| {
-            Box::pin(async move {
-                match x {
-                    Ok(x) => Ok(x),
-                    Err(x) => Ok(A(apply(ctx, &f, &x, None).await?)),
-                }
-            })
-        });
-        this.register_fn_async1("unwrap", |_ctx, x: Result<A, E>| {
-            Box::pin(async move {
-                match x {
-                    Ok(x) => Ok(x),
-                    Err(e) => Err(Error::Custom {
-                        error: format!(
-                            "unwrap called with Err: {}",
-                            e.try_encode(Span::default())?
-                        ),
-                        trace: Default::default(),
-                    }),
-                }
-            })
-        });
+        this.register(
+            "unwrap_or_else",
+            fn_async2(|ctx, f: Func<E, A>, x: Result<A, E>| {
+                Box::pin(async move {
+                    match x {
+                        Ok(x) => Ok(x),
+                        Err(x) => Ok(A(apply(ctx, &f, &x, None).await?)),
+                    }
+                })
+            }),
+        );
+        this.register(
+            "unwrap",
+            fn_async1(|_ctx, x: Result<A, E>| {
+                Box::pin(async move {
+                    match x {
+                        Ok(x) => Ok(x),
+                        Err(e) => Err(Error::Custom {
+                            error: format!(
+                                "unwrap called with Err: {}",
+                                e.try_encode(Span::default())?
+                            ),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
 
         // Option
-        this.register_fn0("None", |_ctx: &Context<_>| Ok(None::<A>));
-        this.register_fn1("Some", |_ctx: &Context<_>, x: A| Ok(Some(x)));
-        this.register_fn1("is_some", |_ctx, x: Option<A>| Ok(x.is_some()));
-        this.register_fn1("is_none", |_ctx, x: Option<A>| Ok(x.is_none()));
-        this.register_fn_async2("map", |ctx, f: Func<A, B>, x: Option<A>| {
-            Box::pin(async move {
-                match x {
-                    Some(x) => Ok(Some(B(apply(ctx, &f, &x, None).await?))),
-                    None => Ok(None),
-                }
-            })
-        });
-        this.register_fn_async2("and_then", |ctx, f: Func<A, Option<B>>, x: Option<A>| {
-            Box::pin(async move {
-                match x {
-                    Some(x) => Ok(Option::<B>::try_decode(&apply(ctx, &f, &x, None).await?)?),
-                    None => Ok(None),
-                }
-            })
-        });
-        this.register_fn_async2("or_else", |ctx, f: Func<(), Option<A>>, x: Option<A>| {
-            Box::pin(async move {
-                match x {
-                    Some(x) => Ok(Some(x)),
-                    None => {
-                        let x = Expr::Tuple(Span::default(), vec![]);
-                        let res = apply(ctx, &f, &x, None).await?;
-                        Ok(Option::<A>::try_decode(&res)?)
+        this.register("None", fn0(|_| Ok(None::<A>)));
+        this.register("Some", fn1(|_, x: A| Ok(Some(x))));
+        this.register("is_some", fn1(|_ctx, x: Option<A>| Ok(x.is_some())));
+        this.register("is_none", fn1(|_ctx, x: Option<A>| Ok(x.is_none())));
+        this.register(
+            "map",
+            fn_async2(|ctx, f: Func<A, B>, x: Option<A>| {
+                Box::pin(async move {
+                    match x {
+                        Some(x) => Ok(Some(B(apply(ctx, &f, &x, None).await?))),
+                        None => Ok(None),
                     }
-                }
-            })
-        });
-        this.register_fn_async2("unwrap_or_else", |ctx, f: Func<(), A>, x: Option<A>| {
-            Box::pin(async move {
-                match x {
-                    Some(x) => Ok(x),
-                    None => {
-                        let x = Expr::Tuple(Span::default(), vec![]);
-                        let res = apply(ctx, &f, &x, None).await?;
-                        Ok(A(res))
+                })
+            }),
+        );
+        this.register(
+            "and_then",
+            fn_async2(|ctx, f: Func<A, Option<B>>, x: Option<A>| {
+                Box::pin(async move {
+                    match x {
+                        Some(x) => Ok(Option::<B>::try_decode(&apply(ctx, &f, &x, None).await?)?),
+                        None => Ok(None),
                     }
-                }
-            })
-        });
-        this.register_fn_async1("unwrap", |_ctx, x: Option<A>| {
-            Box::pin(async move {
-                match x {
-                    Some(x) => Ok(x),
-                    None => Err(Error::Custom {
-                        error: "unwrap called with None".to_string(),
-                        trace: Default::default(),
-                    }),
-                }
-            })
-        });
+                })
+            }),
+        );
+        this.register(
+            "or_else",
+            fn_async2(|ctx, f: Func<(), Option<A>>, x: Option<A>| {
+                Box::pin(async move {
+                    match x {
+                        Some(x) => Ok(Some(x)),
+                        None => {
+                            let x = Arc::new(Expr::Tuple(Span::default(), vec![]));
+                            let res = apply(ctx, &f, &x, None).await?;
+                            Ok(Option::<A>::try_decode(&res)?)
+                        }
+                    }
+                })
+            }),
+        );
+        this.register(
+            "unwrap_or_else",
+            fn_async2(|ctx, f: Func<(), A>, x: Option<A>| {
+                Box::pin(async move {
+                    match x {
+                        Some(x) => Ok(x),
+                        None => {
+                            let x = Arc::new(Expr::Tuple(Span::default(), vec![]));
+                            let res = apply(ctx, &f, &x, None).await?;
+                            Ok(A(res))
+                        }
+                    }
+                })
+            }),
+        );
+        this.register(
+            "unwrap",
+            fn_async1(|_ctx, x: Option<A>| {
+                Box::pin(async move {
+                    match x {
+                        Some(x) => Ok(x),
+                        None => Err(Error::Custom {
+                            error: "unwrap called with None".to_string(),
+                            trace: Default::default(),
+                        }),
+                    }
+                })
+            }),
+        );
 
         // Uuid
-        this.register_fn1("string", |_ctx: &Context<_>, x: Uuid| Ok(format!("{}", x)));
-        this.register_fn0("random_uuid", |_ctx: &Context<_>| Ok(Uuid::new_v4()));
-        this.register_fn1(
+        this.register("string", fn1(|_, x: Uuid| Ok(format!("{}", x))));
+        this.register("random_uuid", fn0(|_| Ok(Uuid::new_v4())));
+        this.register(
             "uuid",
-            |_ctx: &Context<_>, x: String| -> Result<Uuid, Error> {
+            fn1(|_, x: String| -> Result<Uuid, Error> {
                 Uuid::from_str(&x).map_err(|_| Error::Custom {
                     error: format!("Invalid UUID {:?}", x),
                     trace: Default::default(),
                 })
-            },
+            }),
         );
 
         // DateTime
-        this.register_fn1("string", |_ctx: &Context<_>, x: DateTime<Utc>| {
-            Ok(format!("{}", x))
-        });
-        this.register_fn0("now", |_ctx: &Context<_>| Ok(Utc::now()));
+        this.register("string", fn1(|_, x: DateTime<Utc>| Ok(format!("{}", x))));
+        this.register("now", fn0(|_| Ok(Utc::now())));
 
-        this.register_fn3(
+        this.register(
             "list_range",
-            |_ctx: &Context<_>,
-             start: u64,
-             end: u64,
-             step: Option<u64>|
-             -> Result<Vec<u64>, Error> {
-                let step = step.unwrap_or(1);
-                if step == 0 {
-                    return Err(Error::Custom {
-                        error: "Step cannot be zero".to_string(),
-                        trace: Default::default(),
-                    });
-                }
+            fn3(
+                |_, start: u64, end: u64, step: Option<u64>| -> Result<Vec<u64>, Error> {
+                    let step = step.unwrap_or(1);
+                    if step == 0 {
+                        return Err(Error::Custom {
+                            error: "Step cannot be zero".to_string(),
+                            trace: Default::default(),
+                        });
+                    }
 
-                Ok((start..end).step_by(step as usize).collect())
-            },
+                    Ok((start..end).step_by(step as usize).collect())
+                },
+            ),
         );
 
         Ok(this)
@@ -588,10 +680,7 @@ where
 
             for tuple_index in 0..tuple_len {
                 let fun_name = format!("elem{}", tuple_index);
-                let fun_type = Arc::new(Type::Arrow(
-                    tuple_type.clone(),
-                    element_types[tuple_index].clone(),
-                ));
+                let fun_type = Type::arrow(tuple_type.clone(), element_types[tuple_index].clone());
                 let tuple_type = tuple_type.clone();
                 self.register_fn_core_with_name(
                     &fun_name,
@@ -599,19 +688,22 @@ where
                     Box::new(move |_, args| {
                         let tuple_type = tuple_type.clone();
                         Box::pin(async move {
-                            match args.first() {
-                                Some(Expr::Tuple(_, elems)) if elems.len() == tuple_len => {
-                                    Ok(elems[tuple_index].clone())
+                            if let Some(arg) = args.first() {
+                                match &**arg {
+                                    Expr::Tuple(_, elems) if elems.len() == tuple_len => {
+                                        Ok(elems[tuple_index].clone())
+                                    }
+                                    _ => Err(Error::ExpectedTypeGotValue {
+                                        expected: tuple_type.clone(),
+                                        got: arg.clone(),
+                                        trace: Default::default(),
+                                    }),
                                 }
-                                Some(arg) => Err(Error::ExpectedTypeGotValue {
-                                    expected: tuple_type.clone(),
-                                    got: arg.clone(),
-                                    trace: Default::default(),
-                                }),
-                                _ => Err(Error::MissingArgument {
+                            } else {
+                                Err(Error::MissingArgument {
                                     argument: 0,
                                     trace: Default::default(),
-                                }),
+                                })
                             }
                         })
                     }),
@@ -619,6 +711,12 @@ where
                 .unwrap();
             }
         }
+    }
+
+    pub fn register(&mut self, n: impl ToString, tfun: TypedFunction<State>) {
+        let n = n.to_string();
+        register_fn_core(self, &n, tfun.t.clone()).unwrap();
+        self.ftable.add_fn(n, Box::new(tfun.t), tfun.f).unwrap();
     }
 
     pub fn register_fn_core_with_name(
@@ -724,7 +822,7 @@ where
             (Some(Type::Tuple(fields)), _) => {
                 let mut fun_type = adt_type.clone();
                 for field in fields.iter().rev() {
-                    fun_type = Arc::new(Type::Arrow(field.clone(), fun_type));
+                    fun_type = Type::arrow(field.clone(), fun_type);
                 }
                 self.register_fn_core_with_name(
                     constructor_name,
@@ -732,11 +830,11 @@ where
                     Box::new(move |_, args| {
                         let base_name = base_name.clone();
                         Box::pin(async move {
-                            Ok(Expr::Named(
+                            Ok(Arc::new(Expr::Named(
                                 Span::default(),
                                 base_name,
-                                Some(Box::new(Expr::Tuple(Span::default(), args.clone()))),
-                            ))
+                                Some(Arc::new(Expr::Tuple(Span::default(), args.clone()))),
+                            )))
                         })
                     }),
                 )
@@ -750,7 +848,7 @@ where
                 }
                 let t = Arc::new(Type::Dict(entries_without_defaults));
 
-                let fun_type = Arc::new(Type::Arrow(t.clone(), adt_type.clone()));
+                let fun_type = Type::arrow(t.clone(), adt_type.clone());
                 let defaults: BTreeMap<String, FtableFn<State>> = (*defaults).clone();
                 let base_name1 = base_name.clone();
                 self.register_fn_core_with_name(
@@ -762,16 +860,16 @@ where
                         Box::pin(async move {
                             let mut val = args[0].clone();
 
-                            if let Expr::Dict(span, entries) = &val {
-                                let mut new_entries: BTreeMap<String, Expr> = entries.clone();
+                            if let Expr::Dict(span, entries) = &*val {
+                                let mut new_entries: BTreeMap<String, Arc<Expr>> = entries.clone();
                                 for (k, vf) in defaults.iter() {
                                     let v = vf(ctx, &vec![]).await?;
                                     new_entries.insert(k.clone(), v);
                                 }
-                                val = Expr::Dict(*span, new_entries);
+                                val = Arc::new(Expr::Dict(*span, new_entries));
                             }
 
-                            Ok(Expr::Named(Span::default(), base_name, Some(Box::new(val))))
+                            Ok(Arc::new(Expr::Named(Span::default(), base_name, Some(val))))
                         })
                     }),
                 )?;
@@ -783,7 +881,7 @@ where
             }
             _ => {
                 if let Some(t) = variant_type {
-                    let fun_type = Arc::new(Type::Arrow(t.clone(), adt_type.clone()));
+                    let fun_type = Type::arrow(t.clone(), adt_type.clone());
                     self.register_fn_core_with_name(
                         constructor_name,
                         fun_type,
@@ -791,7 +889,7 @@ where
                             let base_name = base_name.clone();
                             Box::pin(async move {
                                 let val = args[0].clone();
-                                Ok(Expr::Named(Span::default(), base_name, Some(Box::new(val))))
+                                Ok(Arc::new(Expr::Named(Span::default(), base_name, Some(val))))
                             })
                         }),
                     )?;
@@ -808,9 +906,9 @@ where
                         adt_type.clone(),
                         Box::new(move |_, _| {
                             let base_name = base_name.clone();
-                            Box::pin(
-                                async move { Ok(Expr::Named(Span::default(), base_name, None)) },
-                            )
+                            Box::pin(async move {
+                                Ok(Arc::new(Expr::Named(Span::default(), base_name, None)))
+                            })
                         }),
                     )
                 }
@@ -824,8 +922,7 @@ where
         entries: &BTreeMap<String, Arc<Type>>,
     ) -> Result<(), Error> {
         for (entry_key, entry_type) in entries.iter() {
-            let this_accessor_fun_type =
-                Arc::new(Type::Arrow(adt_type.clone(), entry_type.clone()));
+            let this_accessor_fun_type = Type::arrow(adt_type.clone(), entry_type.clone());
 
             // Register the type
             match register_fn_core(self, entry_key, this_accessor_fun_type.clone()) {
@@ -847,15 +944,6 @@ where
         }
         Ok(())
     }
-
-    impl_register_fn!(register_fn0);
-    impl_register_fn!(register_fn1, A0);
-    impl_register_fn!(register_fn2, A0, A1);
-    impl_register_fn!(register_fn3, A0, A1, A2);
-
-    impl_register_fn_async!(register_fn_async1, A0);
-    impl_register_fn_async!(register_fn_async2, A0, A1);
-    impl_register_fn_async!(register_fn_async3, A0, A1, A2);
 
     pub fn build(self) -> (Ftable<State>, TypeEnv) {
         let mut ftenv = HashMap::new();
@@ -879,8 +967,8 @@ impl Dispatch for Accessor {
         1
     }
 
-    fn maybe_accepts_args(&self, args: &[Expr]) -> bool {
-        args.len() == 1 && matches!(args[0], Expr::Named(..))
+    fn maybe_accepts_args(&self, args: &[Arc<Expr>]) -> bool {
+        args.len() == 1 && matches!(&*args[0], Expr::Named(..))
     }
 }
 
@@ -896,10 +984,10 @@ where
     State: Clone + Sync + 'static,
 {
     let entry_key = entry_key.to_string();
-    Box::new(move |_, args: &Vec<Expr>| {
+    Box::new(move |_, args: &Vec<Arc<Expr>>| {
         let entry_key = entry_key.clone();
         Box::pin(async move {
-            match &args[0] {
+            match &*args[0] {
                 Expr::Named(_, _, Some(inner)) => match &**inner {
                     Expr::Dict(_, entries) => match entries.get(&entry_key) {
                         Some(v) => Ok(v.clone()),
