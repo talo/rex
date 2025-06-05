@@ -17,15 +17,13 @@ pub type Subst = HashTrieMapSync<TypeVar, Arc<Type>>;
 
 // NOTE(loong): We do not support overloaded parametric polymorphism.
 pub fn unify_constraints(
-    zconstraint_system: &ConstraintSystem,
+    constraint_system: &mut ConstraintSystem,
     errors: &mut BTreeSet<TypeError>,
-) -> Subst {
-    let mut subst = Subst::default();
-
+) {
     let mut eq_constraints: Vec<Constraint> = Vec::new();
     let mut one_of_constraints: Vec<Constraint> = Vec::new();
 
-    for constraint in zconstraint_system.constraints() {
+    for constraint in constraint_system.constraints() {
         match constraint {
             Constraint::Eq(..) => {
                 eq_constraints.push(constraint.clone());
@@ -42,16 +40,23 @@ pub fn unify_constraints(
     loop {
         let mut did_change = false;
 
-        eq_constraints = unify_eq_constraints(eq_constraints, &mut subst, &mut did_change, errors);
-        one_of_constraints =
-            unify_one_of_constraints(one_of_constraints, &mut subst, &mut did_change, errors);
+        eq_constraints = unify_eq_constraints(
+            eq_constraints,
+            &mut constraint_system.subst,
+            &mut did_change,
+            errors,
+        );
+        one_of_constraints = unify_one_of_constraints(
+            one_of_constraints,
+            &mut constraint_system.subst,
+            &mut did_change,
+            errors,
+        );
 
         if !did_change {
             break;
         }
     }
-
-    subst
 }
 
 fn unify_eq_constraints(

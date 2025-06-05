@@ -48,7 +48,7 @@ where
 
         let mut errors = BTreeSet::new();
         let ty = generate_constraints(&expr, &type_env, &mut constraint_system, &mut errors);
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        unify::unify_constraints(&mut constraint_system, &mut errors);
         if !errors.is_empty() {
             // Sort by span and path first, so the errors appear in the same order the parts
             // of the input file they correspond do. The default order for an enum produced by
@@ -62,12 +62,12 @@ where
             });
         }
 
-        let res_type = ty.apply(&subst);
+        let res_type = ty.apply(&constraint_system.subst);
         Ok(Program {
             ftable,
             res_type,
             expr,
-            subst,
+            subst: constraint_system.subst,
         })
     }
 

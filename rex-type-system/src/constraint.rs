@@ -16,12 +16,14 @@ use crate::{
 #[derive(Debug, Default)]
 pub struct ConstraintSystem {
     pub constraints: Vec<Constraint>,
+    pub subst: Subst,
 }
 
 impl ConstraintSystem {
     pub fn new() -> Self {
         Self {
             constraints: Vec::new(),
+            subst: Subst::default(),
         }
     }
 
@@ -287,8 +289,8 @@ pub fn generate_constraints(
             let def_type = generate_constraints(def, env, constraint_system, errors);
 
             // Solve definition constraints to get its type
-            let def_subst = unify::unify_constraints(constraint_system, errors);
-            let solved_def_type = def_type.apply(&def_subst);
+            unify::unify_constraints(constraint_system, errors);
+            let solved_def_type = def_type.apply(&constraint_system.subst);
 
             // Generalize the type
             let mut gen_deps: BTreeSet<TypeVar> = BTreeSet::new();
@@ -765,10 +767,10 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        unify::unify_constraints(&mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
-        let final_type = ty.apply(&subst);
+        let final_type = ty.apply(&constraint_system.subst);
         assert_eq!(final_type, tuple!(int!(), bool!()));
     }
 
@@ -801,11 +803,11 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        unify::unify_constraints(&mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
         // Result should be Int
-        let final_result = result_type.apply(&subst);
+        let final_result = result_type.apply(&constraint_system.subst);
         assert_eq!(final_result, int!());
     }
 
@@ -853,11 +855,11 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        unify::unify_constraints(&mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
         // The final type should be (Int, Bool)
-        let final_type = ty.apply(&subst);
+        let final_type = ty.apply(&constraint_system.subst);
         assert_eq!(final_type, tuple!(int!(), bool!()));
     }
 
@@ -885,11 +887,11 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        unify::unify_constraints(&mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
         // Result should be Int
-        let final_result = result_type.apply(&subst);
+        let final_result = result_type.apply(&constraint_system.subst);
         assert_eq!(final_result, int!());
     }
 
@@ -977,11 +979,11 @@ mod tests {
         assert_eq!(errors.len(), 0);
 
         // Solve constraints
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        unify::unify_constraints(&mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
         // The final type should be (Bool, Int)
-        let final_type = ty.apply(&subst);
+        let final_type = ty.apply(&constraint_system.subst);
         assert_eq!(final_type, tuple!(bool!(), int!()));
     }
 
@@ -1106,9 +1108,9 @@ mod tests {
         let ty = generate_constraints(&bool_expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        unify::unify_constraints(&mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
-        let final_type = ty.apply(&subst);
+        let final_type = ty.apply(&constraint_system.subst);
         assert_eq!(final_type, bool!());
     }
 
@@ -1194,12 +1196,12 @@ mod tests {
             &constraint_system
         );
 
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        unify::unify_constraints(&mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
-        let final_type = ty.apply(&subst);
+        let final_type = ty.apply(&constraint_system.subst);
 
-        println!("SUBST: {}", sprint_subst(&subst));
+        println!("SUBST: {}", sprint_subst(&constraint_system.subst));
         println!("FINAL TYPE: {}", final_type);
 
         assert_eq!(final_type, tuple!(bool!(), int!()));
@@ -1239,10 +1241,10 @@ mod tests {
         let ty = generate_constraints(&sum_expr, &env, &mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
+        unify::unify_constraints(&mut constraint_system, &mut errors);
         assert_eq!(errors.len(), 0);
 
-        let final_type = ty.apply(&subst);
+        let final_type = ty.apply(&constraint_system.subst);
         assert_eq!(final_type, int!());
     }
 
