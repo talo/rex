@@ -427,7 +427,7 @@ pub mod test {
 
     #[tokio::test]
     async fn test_negate() {
-        let (res, res_type) = parse_infer_and_eval(r#"-420"#).await.unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"-(int 420)"#).await.unwrap();
         assert_eq!(res_type, int!());
         assert_expr_eq!(res, i!(-420); ignore span);
 
@@ -435,13 +435,14 @@ pub mod test {
         assert_eq!(res_type, float!());
         assert_expr_eq!(res, f!(-3.14); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"(-3.14, -69)"#).await.unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"(-3.14, -(int 69))"#).await.unwrap();
         assert_eq!(res_type, tuple!(float!(), int!()));
         assert_expr_eq!(res, tup!(f!(-3.14), i!(-69)); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"[-0, -314, -69, -420]"#)
-            .await
-            .unwrap();
+        let (res, res_type) =
+            parse_infer_and_eval(r#"[-(int 0), -(int 314), -(int 69), -(int 420)]"#)
+                .await
+                .unwrap();
         assert_eq!(res_type, list!(int!()));
         assert_expr_eq!(res, l!(i!(0), i!(-314), i!(-69), i!(-420)); ignore span);
 
@@ -451,7 +452,7 @@ pub mod test {
         assert_eq!(res_type, list!(float!()));
         assert_expr_eq!(res, l!(f!(-0.0), f!(-3.14), f!(-6.9), f!(-42.0)); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"{ x = -3.14, y = -69 }"#)
+        let (res, res_type) = parse_infer_and_eval(r#"{ x = -3.14, y = -(int 69) }"#)
             .await
             .unwrap();
         assert_eq!(res_type, dict! { x: float!(), y: int!() });
@@ -468,11 +469,15 @@ pub mod test {
         assert_eq!(res_type, uint!());
         assert_expr_eq!(res, u!(15); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"(-4) + (-20)"#).await.unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"(-(int 4)) + (-(int 20))"#)
+            .await
+            .unwrap();
         assert_eq!(res_type, int!());
         assert_expr_eq!(res, i!(-24); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"(-4) + (int 20)"#).await.unwrap();
+        let (res, res_type) = parse_infer_and_eval(r#"(-(int 4)) + (int 20)"#)
+            .await
+            .unwrap();
         assert_eq!(res_type, int!());
         assert_expr_eq!(res, i!(16); ignore span);
 
@@ -908,7 +913,7 @@ pub mod test {
     #[tokio::test]
     async fn test_polymorphism() {
         let (res, res_type) =
-            parse_infer_and_eval(r#"identity (identity 6.9, identity 420, identity (-420))"#)
+            parse_infer_and_eval(r#"identity (identity 6.9, identity 420, identity (-(int 420)))"#)
                 .await
                 .unwrap();
         assert_eq!(res_type, tuple!(float!(), uint!(), int!()));
@@ -955,7 +960,7 @@ pub mod test {
     #[tokio::test]
     async fn test_let_overloaded_polymorphism() {
         let (res, res_type) =
-            parse_infer_and_eval(r#"let f = λx → -x in (f 6.9, f 420, f (int 314))"#)
+            parse_infer_and_eval(r#"let f = λx → -x in (f 6.9, f (int 420), f (int 314))"#)
                 .await
                 .unwrap();
         assert_eq!(res_type, tuple!(float!(), int!(), int!()));
@@ -975,7 +980,7 @@ pub mod test {
 
     #[tokio::test]
     async fn test_let_bind_to_ftable() {
-        let (res, res_type) = parse_infer_and_eval(r#"let f = negate in f 420"#)
+        let (res, res_type) = parse_infer_and_eval(r#"let f = negate in f (int 420)"#)
             .await
             .unwrap();
         assert_eq!(res_type, int!());
@@ -1480,7 +1485,7 @@ pub mod test {
         assert_eq!(res_type, list!(float!()));
         assert_expr_eq!(res, l!(f!(-3.14)); ignore span);
 
-        let (res, res_type) = parse_infer_and_eval(r#"let n = (λx → - x) in (n 4, n 4.2)"#)
+        let (res, res_type) = parse_infer_and_eval(r#"let n = (λx → - x) in (n (int 4), n 4.2)"#)
             .await
             .unwrap();
         assert_eq!(res_type, tuple!(int!(), float!()));
@@ -1653,7 +1658,7 @@ pub mod test {
                         g)
                     (let
                         f = λx → -(identity x),
-                        h = map f (map f [-1, -2, -3, -4])
+                        h = map f (map f [-(int 1), -(int 2), -(int 3), -(int 4)])
                     in
                         map
                             f
@@ -1696,7 +1701,7 @@ pub mod test {
     async fn test_lambda_scope() {
         let (res, res_type) = parse_infer_and_eval(
             r#"
-            let foo = [1, 2, 3] in map (\foo -> negate foo) foo
+            let foo = [int 1, int 2, int 3] in map (\foo -> negate foo) foo
             "#,
         )
         .await
@@ -1706,7 +1711,7 @@ pub mod test {
 
         let (res, res_type) = parse_infer_and_eval(
             r#"
-            let foo = ["one"] in (\foo -> negate foo) 2
+            let foo = ["one"] in (\foo -> negate foo) (int 2)
             "#,
         )
         .await

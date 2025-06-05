@@ -235,7 +235,6 @@ where
         this.register("float", fn1(|_, x: i64| Ok(x as f64)));
         this.register("float", fn1(|_, x: String| Ok(x.parse::<f64>()?)));
 
-        this.register("negate", fn1(|_, x: u64| Ok(-(x as i64))));
         this.register("negate", fn1(|_, x: i64| Ok(-x)));
         this.register("negate", fn1(|_, x: f64| Ok(-x)));
 
