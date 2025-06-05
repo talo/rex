@@ -222,7 +222,7 @@ pub fn generate_constraints(
             // If list is empty, create a fresh type variable for element type
             if exprs.is_empty() {
                 let elem_ty = Arc::new(Type::Var(TypeVar::new()));
-                return Arc::new(Type::App(Arc::new(Type::Con(TypeCon::List)), elem_ty));
+                return Type::list(elem_ty);
             }
 
             // Generate constraints for all expressions
@@ -237,10 +237,7 @@ pub fn generate_constraints(
                 constraint_system.add_eq(*span, types[0].clone(), ty.clone());
             }
 
-            Arc::new(Type::App(
-                Arc::new(Type::Con(TypeCon::List)),
-                types[0].clone(),
-            ))
+            Type::list(types[0].clone())
         }
 
         Expr::App(span, f, x) => {
@@ -249,7 +246,7 @@ pub fn generate_constraints(
 
             let result_type = Arc::new(Type::Var(TypeVar::new()));
 
-            let expected_f_type = Arc::new(Type::make_arrow(x_type.clone(), result_type.clone()));
+            let expected_f_type = Type::arrow(x_type.clone(), result_type.clone());
 
             constraint_system.add_eq(*span, f_type, expected_f_type);
 
@@ -267,7 +264,7 @@ pub fn generate_constraints(
 
             let body_type = generate_constraints(body, &new_env, constraint_system, errors);
 
-            Arc::new(Type::make_arrow(param_type, body_type))
+            Type::arrow(param_type, body_type)
         }
 
         Expr::Let(_span, var, def, body) => {

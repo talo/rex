@@ -228,14 +228,40 @@ impl Type {
         }
     }
 
-    pub fn make_arrow(a: Arc<Type>, b: Arc<Type>) -> Type {
+    pub fn arrow(a: Arc<Type>, b: Arc<Type>) -> Arc<Type> {
+        Arc::new(Type::App(
+            Arc::new(Type::App(Arc::new(Type::Con(TypeCon::Arrow)), a)),
+            b,
+        ))
+    }
+
+    pub fn result(a: Arc<Type>, b: Arc<Type>) -> Arc<Type> {
+        Arc::new(Type::App(
+            Arc::new(Type::App(Arc::new(Type::Con(TypeCon::Result)), a)),
+            b,
+        ))
+    }
+
+    pub fn option(a: Arc<Type>) -> Arc<Type> {
+        Arc::new(Type::App(Arc::new(Type::Con(TypeCon::Option)), a))
+    }
+
+    pub fn promise(a: Arc<Type>) -> Arc<Type> {
+        Arc::new(Type::App(Arc::new(Type::Con(TypeCon::Promise)), a))
+    }
+
+    pub fn list(a: Arc<Type>) -> Arc<Type> {
+        Arc::new(Type::App(Arc::new(Type::Con(TypeCon::List)), a))
+    }
+
+    pub fn arrow_raw(a: Arc<Type>, b: Arc<Type>) -> Type {
         Type::App(
             Arc::new(Type::App(Arc::new(Type::Con(TypeCon::Arrow)), a)),
             b,
         )
     }
 
-    pub fn make_result(a: Arc<Type>, b: Arc<Type>) -> Type {
+    pub fn result_raw(a: Arc<Type>, b: Arc<Type>) -> Type {
         Type::App(
             Arc::new(Type::App(Arc::new(Type::Con(TypeCon::Result)), a)),
             b,
@@ -246,7 +272,7 @@ impl Type {
         params
             .into_iter()
             .rev()
-            .fold(ret, |acc, t| Arc::new(Type::make_arrow(t, acc)))
+            .fold(ret, |acc, t| Type::arrow(t, acc))
     }
 
     pub fn resolve_vars(&self, assignments: &HashMap<String, Arc<Type>>) -> Arc<Type> {
@@ -908,7 +934,7 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::make_arrow(Arc::new(A0::to_type()), Arc::new(B::to_type()))
+        Type::arrow_raw(Arc::new(A0::to_type()), Arc::new(B::to_type()))
     }
 }
 
@@ -919,12 +945,9 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::make_arrow(
+        Type::arrow_raw(
             Arc::new(A0::to_type()),
-            Arc::new(Type::make_arrow(
-                Arc::new(A1::to_type()),
-                Arc::new(B::to_type()),
-            )),
+            Type::arrow(Arc::new(A1::to_type()), Arc::new(B::to_type())),
         )
     }
 }
@@ -937,15 +960,12 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::make_arrow(
+        Type::arrow_raw(
             Arc::new(A0::to_type()),
-            Arc::new(Type::make_arrow(
+            Type::arrow(
                 Arc::new(A1::to_type()),
-                Arc::new(Type::make_arrow(
-                    Arc::new(A2::to_type()),
-                    Arc::new(B::to_type()),
-                )),
-            )),
+                Type::arrow(Arc::new(A2::to_type()), Arc::new(B::to_type())),
+            ),
         )
     }
 }
@@ -959,18 +979,15 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::make_arrow(
+        Type::arrow_raw(
             Arc::new(A0::to_type()),
-            Arc::new(Type::make_arrow(
+            Type::arrow(
                 Arc::new(A1::to_type()),
-                Arc::new(Type::make_arrow(
+                Type::arrow(
                     Arc::new(A2::to_type()),
-                    Arc::new(Type::make_arrow(
-                        Arc::new(A3::to_type()),
-                        Arc::new(B::to_type()),
-                    )),
-                )),
-            )),
+                    Type::arrow(Arc::new(A3::to_type()), Arc::new(B::to_type())),
+                ),
+            ),
         )
     }
 }
@@ -981,7 +998,7 @@ where
     E: ToType,
 {
     fn to_type() -> Type {
-        Type::make_result(Arc::new(E::to_type()), Arc::new(T::to_type()))
+        Type::result_raw(Arc::new(E::to_type()), Arc::new(T::to_type()))
     }
 }
 

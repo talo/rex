@@ -663,7 +663,7 @@ where
     B: ToType,
 {
     fn to_type() -> Type {
-        Type::make_arrow(Arc::new(A::to_type()), Arc::new(B::to_type()))
+        Type::arrow_raw(Arc::new(A::to_type()), Arc::new(B::to_type()))
     }
 }
 
