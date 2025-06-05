@@ -16,10 +16,7 @@ use crate::{
 pub type Subst = HashTrieMapSync<TypeVar, Arc<Type>>;
 
 // NOTE(loong): We do not support overloaded parametric polymorphism.
-pub fn unify_constraints(
-    constraint_system: &mut ConstraintSystem,
-    errors: &mut BTreeSet<TypeError>,
-) {
+pub fn unify_constraints(constraint_system: &mut ConstraintSystem) {
     let mut eq_constraints: Vec<Constraint> = Vec::new();
     let mut one_of_constraints: Vec<Constraint> = Vec::new();
 
@@ -44,13 +41,13 @@ pub fn unify_constraints(
             eq_constraints,
             &mut constraint_system.subst,
             &mut did_change,
-            errors,
+            &mut constraint_system.errors,
         );
         one_of_constraints = unify_one_of_constraints(
             one_of_constraints,
             &mut constraint_system.subst,
             &mut did_change,
-            errors,
+            &mut constraint_system.errors,
         );
 
         if !did_change {
