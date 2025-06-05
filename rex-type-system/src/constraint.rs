@@ -13,7 +13,7 @@ use crate::{
     unify::{self, Subst},
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct ConstraintSystem {
     pub constraints: Vec<Constraint>,
 }
@@ -283,26 +283,27 @@ pub fn generate_constraints(
             //     global_constraints: constraint_system.global_constraints.clone(),
             // };
             // ```
-            let mut def_constraint_system = constraint_system.clone();
-
-            let def_type = generate_constraints(def, env, &mut def_constraint_system, errors);
+            let old_len = constraint_system.constraints.len();
+            let def_type = generate_constraints(def, env, constraint_system, errors);
 
             // Solve definition constraints to get its type
-            let def_subst = unify::unify_constraints(&def_constraint_system, errors);
+            let def_subst = unify::unify_constraints(constraint_system, errors);
             let solved_def_type = def_type.apply(&def_subst);
-            constraint_system.extend(def_constraint_system.clone());
 
             // Generalize the type
-            let gen_deps = def_constraint_system
-                .constraints()
-                .filter_map(|c| match c {
-                    Constraint::OneOf(_, v, _) => Some(*v),
-                    Constraint::Eq(_, x, _) => match &**x {
-                        Type::Var(id) => Some(*id),
-                        _ => None,
-                    },
-                })
-                .collect();
+            let mut gen_deps: BTreeSet<TypeVar> = BTreeSet::new();
+            for i in old_len..constraint_system.constraints.len() {
+                match &constraint_system.constraints[i] {
+                    Constraint::OneOf(_, v, _) => {
+                        gen_deps.insert(*v);
+                    }
+                    Constraint::Eq(_, x, _) => {
+                        if let Type::Var(id) = &**x {
+                            gen_deps.insert(*id);
+                        }
+                    }
+                }
+            }
 
             // TODO(loong): is this safe to do? We only generalize the
             // let-binding if it is a function. It is possible that the binding
