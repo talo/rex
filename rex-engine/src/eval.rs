@@ -1114,7 +1114,7 @@ pub mod test {
                     a = Ok "one",
                     b = Err 0,
                     c = Err 1,
-                    f = or_else (\x -> if x == 0 then Ok "yes" else Err 3.14)
+                    f = or_else_result (\x -> if x == 0 then Ok "yes" else Err 3.14)
                 in
                     map f [a, b, c]
                 "#,
@@ -1138,7 +1138,7 @@ pub mod test {
                 let
                     a = Ok 4,
                     b = Err "bad",
-                    f = unwrap_or_else (\x -> 99)
+                    f = unwrap_or_else_result (\x -> 99)
                 in
                     map f [a, b]
                 "#,
@@ -1240,7 +1240,7 @@ pub mod test {
                 let
                     a = Some 5.1,
                     b = None,
-                    f = or_else (\x -> Some 3.14)
+                    f = or_else_option (\x -> Some 3.14)
                 in
                     map f [a, b]
                 "#,
@@ -1260,7 +1260,7 @@ pub mod test {
                 let
                     a = Some 5.1,
                     b = None,
-                    f = or_else (\x -> None)
+                    f = or_else_option (\x -> None)
                 in
                     map f [a, b]
                 "#,
@@ -1277,47 +1277,13 @@ pub mod test {
     }
 
     #[tokio::test]
-    async fn test_or_else_overload() {
-        let (res, res_type) = parse_infer_and_eval(
-            r#"
-                let
-                    template = λa b c → or_else (λx → if (a x) then b else c),
-                    f = template (λx → x == 0) (Ok "yes") (Err 2),
-                    g = template (λx → true) (Some 1.5) (Some 2.5),
-                in (
-                    map f [Ok "one", Err 0, Err 1],
-                    map g [Some 3.5, None]
-                )
-                "#,
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            res_type,
-            tuple!(list!(result!(uint!(), string!())), list!(option!(float!())),)
-        );
-        assert_expr_eq!(
-            res,
-            tup!(
-                l!(
-                    n!("Ok", Some(s!("one"))),
-                    n!("Ok", Some(s!("yes"))),
-                    n!("Err", Some(u!(2)))),
-                l!(n!("Some", Some(f!(3.5))),
-                    n!("Some", Some(f!(1.5)))))
-
-            ;
-            ignore span);
-    }
-
-    #[tokio::test]
     async fn test_unwrap_or_else_option() {
         let (res, res_type) = parse_infer_and_eval(
             r#"
                 let
                     a = Some 4,
                     b = None,
-                    f = unwrap_or_else (\x -> 99)
+                    f = unwrap_or_else_option (\x -> 99)
                 in
                     map f [a, b]
                 "#,
@@ -1326,70 +1292,6 @@ pub mod test {
         .unwrap();
         assert_eq!(res_type, list!(uint!()));
         assert_expr_eq!(res, l!(u!(4), u!(99)); ignore span);
-    }
-
-    #[tokio::test]
-    async fn test_unwrap_or_else_overload() {
-        let (res, res_type) = parse_infer_and_eval(
-            r#"(
-                map (unwrap_or_else (\z -> 99)) [Ok 4, Err "bad"],
-                map (unwrap_or_else (\z -> 2.5)) [Some 4.5, None]
-            )
-            "#,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(res_type, tuple!(list!(uint!()), list!(float!())));
-        assert_expr_eq!(res,tup!(l!(u!(4), u!(99)), l!(f!(4.5), f!(2.5))); ignore span);
-
-        // FIXME(peter): let bindings are not properly generalized in this case
-        // let (res, res_type) = parse_infer_and_eval(
-        //     r#"
-        //     let
-        //         u = unwrap_or_else
-        //     in (
-        //         map (u (\z -> 99)) [Ok 4, Err "bad"],
-        //         map (u (\z -> 2.5)) [Some 4.5, None]
-        //     )
-        //     "#,
-        // )
-        // .await
-        // .unwrap();
-        // assert_eq!(res_type, tuple!(list!(uint!()), list!(float!())));
-        // assert_expr_eq!(res,tup!(l!(u!(4), u!(99)), l!(f!(4.5), f!(2.5))); ignore span);
-
-        let (res, res_type) = parse_infer_and_eval(
-            r#"
-            let
-                f = (unwrap_or_else (\z -> 99)),
-                g = (unwrap_or_else (\z -> 99)),
-            in (
-                map f [Ok 4, Err "bad"],
-                map g [Some 5, None]
-            )
-            "#,
-        )
-        .await
-        .unwrap();
-        assert_eq!(res_type, tuple!(list!(uint!()), list!(uint!())));
-        assert_expr_eq!(res,tup!(l!(u!(4), u!(99)), l!(u!(5), u!(99))); ignore span);
-
-        // FIXME(peter): let bindings are not properly generalized in this case
-        // let (res, res_type) = parse_infer_and_eval(
-        //     r#"
-        //     let
-        //         f = (unwrap_or_else (\z -> 99)),
-        //     in (
-        //         map f [Ok 4, Err "bad"],
-        //         map f [Some 5, None]
-        //     )
-        //     "#,
-        // )
-        // .await
-        // .unwrap();
-        // assert_eq!(res_type, tuple!(list!(uint!()), list!(uint!())));
-        // assert_expr_eq!(res,tup!(l!(u!(4), u!(99)), l!(u!(5), u!(99))); ignore span);
     }
 
     #[tokio::test]
@@ -1542,7 +1444,7 @@ pub mod test {
             let
                 results = [Ok "one", Err 2, Ok "three", Err 4],
             in
-                filter_map (unwrap_or_else (λy → None)) (map (λx → map Some x) results)
+                filter_map (unwrap_or_else_result (λy → None)) (map (λx → map Some x) results)
             "#,
         )
         .await
@@ -1555,7 +1457,7 @@ pub mod test {
             let
                 results = [Ok "one", Err 2, Ok "three", Err 4],
                 only_successful_results = λr →
-                    filter_map (unwrap_or_else (λy → None)) (map (λx → map Some x) r),
+                    filter_map (unwrap_or_else_result (λy → None)) (map (λx → map Some x) r),
             in
                 only_successful_results results
             "#,
@@ -1570,7 +1472,7 @@ pub mod test {
             r#"
             let
                 results = [Ok "one", Err 2, Ok "three", Err 4],
-                result_to_option = (λx → unwrap_or_else (λy → None) (map Some x)),
+                result_to_option = (λx → unwrap_or_else_result (λy → None) (map Some x)),
                 only_successful_results = λr → filter_map result_to_option r
             in
                 only_successful_results results

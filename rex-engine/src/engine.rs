@@ -517,7 +517,7 @@ where
             }),
         );
         this.register(
-            "or_else",
+            "or_else_result",
             fn_async2(|ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
                 Box::pin(async move {
                     match x {
@@ -530,7 +530,7 @@ where
             }),
         );
         this.register(
-            "unwrap_or_else",
+            "unwrap_or_else_result",
             fn_async2(|ctx, f: Func<E, A>, x: Result<A, E>| {
                 Box::pin(async move {
                     match x {
@@ -586,7 +586,7 @@ where
             }),
         );
         this.register(
-            "or_else",
+            "or_else_option",
             fn_async2(|ctx, f: Func<(), Option<A>>, x: Option<A>| {
                 Box::pin(async move {
                     match x {
@@ -601,7 +601,7 @@ where
             }),
         );
         this.register(
-            "unwrap_or_else",
+            "unwrap_or_else_option",
             fn_async2(|ctx, f: Func<(), A>, x: Option<A>| {
                 Box::pin(async move {
                     match x {
