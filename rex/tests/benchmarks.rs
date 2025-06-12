@@ -1,8 +1,17 @@
 use chrono::{TimeDelta, Utc};
-use rex::engine::{engine::Builder, program::Program};
-use rex_type_system::types::{ADTVariant, Type, ADT};
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use rex::engine::{
+    engine::{fn_async1, Builder},
+    program::Program,
+};
+use rex_type_system::{
+    types::{ADTVariant, Type, ADT},
+    uint,
+};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 #[tokio::test]
 pub async fn benchmark_num_constructors() {
@@ -106,6 +115,148 @@ async fn benchmark_simple() {
     println!("res = {}", res);
 }
 
+#[tokio::test]
+async fn benchmark_large_lists() {
+    let builder: Builder<()> = Builder::with_prelude().unwrap();
+
+    let t1 = Utc::now();
+    let program = Program::compile(
+        builder,
+        r#"
+        let
+            cartesian_product1 = \a b -> map (\x -> map (\y -> (x, y)) b) a,
+            cartesian_product2 = \a b -> map (\x -> map (\y -> (x, y)) b) a,
+            n = 20 {- 100 -},
+        in
+            len (cartesian_product2
+                (list_range 0 n None)
+                (cartesian_product1
+                    (list_range 0 n None)
+                    (list_range 0 n None)))
+        "#,
+    )
+    .unwrap();
+
+    let t2 = Utc::now();
+    let compile_time: TimeDelta = t2 - t1;
+    println!("compile_time = {} ms", compile_time.num_milliseconds());
+
+    let res = program.run(()).await.unwrap();
+    let t3 = Utc::now();
+
+    let eval_time: TimeDelta = t3 - t2;
+    println!("eval_time = {} ms", eval_time.num_milliseconds());
+
+    println!();
+    println!("res = {}", res);
+}
+
+#[tokio::test]
+async fn benchmark_map_large_function() {
+    let builder: Builder<()> = Builder::with_prelude().unwrap();
+
+    let list_size = 10; // 10000;
+    let function_count = 10;
+    let mut source = String::new();
+    source.push_str("let\n    g = \\x -> let\n");
+    for i in 0..function_count {
+        source.push_str(&format!(
+            "
+        f{i} = let a = \\x ->
+            if x == 1 then 1
+            else if x == 2 then 2
+            else if x == 3 then 3
+            else if x == 4 then 4
+            else if x == 5 then 5
+            else if x == 6 then 6
+            else if x == 7 then 7
+            else if x == 8 then 8
+            else x
+        in
+            \\y -> (a y),"
+        ));
+    }
+    source.push_str(&format!(
+        "
+        in
+            f1 x
+    in
+        len (map g (list_range 0 {list_size} None))
+    "
+    ));
+
+    let t1 = Utc::now();
+    let program = Program::compile(builder, &source).unwrap();
+
+    let t2 = Utc::now();
+    let compile_time: TimeDelta = t2 - t1;
+    println!("compile_time = {} ms", compile_time.num_milliseconds());
+
+    let res = program.run(()).await.unwrap();
+    let t3 = Utc::now();
+
+    let eval_time: TimeDelta = t3 - t2;
+    println!("eval_time = {} ms", eval_time.num_milliseconds());
+
+    println!();
+    println!("res = {}", res);
+}
+
+#[derive(Default)]
+struct TaskCounter {
+    cur_tasks: usize,
+    max_tasks: usize,
+    total: usize,
+}
+
+#[tokio::test]
+pub async fn benchmark_map_parallel() {
+    let counter = Arc::new(Mutex::new(TaskCounter::default()));
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    let duration = Duration::from_millis(100);
+
+    let fn_counter = counter.clone();
+    builder.register(
+        "do_something",
+        fn_async1(move |_ctx, a: u64| {
+            let counter = fn_counter.clone();
+            Box::pin(async move {
+                println!("Task {} started", a);
+                {
+                    let mut guard = counter.lock().unwrap();
+                    guard.cur_tasks += 1;
+                    guard.max_tasks = std::cmp::max(guard.cur_tasks, guard.max_tasks);
+                }
+                tokio::time::sleep(duration).await;
+                {
+                    let mut guard = counter.lock().unwrap();
+                    assert!(guard.cur_tasks > 0);
+                    guard.cur_tasks -= 1;
+                    guard.max_tasks = std::cmp::max(guard.cur_tasks, guard.max_tasks);
+                    guard.total += 1;
+                }
+                println!("Task {} finished", a);
+                Ok(a)
+            })
+        }),
+    );
+    let program = Program::compile(
+        builder,
+        r#"
+        map do_something (list_range 0 100 None)
+        "#,
+    )
+    .unwrap();
+    program.run(()).await.unwrap();
+    {
+        let guard = counter.lock().unwrap();
+        println!("cur_tasks = {}", guard.cur_tasks);
+        println!("max_tasks = {}", guard.max_tasks);
+        println!("total = {}", guard.total);
+    }
+}
+
 struct Params {
     adts: usize,
     variants: usize,
@@ -140,7 +291,7 @@ fn generate_adts(mut params: Params) -> Vec<Arc<Type>> {
                 let mut entries: BTreeMap<String, Arc<Type>> = BTreeMap::new();
 
                 for field_no in 0..params.fields {
-                    entries.insert(format!("field{}", field_no), Arc::new(Type::Uint));
+                    entries.insert(format!("field{}", field_no), uint!());
                 }
                 adt.variants.push(ADTVariant {
                     name: variant_name,

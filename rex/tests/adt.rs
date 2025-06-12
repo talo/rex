@@ -2,15 +2,16 @@ use chrono::{DateTime, Utc};
 use rex::{
     ast::{assert_expr_eq, b, d, expr::Expr, f, i, l, n, s, tup, u},
     engine::{
-        codec::{Decode, Encode},
-        engine::Builder,
+        codec::{Decode, Encode, Promise},
+        engine::{fn2, Builder},
+        ftable::A,
         program::Program,
     },
     json::{expr_to_json, json_to_expr},
     lexer::span::Span,
     type_system::{
-        adt, adt_variant, bool, float, int, list, string, tuple,
-        types::{ADTVariant, ToType, Type, ADT},
+        adt, adt_variant, bool, float, int, list, option, promise, result, string, tuple,
+        types::{ADTVariant, ToType, Type, TypeCon, ADT},
         uint,
     },
     Rex,
@@ -105,7 +106,7 @@ async fn test_struct_single_unnamed_field() {
         docs: None,
         variants: vec![ADTVariant {
             name: "Foo".to_string(),
-            t: Some(Arc::new(Type::String)),
+            t: Some(string!()),
             docs: None,
             t_docs: None,
             discriminant: None,
@@ -350,8 +351,8 @@ async fn test_field_optional() {
     let expected_type = Arc::new(Type::ADT(adt! {
         Foo = Foo {
             a: string!(),
-            b: Arc::new(Type::Option(uint!())),
-            c: Arc::new(Type::Option(uint!())),
+            b: option!(uint!()),
+            c: option!(uint!()),
         }
     }));
 
@@ -424,8 +425,8 @@ async fn test_field_result() {
     let expected_type = Arc::new(Type::ADT(adt! {
         Foo = Foo {
             a: string!(),
-            i1: Arc::new(Type::Result(uint!(), string!())),
-            i2: Arc::new(Type::Result(uint!(), string!())),
+            i1: result!(string!(), uint!()),
+            i2: result!(string!(), uint!()),
         }
     }));
 
@@ -460,6 +461,73 @@ async fn test_field_result() {
     assert_expr_eq!(res, expected_encoding; ignore span);
 }
 
+#[tokio::test]
+async fn test_field_promise() {
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    pub struct Foo {
+        pub a: String,
+        pub i1: Promise<String>,
+        pub i2: Promise<u64>,
+    }
+
+    let value = Foo {
+        a: "Hello".to_string(),
+        i1: Promise::new(uuid!("00000000-0000-0000-0000-000000000001")),
+        i2: Promise::new(uuid!("00000000-0000-0000-0000-000000000002")),
+    };
+
+    let expected_type = Arc::new(Type::ADT(adt! {
+        Foo = Foo {
+            a: string!(),
+            i1: promise!(string!()),
+            i2: promise!(uint!()),
+        }
+    }));
+
+    let expected_encoding = n!(
+        "Foo",
+        Some(d!(
+            a = s!("Hello"),
+            i1 = Arc::new(Expr::Promise(
+                Span::default(),
+                uuid!("00000000-0000-0000-0000-000000000001")
+            )),
+            i2 = Arc::new(Expr::Promise(
+                Span::default(),
+                uuid!("00000000-0000-0000-0000-000000000002")
+            )),
+        ))
+    );
+
+    compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder
+        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .unwrap();
+    builder.register(
+        "make_promise",
+        fn2(|_ctx, uuid: Uuid, _value: A| {
+            let promise: Promise<A> = Promise::new(uuid);
+            Ok(promise)
+        }),
+    );
+    let program = Program::compile(
+        builder,
+        r#"
+            Foo {
+                a = "Hello",
+                i1 = make_promise (uuid "00000000-0000-0000-0000-000000000001") "hello",
+                i2 = make_promise (uuid "00000000-0000-0000-0000-000000000002") 123,
+            }
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
+}
+
 #[test]
 fn test_field_datetime() {
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -476,19 +544,19 @@ fn test_field_datetime() {
     };
 
     let expected_type = Arc::new(Type::ADT(adt! {
-        Foo = Foo { a: string!(), b: Arc::new(Type::DateTime) }
+        Foo = Foo { a: string!(), b: Arc::new(Type::Con(TypeCon::DateTime)) }
     }));
 
     let expected_encoding = n!(
         "Foo",
         Some(d!(
             a = s!("Hello"),
-            b = Expr::DateTime(
+            b = Arc::new(Expr::DateTime(
                 Span::default(),
                 DateTime::parse_from_rfc3339("2014-11-28T21:00:09+09:00")
                     .unwrap()
                     .into()
-            ),
+            )),
         ))
     );
 
@@ -509,17 +577,17 @@ async fn test_field_uuid() {
     };
 
     let expected_type = Arc::new(Type::ADT(adt! {
-        Foo = Foo { a: string!(), b: Arc::new(Type::Uuid) }
+        Foo = Foo { a: string!(), b: Arc::new(Type::Con(TypeCon::Uuid)) }
     }));
 
     let expected_encoding = n!(
         "Foo",
         Some(d!(
             a = s!("Hello"),
-            b = Expr::Uuid(
+            b = Arc::new(Expr::Uuid(
                 Span::default(),
                 uuid!("f5d62567-7a45-4637-bbfb-252f4162574f")
-            )
+            ))
         ))
     );
 
@@ -852,7 +920,7 @@ async fn test_json_field() {
                 variants: vec![
                     ADTVariant {
                         name: "serde_json::Value".to_string(),
-                        t: Some(Arc::new(Type::String)),
+                        t: Some(string!()),
                         docs: None,
                         t_docs: None,
                         discriminant: None,

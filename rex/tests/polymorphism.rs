@@ -1,5 +1,11 @@
 use rex_ast::{assert_expr_eq, b, d, expr::Expr, f, l, n, s, tup, u};
-use rex_engine::{engine::Builder, error::Error, program::Program};
+use rex_engine::{
+    codec::{Func, Promise},
+    engine::{fn1, fn_async2, Builder},
+    error::Error,
+    ftable::{A, B},
+    program::Program,
+};
 use rex_lexer::span::Span;
 use rex_proc_macro::Rex;
 use rex_type_system::{
@@ -8,6 +14,7 @@ use rex_type_system::{
     uint,
 };
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn test_function_overload_param_count_mismatch() {
@@ -15,7 +22,9 @@ async fn test_function_overload_param_count_mismatch() {
     let res = builder.register_fn_core_with_name(
         "map",
         Type::build_arrow(vec![uint!(), uint!(), uint!()], uint!()),
-        Box::new(move |_ctx, _args| Box::pin(async move { Ok(Expr::Uint(Span::default(), 0)) })),
+        Box::new(move |_ctx, _args| {
+            Box::pin(async move { Ok(Arc::new(Expr::Uint(Span::default(), 0))) })
+        }),
     );
 
     assert_eq!(
@@ -117,4 +126,46 @@ async fn test_map_adt() {
            n!("Foo", Some(d!( a = u!(2), b = s!("Hello")))),
            n!("Foo", Some(d!( a = u!(3), b = s!("Hello")))));
         ignore span);
+}
+
+#[tokio::test]
+async fn test_promise_overload() {
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder.register(
+        "produce_promise",
+        fn1(|_ctx, uuid: Uuid| {
+            let promise: Promise<u64> = Promise::new(uuid);
+            Ok(promise)
+        }),
+    );
+
+    builder.register(
+        "consume_promise",
+        fn1(|_ctx, _promise: Promise<String>| Ok(true)),
+    );
+
+    builder.register(
+        "map",
+        fn_async2(|_ctx, _f: Func<A, B>, x: Promise<A>| {
+            Box::pin(async move {
+                let res: Promise<B> = Promise::new(x.uuid);
+                Ok(res)
+            })
+        }),
+    );
+
+    let program = Program::compile(
+        builder,
+        r#"
+            (
+                map (λx → x + 1) [1, 2, 3],
+                consume_promise (map string (produce_promise random_uuid)),
+            )
+
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, tuple!(list!(uint!()), bool!()));
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, tup!(l!(u!(2), u!(3), u!(4)), b!(true)); ignore span);
 }

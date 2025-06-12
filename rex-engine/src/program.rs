@@ -12,9 +12,8 @@ use rex_type_system::{
     constraint::{generate_constraints, ConstraintSystem},
     types::Type,
     unify,
-    // error::TypeError,
 };
-use std::{collections::BTreeSet, sync::Arc};
+use std::sync::Arc;
 
 pub struct Program<State>
 where
@@ -22,7 +21,7 @@ where
 {
     pub ftable: Ftable<State>,
     pub res_type: Arc<Type>,
-    pub expr: Expr,
+    pub expr: Arc<Expr>,
     pub subst: Subst,
 }
 
@@ -31,29 +30,18 @@ where
     State: Clone + Send + Sync + 'static,
 {
     pub fn compile(builder: Builder<State>, code: &str) -> Result<Self, Error> {
-        let tokens = Token::tokenize(code).map_err(|e| match e {
-            LexicalError::UnexpectedToken(s) => Error::UnexpectedToken {
-                span: s,
-                trace: Default::default(),
-            },
-        })?;
-        let mut parser = Parser::new(tokens);
-        let expr = parser.parse_program().map_err(|es| Error::Parser {
-            errors: es,
-            trace: Default::default(),
-        })?;
+        let expr = Self::parse(code)?;
 
         let (ftable, type_env) = builder.build();
-        let mut constraint_system = ConstraintSystem::default();
+        let mut constraint_system = ConstraintSystem::new();
 
-        let mut errors = BTreeSet::new();
-        let ty = generate_constraints(&expr, &type_env, &mut constraint_system, &mut errors);
-        let subst = unify::unify_constraints(&constraint_system, &mut errors);
-        if !errors.is_empty() {
+        let ty = generate_constraints(&expr, &type_env, &mut constraint_system);
+        unify::unify_constraints(&mut constraint_system);
+        if !constraint_system.errors.is_empty() {
             // Sort by span and path first, so the errors appear in the same order the parts
             // of the input file they correspond do. The default order for an enum produced by
             // #[derive(Ord)] sorts by type first, which is not the best choice for this case.
-            let mut errors = errors.into_iter().collect::<Vec<_>>();
+            let mut errors = constraint_system.errors.into_iter().collect::<Vec<_>>();
             errors.sort_by(|a, b| (a.span(), a.path(), a).cmp(&(b.span(), b.path(), b)));
 
             return Err(Error::TypeInference {
@@ -62,16 +50,27 @@ where
             });
         }
 
-        let res_type = unify::apply_subst(&ty, &subst);
+        let res_type = ty.apply(&constraint_system.subst);
         Ok(Program {
             ftable,
             res_type,
             expr,
-            subst,
+            subst: constraint_system.subst,
         })
     }
 
-    pub async fn run(self, state: State) -> Result<Expr, Error> {
+    pub fn compile_without_typecheck(builder: Builder<State>, code: &str) -> Result<Self, Error> {
+        let expr = Self::parse(code)?;
+        let (ftable, _) = builder.build();
+        Ok(Program {
+            ftable,
+            res_type: Arc::new(Type::Tuple(vec![])),
+            expr,
+            subst: Subst::default(),
+        })
+    }
+
+    pub async fn run(self, state: State) -> Result<Arc<Expr>, Error> {
         eval(
             &Context {
                 scope: Scope::new_sync(),
@@ -82,5 +81,19 @@ where
             None,
         )
         .await
+    }
+
+    fn parse(code: &str) -> Result<Arc<Expr>, Error> {
+        let tokens = Token::tokenize(code).map_err(|e| match e {
+            LexicalError::UnexpectedToken(s) => Error::UnexpectedToken {
+                span: s,
+                trace: Default::default(),
+            },
+        })?;
+        let mut parser = Parser::new(tokens);
+        parser.parse_program().map_err(|es| Error::Parser {
+            errors: es,
+            trace: Default::default(),
+        })
     }
 }
