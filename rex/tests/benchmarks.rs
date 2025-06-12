@@ -1,11 +1,17 @@
 use chrono::{TimeDelta, Utc};
-use rex::engine::{engine::Builder, program::Program};
+use rex::engine::{
+    engine::{fn_async1, Builder},
+    program::Program,
+};
 use rex_type_system::{
     types::{ADTVariant, Type, ADT},
     uint,
 };
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 #[tokio::test]
 pub async fn benchmark_num_constructors() {
@@ -194,6 +200,61 @@ async fn benchmark_map_large_function() {
 
     println!();
     println!("res = {}", res);
+}
+
+#[derive(Default)]
+struct TaskCounter {
+    cur_tasks: usize,
+    max_tasks: usize,
+    total: usize,
+}
+
+#[tokio::test]
+pub async fn benchmark_map_parallel() {
+    let counter = Arc::new(Mutex::new(TaskCounter::default()));
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    let duration = Duration::from_millis(100);
+
+    let fn_counter = counter.clone();
+    builder.register(
+        "do_something",
+        fn_async1(move |_ctx, a: u64| {
+            let counter = fn_counter.clone();
+            Box::pin(async move {
+                println!("Task {} started", a);
+                {
+                    let mut guard = counter.lock().unwrap();
+                    guard.cur_tasks += 1;
+                    guard.max_tasks = std::cmp::max(guard.cur_tasks, guard.max_tasks);
+                }
+                tokio::time::sleep(duration).await;
+                {
+                    let mut guard = counter.lock().unwrap();
+                    assert!(guard.cur_tasks > 0);
+                    guard.cur_tasks -= 1;
+                    guard.max_tasks = std::cmp::max(guard.cur_tasks, guard.max_tasks);
+                    guard.total += 1;
+                }
+                println!("Task {} finished", a);
+                Ok(a)
+            })
+        }),
+    );
+    let program = Program::compile(
+        builder,
+        r#"
+        map do_something (list_range 0 100 None)
+        "#,
+    )
+    .unwrap();
+    program.run(()).await.unwrap();
+    {
+        let guard = counter.lock().unwrap();
+        println!("cur_tasks = {}", guard.cur_tasks);
+        println!("max_tasks = {}", guard.max_tasks);
+        println!("total = {}", guard.total);
+    }
 }
 
 struct Params {

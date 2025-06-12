@@ -1,8 +1,10 @@
+use futures::{stream, StreamExt, TryStreamExt};
 use rex_type_system::types::{Dispatch, ToType, Type, TypeEnv, TypeScheme, TypeVar, ADT};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt,
     future::Future,
+    num::NonZeroUsize,
     pin::Pin,
     str::FromStr,
     sync::Arc,
@@ -405,12 +407,17 @@ where
             "map",
             fn_async2(|ctx, f: Func<A, B>, xs: Vec<A>| {
                 Box::pin(async move {
-                    let mut ys: Vec<B> = Vec::with_capacity(xs.len());
+                    let mut ys = Vec::with_capacity(xs.len());
                     for x in xs {
-                        let y = apply(ctx, &f, &x, None).await?;
-                        ys.push(B(y));
+                        ys.push(apply(ctx, f.clone(), x.clone(), None));
                     }
-                    Ok(ys)
+                    let nthreads = std::thread::available_parallelism()
+                        .unwrap_or(NonZeroUsize::new(1).unwrap())
+                        .get()
+                        * 2;
+                    let exprs: Vec<Arc<Expr>> =
+                        stream::iter(ys).buffered(nthreads).try_collect().await?;
+                    Ok(exprs.into_iter().map(B).collect::<Vec<B>>())
                 })
             }),
         );
