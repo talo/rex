@@ -30,17 +30,7 @@ where
     State: Clone + Send + Sync + 'static,
 {
     pub fn compile(builder: Builder<State>, code: &str) -> Result<Self, Error> {
-        let tokens = Token::tokenize(code).map_err(|e| match e {
-            LexicalError::UnexpectedToken(s) => Error::UnexpectedToken {
-                span: s,
-                trace: Default::default(),
-            },
-        })?;
-        let mut parser = Parser::new(tokens);
-        let expr = parser.parse_program().map_err(|es| Error::Parser {
-            errors: es,
-            trace: Default::default(),
-        })?;
+        let expr = Self::parse(code)?;
 
         let (ftable, type_env) = builder.build();
         let mut constraint_system = ConstraintSystem::new();
@@ -69,6 +59,17 @@ where
         })
     }
 
+    pub fn compile_without_typecheck(builder: Builder<State>, code: &str) -> Result<Self, Error> {
+        let expr = Self::parse(code)?;
+        let (ftable, _) = builder.build();
+        Ok(Program {
+            ftable,
+            res_type: Arc::new(Type::Tuple(vec![])),
+            expr,
+            subst: Subst::default(),
+        })
+    }
+
     pub async fn run(self, state: State) -> Result<Arc<Expr>, Error> {
         eval(
             &Context {
@@ -80,5 +81,19 @@ where
             None,
         )
         .await
+    }
+
+    fn parse(code: &str) -> Result<Arc<Expr>, Error> {
+        let tokens = Token::tokenize(code).map_err(|e| match e {
+            LexicalError::UnexpectedToken(s) => Error::UnexpectedToken {
+                span: s,
+                trace: Default::default(),
+            },
+        })?;
+        let mut parser = Parser::new(tokens);
+        parser.parse_program().map_err(|es| Error::Parser {
+            errors: es,
+            trace: Default::default(),
+        })
     }
 }
