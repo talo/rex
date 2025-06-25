@@ -12,6 +12,35 @@ use crate::{
 
 pub type FtableFn<State> = Box<dyn for<'r> Fx<'r, State>>;
 
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Namespace(Vec<String>);
+
+impl fmt::Display for Namespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        for (i, component) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, "::")?;
+            }
+            write!(f, "{}", component)?;
+        }
+        Ok(())
+    }
+}
+
+impl Namespace {
+    pub fn new(components: Vec<String>) -> Self {
+        Namespace(components)
+    }
+
+    pub fn rex() -> Self {
+        Namespace(vec!["rex".to_string()])
+    }
+
+    pub fn test() -> Self {
+        Namespace(vec!["test".to_string()])
+    }
+}
+
 pub trait Fx<'r, State>:
     Fn(
         &'r Context<State>,
@@ -86,6 +115,7 @@ where
 
     pub fn add_fn(
         &mut self,
+        _ns: &Namespace,
         n: impl ToString,
         t: Box<dyn Dispatch + Send + Sync>,
         f: FtableFn<State>,

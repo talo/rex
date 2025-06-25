@@ -3,7 +3,7 @@ use rex_engine::{
     codec::{Func, Promise},
     engine::{fn1, fn_async2, Builder},
     error::Error,
-    ftable::{A, B},
+    ftable::{Namespace, A, B},
     program::Program,
 };
 use rex_lexer::span::Span;
@@ -20,6 +20,7 @@ use uuid::Uuid;
 async fn test_function_overload_param_count_mismatch() {
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     let res = builder.register_fn_core_with_name(
+        &Namespace::test(),
         "map",
         Type::build_arrow(vec![uint!(), uint!(), uint!()], uint!()),
         Box::new(move |_ctx, _args| {
@@ -47,7 +48,7 @@ async fn test_accessor_overload_param_count_mismatch() {
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
-    let r = builder.register_adt(&Arc::new(Foo::to_type()), None, None);
+    let r = builder.register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None);
     assert_eq!(
         r,
         Err(Error::OverloadParamCountMismatch {
@@ -75,10 +76,10 @@ async fn test_field_accessors() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(One::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(One::to_type()), None, None)
         .unwrap();
     builder
-        .register_adt(&Arc::new(Two::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Two::to_type()), None, None)
         .unwrap();
     let program = Program::compile(
         builder,
@@ -109,7 +110,7 @@ async fn test_map_adt() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(
         builder,
@@ -132,6 +133,7 @@ async fn test_map_adt() {
 async fn test_promise_overload() {
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder.register(
+        &Namespace::test(),
         "produce_promise",
         fn1(|_ctx, uuid: Uuid| {
             let promise: Promise<u64> = Promise::new(uuid);
@@ -140,11 +142,13 @@ async fn test_promise_overload() {
     );
 
     builder.register(
+        &Namespace::test(),
         "consume_promise",
         fn1(|_ctx, _promise: Promise<String>| Ok(true)),
     );
 
     builder.register(
+        &Namespace::test(),
         "map",
         fn_async2(|_ctx, _f: Func<A, B>, x: Promise<A>| {
             Box::pin(async move {

@@ -13,11 +13,13 @@ use std::{fmt, sync::Arc};
 // errors when something goes wrong.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Error {
-    #[error("ambiguous overload of function {name}: types {t1} and {t2} may overlap{trace}")]
+    #[error("ambiguous overload of function {name}: types {t1} and {t2} may overlap; definition 1: {name1}, definition 2: {name2}{trace}")]
     OverlappingFunctions {
         name: String,
         t1: TypeScheme,
         t2: TypeScheme,
+        name1: String,
+        name2: String,
         trace: Trace,
     },
     #[error("unexpected token {span}{trace}")]
@@ -85,11 +87,15 @@ impl Error {
                 name,
                 t1,
                 t2,
+                name1,
+                name2,
                 trace,
             } => Self::OverlappingFunctions {
                 name,
                 t1,
                 t2,
+                name1,
+                name2,
                 trace: trace.extend(stack),
             },
             Self::UnexpectedToken { span, trace } => Self::UnexpectedToken {

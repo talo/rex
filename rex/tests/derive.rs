@@ -1,5 +1,5 @@
 use rex_ast::{assert_expr_eq, f, n, tup};
-use rex_engine::{engine::Builder, program::Program};
+use rex_engine::{engine::Builder, ftable::Namespace, program::Program};
 use rex_proc_macro::Rex;
 use rex_type_system::{
     adt, tuple,
@@ -367,7 +367,7 @@ async fn adt_curry() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Shape::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Shape::to_type()), None, None)
         .unwrap();
     let program = Program::compile(
         builder,

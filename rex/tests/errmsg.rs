@@ -1,6 +1,6 @@
 use rex::{
     type_system::{bool, dict, float, list, string, uint},
-    Builder, Error, Program, Rex, Span, ToType, Trace, Type, TypeError,
+    Builder, Error, Namespace, Program, Rex, Span, ToType, Trace, Type, TypeError,
 };
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ async fn test_missing_fields() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let res = Program::compile(
         builder,
@@ -40,7 +40,7 @@ async fn test_missing_fields() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let res = Program::compile(
         builder,
@@ -257,7 +257,7 @@ async fn test_path_error1() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let res = Program::compile(
         builder,
@@ -301,7 +301,7 @@ async fn test_path_error2() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Bar::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Bar::to_type()), None, None)
         .unwrap();
     let res = Program::compile(
         builder,
@@ -388,6 +388,7 @@ async fn test_path_error3() {
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
         .register_fn_core_with_name(
+            &Namespace::test(),
             "f",
             Type::arrow(dict0.clone(), dict0.clone()),
             Box::new(move |_, args| Box::pin(async move { Ok(args[0].clone()) })),
@@ -462,7 +463,7 @@ async fn test_path_error_multiple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let res = Program::compile(
         builder,

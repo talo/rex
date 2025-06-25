@@ -4,7 +4,7 @@ use rex::{
     engine::{
         codec::{Decode, Encode, Promise},
         engine::{fn2, Builder},
-        ftable::A,
+        ftable::{Namespace, A},
         program::Program,
     },
     json::{expr_to_json, json_to_expr},
@@ -47,7 +47,7 @@ async fn test_struct() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"Foo { a = 42, b = "Hello" }"#).unwrap();
     assert_eq!(program.res_type, expected_type);
@@ -56,7 +56,7 @@ async fn test_struct() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(
         builder,
@@ -88,7 +88,7 @@ async fn test_struct_unit() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"Foo"#).unwrap();
     assert_eq!(program.res_type, expected_type);
@@ -122,7 +122,7 @@ async fn test_struct_single_unnamed_field() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"Foo "Hello""#).unwrap();
     assert_eq!(program.res_type, expected_type);
@@ -146,7 +146,7 @@ async fn test_struct_unnamed_fields() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"Foo 42 "Hello""#).unwrap();
     assert_eq!(program.res_type, expected_type);
@@ -267,7 +267,7 @@ async fn test_field_vec() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(
         builder,
@@ -316,7 +316,7 @@ async fn test_field_tuple() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(
         builder,
@@ -389,7 +389,7 @@ async fn test_field_optional() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(
         builder,
@@ -443,7 +443,7 @@ async fn test_field_result() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(
         builder,
@@ -503,9 +503,10 @@ async fn test_field_promise() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     builder.register(
+        &Namespace::test(),
         "make_promise",
         fn2(|_ctx, uuid: Uuid, _value: A| {
             let promise: Promise<A> = Promise::new(uuid);
@@ -595,7 +596,7 @@ async fn test_field_uuid() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(
         builder,
@@ -635,7 +636,7 @@ async fn test_enum_unit() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Color::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Color::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"(Color::Red, Color::Green, Color::Blue)"#).unwrap();
     assert_eq!(
@@ -701,7 +702,7 @@ async fn test_enum_unit_int() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Color::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Color::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"(Color::Red, Color::Green, Color::Blue)"#).unwrap();
     assert_eq!(
@@ -748,7 +749,7 @@ async fn test_enum_named_fields() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"Foo::One { a = (21 * 2), b = 'Hello' }"#).unwrap();
     assert_eq!(program.res_type, expected_type);
@@ -757,7 +758,7 @@ async fn test_enum_named_fields() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"Foo::Two { c = true, d = (5.0 / 2.0) }"#).unwrap();
     assert_eq!(program.res_type, expected_type);
@@ -788,7 +789,7 @@ async fn test_enum_unnamed_fields() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"Foo::One (21 * 2) 'Hello'"#).unwrap();
     assert_eq!(program.res_type, expected_type);
@@ -797,7 +798,7 @@ async fn test_enum_unnamed_fields() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"Foo::Two true (5.0 / 2.0) (100 - 1)"#).unwrap();
     assert_eq!(program.res_type, expected_type);
@@ -829,7 +830,7 @@ async fn test_enum_rename() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Color::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Color::to_type()), None, None)
         .unwrap();
     let program = Program::compile(builder, r#"(Color::Red, Color::Green, Color::blOO)"#).unwrap();
     assert_eq!(
@@ -880,7 +881,7 @@ async fn test_enum_mixed() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
     builder
-        .register_adt(&Arc::new(Foo::to_type()), None, None)
+        .register_adt(&Namespace::rex(), &Arc::new(Foo::to_type()), None, None)
         .unwrap();
     let program = Program::compile(
         builder,

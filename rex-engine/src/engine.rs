@@ -14,7 +14,7 @@ use crate::{
     codec::{Decode, Encode, Func},
     error::Error,
     eval::{apply, Context},
-    ftable::{Ftable, FtableFn, A, B, C, E, F},
+    ftable::{Ftable, FtableFn, Namespace, A, B, C, E, F},
 };
 use chrono::{DateTime, Utc};
 use regex::Regex;
@@ -77,7 +77,12 @@ where
         .and_then(|a0| A::try_decode(a0))
 }
 
-fn register_fn_core<State>(builder: &mut Builder<State>, n: &str, t: Arc<Type>) -> Result<(), Error>
+fn register_fn_core<State>(
+    builder: &mut Builder<State>,
+    ns: &Namespace,
+    n: &str,
+    t: Arc<Type>,
+) -> Result<(), Error>
 where
     State: Clone + Send + Sync + 'static,
 {
@@ -108,27 +113,56 @@ where
 
     match builder.builtins.get_mut(n) {
         None => {
-            let mut ts = HashSet::new();
-            ts.insert(scheme);
-            builder.builtins.insert(n.to_string(), ts);
+            let mut entry = BuilderEntry::default();
+            entry.add(ns, n, scheme)?;
+            builder.builtins.insert(n.to_string(), entry);
         }
-        Some(set) => {
-            for s in set.iter() {
-                if scheme.maybe_overlaps_with(s) {
-                    return Err(Error::OverlappingFunctions {
-                        name: n.to_string(),
-                        t1: scheme.clone(),
-                        t2: s.clone(),
-                        trace: Default::default(),
-                    });
-                }
-            }
-
-            set.insert(scheme);
+        Some(entry) => {
+            entry.add(ns, n, scheme)?;
         }
     }
 
     Ok(())
+}
+
+pub struct BuilderEntryItem {
+    pub ns: Namespace,
+    pub name: String,
+}
+
+#[derive(Default)]
+pub struct BuilderEntry {
+    items_by_type_scheme: HashMap<TypeScheme, BuilderEntryItem>,
+}
+
+impl BuilderEntry {
+    pub fn add(&mut self, ns: &Namespace, n: &str, scheme: TypeScheme) -> Result<(), Error> {
+        for (s, item) in self.items_by_type_scheme.iter() {
+            if scheme.maybe_overlaps_with(s) {
+                return Err(Error::OverlappingFunctions {
+                    name: n.to_string(),
+                    t1: scheme.clone(),
+                    t2: s.clone(),
+                    name1: format!("{}::{}", item.ns, item.name),
+                    name2: format!("{}::{}", ns, n),
+                    trace: Default::default(),
+                });
+            }
+        }
+
+        self.items_by_type_scheme.insert(
+            scheme,
+            BuilderEntryItem {
+                ns: ns.clone(),
+                name: n.to_string(),
+            },
+        );
+        Ok(())
+    }
+
+    pub fn into_type_schemes(self) -> HashSet<TypeScheme> {
+        HashSet::from_iter(self.items_by_type_scheme.into_keys())
+    }
 }
 
 macro_rules! impl_fn {
@@ -200,7 +234,7 @@ pub struct Builder<State>
 where
     State: Clone + Sync + 'static,
 {
-    pub builtins: BTreeMap<String, HashSet<TypeScheme>>,
+    pub builtins: BTreeMap<String, BuilderEntry>,
     pub ftable: Ftable<State>,
     pub adts: BTreeMap<String, ADT>,
     pub accessors: HashSet<String>,
@@ -218,100 +252,104 @@ where
             accessors: Default::default(),
         };
 
-        this.register("swap", fn1(|_, (x, y): (A, B)| Ok((y, x))));
+        let ns = &Namespace::rex();
 
-        this.register("string", fn1(|_, x: bool| Ok(format!("{}", x))));
-        this.register("string", fn1(|_, x: u64| Ok(format!("{}", x))));
-        this.register("string", fn1(|_, x: i64| Ok(format!("{}", x))));
-        this.register("string", fn1(|_, x: f64| Ok(format!("{}", x))));
+        this.register(ns, "swap", fn1(|_, (x, y): (A, B)| Ok((y, x))));
 
-        this.register("uint", fn1(|_, x: i64| Ok(x as u64)));
-        this.register("uint", fn1(|_, x: f64| Ok(x as u64)));
-        this.register("uint", fn1(|_, x: String| Ok(x.parse::<u64>()?)));
+        this.register(ns, "string", fn1(|_, x: bool| Ok(format!("{}", x))));
+        this.register(ns, "string", fn1(|_, x: u64| Ok(format!("{}", x))));
+        this.register(ns, "string", fn1(|_, x: i64| Ok(format!("{}", x))));
+        this.register(ns, "string", fn1(|_, x: f64| Ok(format!("{}", x))));
 
-        this.register("int", fn1(|_, x: u64| Ok(x as i64)));
-        this.register("int", fn1(|_, x: f64| Ok(x as i64)));
-        this.register("int", fn1(|_, x: String| Ok(x.parse::<i64>()?)));
+        this.register(ns, "uint", fn1(|_, x: i64| Ok(x as u64)));
+        this.register(ns, "uint", fn1(|_, x: f64| Ok(x as u64)));
+        this.register(ns, "uint", fn1(|_, x: String| Ok(x.parse::<u64>()?)));
 
-        this.register("float", fn1(|_, x: u64| Ok(x as f64)));
-        this.register("float", fn1(|_, x: i64| Ok(x as f64)));
-        this.register("float", fn1(|_, x: String| Ok(x.parse::<f64>()?)));
+        this.register(ns, "int", fn1(|_, x: u64| Ok(x as i64)));
+        this.register(ns, "int", fn1(|_, x: f64| Ok(x as i64)));
+        this.register(ns, "int", fn1(|_, x: String| Ok(x.parse::<i64>()?)));
 
-        this.register("negate", fn1(|_, x: u64| Ok(-(x as i64))));
-        this.register("negate", fn1(|_, x: i64| Ok(-x)));
-        this.register("negate", fn1(|_, x: f64| Ok(-x)));
+        this.register(ns, "float", fn1(|_, x: u64| Ok(x as f64)));
+        this.register(ns, "float", fn1(|_, x: i64| Ok(x as f64)));
+        this.register(ns, "float", fn1(|_, x: String| Ok(x.parse::<f64>()?)));
 
-        this.register("&&", fn2(|_, x: bool, y: bool| Ok(x && y)));
-        this.register("||", fn2(|_, x: bool, y: bool| Ok(x || y)));
+        this.register(ns, "negate", fn1(|_, x: u64| Ok(-(x as i64))));
+        this.register(ns, "negate", fn1(|_, x: i64| Ok(-x)));
+        this.register(ns, "negate", fn1(|_, x: f64| Ok(-x)));
 
-        this.register("==", fn2(|_, x: u64, y: u64| Ok(x == y)));
-        this.register("==", fn2(|_, x: i64, y: i64| Ok(x == y)));
-        this.register("==", fn2(|_, x: f64, y: f64| Ok(x == y)));
-        this.register("==", fn2(|_, x: String, y: String| Ok(x == y)));
+        this.register(ns, "&&", fn2(|_, x: bool, y: bool| Ok(x && y)));
+        this.register(ns, "||", fn2(|_, x: bool, y: bool| Ok(x || y)));
 
-        this.register("!=", fn2(|_, x: u64, y: u64| Ok(x != y)));
-        this.register("!=", fn2(|_, x: i64, y: i64| Ok(x != y)));
-        this.register("!=", fn2(|_, x: f64, y: f64| Ok(x != y)));
-        this.register("!=", fn2(|_, x: String, y: String| Ok(x != y)));
+        this.register(ns, "==", fn2(|_, x: u64, y: u64| Ok(x == y)));
+        this.register(ns, "==", fn2(|_, x: i64, y: i64| Ok(x == y)));
+        this.register(ns, "==", fn2(|_, x: f64, y: f64| Ok(x == y)));
+        this.register(ns, "==", fn2(|_, x: String, y: String| Ok(x == y)));
 
-        this.register(">", fn2(|_, x: u64, y: u64| Ok(x > y)));
-        this.register(">", fn2(|_, x: i64, y: i64| Ok(x > y)));
-        this.register(">", fn2(|_, x: f64, y: f64| Ok(x > y)));
-        this.register(">", fn2(|_, x: String, y: String| Ok(x > y)));
+        this.register(ns, "!=", fn2(|_, x: u64, y: u64| Ok(x != y)));
+        this.register(ns, "!=", fn2(|_, x: i64, y: i64| Ok(x != y)));
+        this.register(ns, "!=", fn2(|_, x: f64, y: f64| Ok(x != y)));
+        this.register(ns, "!=", fn2(|_, x: String, y: String| Ok(x != y)));
 
-        this.register(">=", fn2(|_, x: u64, y: u64| Ok(x >= y)));
-        this.register(">=", fn2(|_, x: i64, y: i64| Ok(x >= y)));
-        this.register(">=", fn2(|_, x: f64, y: f64| Ok(x >= y)));
-        this.register(">=", fn2(|_, x: String, y: String| Ok(x >= y)));
+        this.register(ns, ">", fn2(|_, x: u64, y: u64| Ok(x > y)));
+        this.register(ns, ">", fn2(|_, x: i64, y: i64| Ok(x > y)));
+        this.register(ns, ">", fn2(|_, x: f64, y: f64| Ok(x > y)));
+        this.register(ns, ">", fn2(|_, x: String, y: String| Ok(x > y)));
 
-        this.register("<", fn2(|_, x: u64, y: u64| Ok(x < y)));
-        this.register("<", fn2(|_, x: i64, y: i64| Ok(x < y)));
-        this.register("<", fn2(|_, x: f64, y: f64| Ok(x < y)));
-        this.register("<", fn2(|_, x: String, y: String| Ok(x < y)));
+        this.register(ns, ">=", fn2(|_, x: u64, y: u64| Ok(x >= y)));
+        this.register(ns, ">=", fn2(|_, x: i64, y: i64| Ok(x >= y)));
+        this.register(ns, ">=", fn2(|_, x: f64, y: f64| Ok(x >= y)));
+        this.register(ns, ">=", fn2(|_, x: String, y: String| Ok(x >= y)));
 
-        this.register("<=", fn2(|_, x: u64, y: u64| Ok(x <= y)));
-        this.register("<=", fn2(|_, x: i64, y: i64| Ok(x <= y)));
-        this.register("<=", fn2(|_, x: f64, y: f64| Ok(x <= y)));
-        this.register("<=", fn2(|_, x: String, y: String| Ok(x <= y)));
+        this.register(ns, "<", fn2(|_, x: u64, y: u64| Ok(x < y)));
+        this.register(ns, "<", fn2(|_, x: i64, y: i64| Ok(x < y)));
+        this.register(ns, "<", fn2(|_, x: f64, y: f64| Ok(x < y)));
+        this.register(ns, "<", fn2(|_, x: String, y: String| Ok(x < y)));
 
-        this.register("+", fn2(|_, x: u64, y: u64| Ok(x + y)));
-        this.register("+", fn2(|_, x: i64, y: i64| Ok(x + y)));
-        this.register("+", fn2(|_, x: f64, y: f64| Ok(x + y)));
+        this.register(ns, "<=", fn2(|_, x: u64, y: u64| Ok(x <= y)));
+        this.register(ns, "<=", fn2(|_, x: i64, y: i64| Ok(x <= y)));
+        this.register(ns, "<=", fn2(|_, x: f64, y: f64| Ok(x <= y)));
+        this.register(ns, "<=", fn2(|_, x: String, y: String| Ok(x <= y)));
 
-        this.register("-", fn2(|_, x: u64, y: u64| Ok(x - y)));
-        this.register("-", fn2(|_, x: i64, y: i64| Ok(x - y)));
-        this.register("-", fn2(|_, x: f64, y: f64| Ok(x - y)));
+        this.register(ns, "+", fn2(|_, x: u64, y: u64| Ok(x + y)));
+        this.register(ns, "+", fn2(|_, x: i64, y: i64| Ok(x + y)));
+        this.register(ns, "+", fn2(|_, x: f64, y: f64| Ok(x + y)));
 
-        this.register("*", fn2(|_, x: u64, y: u64| Ok(x * y)));
-        this.register("*", fn2(|_, x: i64, y: i64| Ok(x * y)));
-        this.register("*", fn2(|_, x: f64, y: f64| Ok(x * y)));
+        this.register(ns, "-", fn2(|_, x: u64, y: u64| Ok(x - y)));
+        this.register(ns, "-", fn2(|_, x: i64, y: i64| Ok(x - y)));
+        this.register(ns, "-", fn2(|_, x: f64, y: f64| Ok(x - y)));
 
-        this.register("/", fn2(|_, x: u64, y: u64| Ok(x / y)));
-        this.register("/", fn2(|_, x: i64, y: i64| Ok(x / y)));
-        this.register("/", fn2(|_, x: f64, y: f64| Ok(x / y)));
+        this.register(ns, "*", fn2(|_, x: u64, y: u64| Ok(x * y)));
+        this.register(ns, "*", fn2(|_, x: i64, y: i64| Ok(x * y)));
+        this.register(ns, "*", fn2(|_, x: f64, y: f64| Ok(x * y)));
 
-        this.register("%", fn2(|_, x: u64, y: u64| Ok(x % y)));
-        this.register("%", fn2(|_, x: i64, y: i64| Ok(x % y)));
-        this.register("%", fn2(|_, x: f64, y: f64| Ok(x % y)));
+        this.register(ns, "/", fn2(|_, x: u64, y: u64| Ok(x / y)));
+        this.register(ns, "/", fn2(|_, x: i64, y: i64| Ok(x / y)));
+        this.register(ns, "/", fn2(|_, x: f64, y: f64| Ok(x / y)));
 
-        this.register("abs", fn1(|_, x: i64| Ok(x.abs())));
-        this.register("abs", fn1(|_, x: f64| Ok(x.abs())));
+        this.register(ns, "%", fn2(|_, x: u64, y: u64| Ok(x % y)));
+        this.register(ns, "%", fn2(|_, x: i64, y: i64| Ok(x % y)));
+        this.register(ns, "%", fn2(|_, x: f64, y: f64| Ok(x % y)));
 
-        this.register("sqrt", fn1(|_, x: f64| Ok(x.sqrt())));
+        this.register(ns, "abs", fn1(|_, x: i64| Ok(x.abs())));
+        this.register(ns, "abs", fn1(|_, x: f64| Ok(x.abs())));
 
-        this.register("pow", fn2(|_, x: f64, y: i32| Ok(x.powi(y))));
-        this.register("pow", fn2(|_, x: f64, y: f64| Ok(x.powf(y))));
+        this.register(ns, "sqrt", fn1(|_, x: f64| Ok(x.sqrt())));
 
-        this.register("identity", fn1(|_, x: A| Ok(x)));
+        this.register(ns, "pow", fn2(|_, x: f64, y: i32| Ok(x.powi(y))));
+        this.register(ns, "pow", fn2(|_, x: f64, y: f64| Ok(x.powf(y))));
+
+        this.register(ns, "identity", fn1(|_, x: A| Ok(x)));
 
         this.register(
+            ns,
             "get",
             fn2(|_, n: u64, xs: Vec<A>| Ok(xs[n as usize].clone())),
         );
 
-        this.register_elem_functions();
+        this.register_elem_functions(ns);
 
         this.register(
+            ns,
             "++",
             fn2(|_, xs: Vec<A>, ys: Vec<A>| {
                 let mut zs = Vec::with_capacity(xs.len() + ys.len());
@@ -322,14 +360,16 @@ where
         );
 
         this.register(
+            ns,
             "++",
             fn2(|_, a: String, b: String| Ok(format!("{}{}", a, b))),
         );
 
-        this.register("len", fn1(|_ctx, x: String| Ok(x.len() as u64)));
-        this.register("len", fn1(|_ctx, x: Vec<A>| Ok(x.len() as u64)));
+        this.register(ns, "len", fn1(|_ctx, x: String| Ok(x.len() as u64)));
+        this.register(ns, "len", fn1(|_ctx, x: Vec<A>| Ok(x.len() as u64)));
 
         this.register(
+            ns,
             "take",
             fn2(|_, n: u64, xs: Vec<A>| Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())),
         );
@@ -341,6 +381,7 @@ where
 
         // Possibly a costly computation while looping, since fn essentially recompiles pattern multiple times (no cache)
         this.register(
+            ns,
             "regex_matches",
             fn2(|_, pattern: String, hay: String| {
                 match Regex::new(&pattern).map_err(Error::from) {
@@ -356,6 +397,7 @@ where
 
         // Possibly a costly computation while looping, since fn essentially recompiles pattern multiple times (no cache)
         this.register(
+            ns,
             "regex_captures",
             fn2(|_, pattern: String, hay: String| {
                 match Regex::new(&pattern).map_err(Error::from) {
@@ -370,16 +412,19 @@ where
         );
 
         this.register(
+            ns,
             "skip",
             fn2(|_, n: u64, xs: Vec<A>| Ok(xs.into_iter().take(n as usize).collect::<Vec<_>>())),
         );
 
         this.register(
+            ns,
             "zip",
             fn2(|_, xs: Vec<A>, ys: Vec<B>| Ok(xs.into_iter().zip(ys).collect::<Vec<_>>())),
         );
 
         this.register(
+            ns,
             "unzip",
             fn1(|_, zs: Vec<(A, B)>| {
                 let mut xs = Vec::with_capacity(zs.len());
@@ -393,6 +438,7 @@ where
         );
 
         this.register(
+            ns,
             "flip",
             fn_async3(|ctx, f: Func<A, Func<B, C>>, x: B, y: A| {
                 Box::pin(async move {
@@ -404,6 +450,7 @@ where
         );
 
         this.register(
+            ns,
             "map",
             fn_async2(|ctx, f: Func<A, B>, xs: Vec<A>| {
                 Box::pin(async move {
@@ -423,6 +470,7 @@ where
         );
 
         this.register(
+            ns,
             "filter",
             fn_async2(|ctx, f: Func<A, bool>, xs: Vec<A>| {
                 Box::pin(async move {
@@ -439,6 +487,7 @@ where
         );
 
         this.register(
+            ns,
             "filter_map",
             fn_async2(|ctx, f: Func<A, Option<B>>, xs: Vec<A>| {
                 Box::pin(async move {
@@ -455,6 +504,7 @@ where
         );
 
         this.register(
+            ns,
             "foldl",
             fn_async3(|ctx, f: Func<A, Func<B, A>>, base: A, xs: Vec<B>| {
                 Box::pin(async move {
@@ -470,6 +520,7 @@ where
         );
 
         this.register(
+            ns,
             "foldr",
             fn_async3(|ctx, f: Func<A, Func<B, B>>, base: B, xs: Vec<A>| {
                 Box::pin(async move {
@@ -485,6 +536,7 @@ where
         );
 
         this.register(
+            ns,
             ".",
             fn_async3(|ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
                 Box::pin(async move {
@@ -496,11 +548,12 @@ where
         );
 
         // Result
-        this.register("Ok", fn1(|_, x: A| Ok(Ok::<A, B>(x))));
-        this.register("Err", fn1(|_, x: B| Ok(Err::<A, B>(x))));
-        this.register("is_ok", fn1(|_ctx, x: Result<A, E>| Ok(x.is_ok())));
-        this.register("is_err", fn1(|_ctx, x: Result<A, E>| Ok(x.is_err())));
+        this.register(ns, "Ok", fn1(|_, x: A| Ok(Ok::<A, B>(x))));
+        this.register(ns, "Err", fn1(|_, x: B| Ok(Err::<A, B>(x))));
+        this.register(ns, "is_ok", fn1(|_ctx, x: Result<A, E>| Ok(x.is_ok())));
+        this.register(ns, "is_err", fn1(|_ctx, x: Result<A, E>| Ok(x.is_err())));
         this.register(
+            ns,
             "map",
             fn_async2(|ctx, f: Func<A, B>, x: Result<A, E>| {
                 Box::pin(async move {
@@ -512,6 +565,7 @@ where
             }),
         );
         this.register(
+            ns,
             "and_then",
             fn_async2(|ctx, f: Func<A, Result<B, E>>, x: Result<A, E>| {
                 Box::pin(async move {
@@ -525,6 +579,7 @@ where
             }),
         );
         this.register(
+            ns,
             "or_else",
             fn_async2(|ctx, f: Func<E, Result<A, F>>, x: Result<A, E>| {
                 Box::pin(async move {
@@ -538,6 +593,7 @@ where
             }),
         );
         this.register(
+            ns,
             "unwrap_or_else",
             fn_async2(|ctx, f: Func<E, A>, x: Result<A, E>| {
                 Box::pin(async move {
@@ -549,6 +605,7 @@ where
             }),
         );
         this.register(
+            ns,
             "unwrap",
             fn_async1(|_ctx, x: Result<A, E>| {
                 Box::pin(async move {
@@ -567,11 +624,12 @@ where
         );
 
         // Option
-        this.register("None", fn0(|_| Ok(None::<A>)));
-        this.register("Some", fn1(|_, x: A| Ok(Some(x))));
-        this.register("is_some", fn1(|_ctx, x: Option<A>| Ok(x.is_some())));
-        this.register("is_none", fn1(|_ctx, x: Option<A>| Ok(x.is_none())));
+        this.register(ns, "None", fn0(|_| Ok(None::<A>)));
+        this.register(ns, "Some", fn1(|_, x: A| Ok(Some(x))));
+        this.register(ns, "is_some", fn1(|_ctx, x: Option<A>| Ok(x.is_some())));
+        this.register(ns, "is_none", fn1(|_ctx, x: Option<A>| Ok(x.is_none())));
         this.register(
+            ns,
             "map",
             fn_async2(|ctx, f: Func<A, B>, x: Option<A>| {
                 Box::pin(async move {
@@ -583,6 +641,7 @@ where
             }),
         );
         this.register(
+            ns,
             "and_then",
             fn_async2(|ctx, f: Func<A, Option<B>>, x: Option<A>| {
                 Box::pin(async move {
@@ -594,6 +653,7 @@ where
             }),
         );
         this.register(
+            ns,
             "or_else",
             fn_async2(|ctx, f: Func<(), Option<A>>, x: Option<A>| {
                 Box::pin(async move {
@@ -609,6 +669,7 @@ where
             }),
         );
         this.register(
+            ns,
             "unwrap_or_else",
             fn_async2(|ctx, f: Func<(), A>, x: Option<A>| {
                 Box::pin(async move {
@@ -624,6 +685,7 @@ where
             }),
         );
         this.register(
+            ns,
             "unwrap",
             fn_async1(|_ctx, x: Option<A>| {
                 Box::pin(async move {
@@ -639,9 +701,10 @@ where
         );
 
         // Uuid
-        this.register("string", fn1(|_, x: Uuid| Ok(format!("{}", x))));
-        this.register("random_uuid", fn0(|_| Ok(Uuid::new_v4())));
+        this.register(ns, "string", fn1(|_, x: Uuid| Ok(format!("{}", x))));
+        this.register(ns, "random_uuid", fn0(|_| Ok(Uuid::new_v4())));
         this.register(
+            ns,
             "uuid",
             fn1(|_, x: String| -> Result<Uuid, Error> {
                 Uuid::from_str(&x).map_err(|_| Error::Custom {
@@ -652,10 +715,15 @@ where
         );
 
         // DateTime
-        this.register("string", fn1(|_, x: DateTime<Utc>| Ok(format!("{}", x))));
-        this.register("now", fn0(|_| Ok(Utc::now())));
+        this.register(
+            ns,
+            "string",
+            fn1(|_, x: DateTime<Utc>| Ok(format!("{}", x))),
+        );
+        this.register(ns, "now", fn0(|_| Ok(Utc::now())));
 
         this.register(
+            ns,
             "list_range",
             fn3(
                 |_, start: u64, end: u64, step: Option<u64>| -> Result<Vec<u64>, Error> {
@@ -675,7 +743,7 @@ where
         Ok(this)
     }
 
-    pub fn register_elem_functions(&mut self) {
+    pub fn register_elem_functions(&mut self, namespace: &Namespace) {
         // Note: Each of these has a unique name, because we don't currently support overloading
         // of functions containing generic types.
         for tuple_len in 1..=MAX_TUPLE_LEN {
@@ -690,6 +758,7 @@ where
                 let fun_type = Type::arrow(tuple_type.clone(), element_types[tuple_index].clone());
                 let tuple_type = tuple_type.clone();
                 self.register_fn_core_with_name(
+                    namespace,
                     &fun_name,
                     fun_type,
                     Box::new(move |_, args| {
@@ -720,25 +789,27 @@ where
         }
     }
 
-    pub fn register(&mut self, n: impl ToString, tfun: TypedFunction<State>) {
+    pub fn register(&mut self, ns: &Namespace, n: impl ToString, tfun: TypedFunction<State>) {
         let n = n.to_string();
-        register_fn_core(self, &n, tfun.t.clone()).unwrap();
-        self.ftable.add_fn(n, Box::new(tfun.t), tfun.f).unwrap();
+        register_fn_core(self, ns, &n, tfun.t.clone()).unwrap();
+        self.ftable.add_fn(ns, n, Box::new(tfun.t), tfun.f).unwrap();
     }
 
     pub fn register_fn_core_with_name(
         &mut self,
+        ns: &Namespace,
         name: &str,
         t: Arc<Type>,
         f: FtableFn<State>,
     ) -> Result<(), Error> {
-        register_fn_core(self, name, t.clone())?;
-        self.ftable.add_fn(name, Box::new(t), f)?;
+        register_fn_core(self, ns, name, t.clone())?;
+        self.ftable.add_fn(ns, name, Box::new(t), f)?;
         Ok(())
     }
 
     pub fn register_adt(
         &mut self,
+        ns: &Namespace,
         adt_type: &Arc<Type>,
         prefix: Option<&str>,
         defaults: Option<&BTreeMap<String, FtableFn<State>>>,
@@ -772,10 +843,19 @@ where
         }
 
         if adt.variants.is_empty() {
-            self.register_adt_variant(adt_type, &adt.name, &None, &full_adt_name, defaults, false)?;
+            self.register_adt_variant(
+                ns,
+                adt_type,
+                &adt.name,
+                &None,
+                &full_adt_name,
+                defaults,
+                false,
+            )?;
         } else if adt.variants.len() == 1 && adt.variants[0].name == adt.name {
             // Only register accessors if there is exactly one variant
             self.register_adt_variant(
+                ns,
                 adt_type,
                 &adt.name,
                 &adt.variants[0].t,
@@ -787,6 +867,7 @@ where
             for variant in &adt.variants {
                 let constructor_name = make_full_name(Some(&full_adt_name), &variant.name);
                 self.register_adt_variant(
+                    ns,
                     adt_type,
                     &variant.name,
                     &variant.t,
@@ -800,8 +881,10 @@ where
         Ok(())
     }
 
-    pub fn register_adt_variant(
+    #[allow(clippy::too_many_arguments)]
+    fn register_adt_variant(
         &mut self,
+        ns: &Namespace,
         adt_type: &Arc<Type>,
         variant_name: &str,
         variant_type: &Option<Arc<Type>>,
@@ -832,6 +915,7 @@ where
                     fun_type = Type::arrow(field.clone(), fun_type);
                 }
                 self.register_fn_core_with_name(
+                    ns,
                     constructor_name,
                     fun_type,
                     Box::new(move |_, args| {
@@ -859,6 +943,7 @@ where
                 let defaults: BTreeMap<String, FtableFn<State>> = (*defaults).clone();
                 let base_name1 = base_name.clone();
                 self.register_fn_core_with_name(
+                    ns,
                     constructor_name,
                     fun_type,
                     Box::new(move |ctx, args| {
@@ -882,7 +967,7 @@ where
                 )?;
 
                 if accessors {
-                    self.register_accessors(adt_type, entries)?;
+                    self.register_accessors(ns, adt_type, entries)?;
                 }
                 Ok(())
             }
@@ -890,6 +975,7 @@ where
                 if let Some(t) = variant_type {
                     let fun_type = Type::arrow(t.clone(), adt_type.clone());
                     self.register_fn_core_with_name(
+                        ns,
                         constructor_name,
                         fun_type,
                         Box::new(move |_, args| {
@@ -903,12 +989,13 @@ where
 
                     if accessors {
                         if let Type::Dict(entries) = &**t {
-                            self.register_accessors(adt_type, entries)?;
+                            self.register_accessors(ns, adt_type, entries)?;
                         }
                     }
                     Ok(())
                 } else {
                     self.register_fn_core_with_name(
+                        ns,
                         constructor_name,
                         adt_type.clone(),
                         Box::new(move |_, _| {
@@ -925,6 +1012,7 @@ where
 
     fn register_accessors(
         &mut self,
+        ns: &Namespace,
         adt_type: &Arc<Type>,
         entries: &BTreeMap<String, Arc<Type>>,
     ) -> Result<(), Error> {
@@ -932,7 +1020,7 @@ where
             let this_accessor_fun_type = Type::arrow(adt_type.clone(), entry_type.clone());
 
             // Register the type
-            match register_fn_core(self, entry_key, this_accessor_fun_type.clone()) {
+            match register_fn_core(self, ns, entry_key, this_accessor_fun_type.clone()) {
                 Ok(()) => {}
                 Err(Error::OverlappingFunctions { t1, t2, .. }) if t1 == t2 => {
                     // Ignore this case; it can happen if there are multiple ADTs imported
@@ -945,8 +1033,12 @@ where
             // Register the implementation, if one does not already exist
             if !self.accessors.contains(entry_key) {
                 self.accessors.insert(entry_key.to_string());
-                self.ftable
-                    .add_fn(entry_key, Box::new(Accessor), make_accessor_fn(entry_key))?;
+                self.ftable.add_fn(
+                    ns,
+                    entry_key,
+                    Box::new(Accessor),
+                    make_accessor_fn(entry_key),
+                )?;
             }
         }
         Ok(())
@@ -954,8 +1046,8 @@ where
 
     pub fn build(self) -> (Ftable<State>, TypeEnv) {
         let mut ftenv = HashMap::new();
-        for (n, b) in self.builtins.into_iter() {
-            ftenv.insert(n.clone(), b);
+        for (name, entry) in self.builtins.into_iter() {
+            ftenv.insert(name.clone(), entry.into_type_schemes());
         }
         (self.ftable, ftenv)
     }

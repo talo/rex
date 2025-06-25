@@ -41,6 +41,7 @@ pub use rex_engine::error::Trace;
 pub use rex_engine::eval::Context;
 pub use rex_engine::ftable::Ftable;
 pub use rex_engine::ftable::FtableFn;
+pub use rex_engine::ftable::Namespace;
 pub use rex_lexer::span::Position;
 pub use rex_lexer::span::Span;
 pub use rex_type_system::error::TypeError;
