@@ -343,7 +343,7 @@ where
         this.register(
             ns,
             "get",
-            fn2(|_, n: u64, xs: Vec<A>| Ok(xs[n as usize].clone())),
+            fn2(|_, n: u64, xs: Vec<A>| xs.get(n as usize).ok_or(Error::Custom { error: "Index out of bounds".to_string(), trace: Default::default() }).cloned()),
         );
 
         this.register_elem_functions(ns);
