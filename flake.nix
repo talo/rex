@@ -2,7 +2,7 @@
   description = "QDX Rust Crates";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/24.05";
     rust-flake-parts.url = "github:talo/qdx-rust-flake-parts";
     rust-flake-parts.inputs.nixpkgs.follows = "nixpkgs";
   };
@@ -27,8 +27,6 @@
             buildInputs = [
               pkgs.cargo-sort
               pkgs.cargo-sweep
-              pkgs.cargo-machete
-              pkgs.cargo-deny
             ];
           };
           craneProjects.rex = {

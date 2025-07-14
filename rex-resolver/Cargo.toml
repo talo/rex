@@ -1,9 +1,0 @@
-[package]
-name = "rex-resolver"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-rex-ast = { path = "../rex-ast" }
-rex-lexer = { path = "../rex-lexer" }
-thiserror = { version = "2.0" }

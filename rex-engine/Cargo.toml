@@ -5,20 +5,18 @@ edition = "2021"
 
 [dependencies]
 async-recursion = { version = "1.1" }
+async-trait = { version = "0.1" }
 futures = { version = "0.3" }
+rand = { version = "0.9" }
 rex-ast = { path = "../rex-ast" }
 rex-lexer = { path = "../rex-lexer" }
 rex-parser = { path = "../rex-parser" }
-rex-resolver = { path = "../rex-resolver" }
-thiserror = { version = "2.0" }
-tokio = { version = "1", features = ["macros", "rt"] }
+rex-type-system = { path = "../rex-type-system" }
 rpds = { version = "1.1" }
-serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
-rstats = { version = "2.1", optional = true }
-eval-metrics = { version = "1.0", optional = true }
-
-[features]
-default = ["serde", "stats"]
-serde = ["dep:serde_json", "dep:serde", "rpds/serde"]
-stats = ["dep:rstats", "dep:eval-metrics"]
+thiserror = { version = "1.0" }
+tokio = { version = "1.27.0", features = ["macros", "rt", "sync"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+chrono = "0.4.40"
+uuid = { version = "1.7", features = ["serde", "v4"] }
+regex = "1"
