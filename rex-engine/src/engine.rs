@@ -12,7 +12,7 @@ use std::{
 
 use crate::{
     codec::{Decode, Encode, Func},
-    error::Error,
+    error::{Error, OverlappingFunctions},
     eval::{apply, Context},
     ftable::{Ftable, FtableFn, Namespace, A, B, C, E, F},
 };
@@ -140,11 +140,13 @@ impl BuilderEntry {
         for (s, item) in self.items_by_type_scheme.iter() {
             if scheme.maybe_overlaps_with(s) {
                 return Err(Error::OverlappingFunctions {
-                    name: n.to_string(),
-                    t1: scheme.clone(),
-                    t2: s.clone(),
-                    name1: format!("{}::{}", item.ns, item.name),
-                    name2: format!("{}::{}", ns, n),
+                    overlap: Arc::new(OverlappingFunctions {
+                        name: n.to_string(),
+                        t1: scheme.clone(),
+                        t2: s.clone(),
+                        name1: format!("{}::{}", item.ns, item.name),
+                        name2: format!("{}::{}", ns, n),
+                    }),
                     trace: Default::default(),
                 });
             }
@@ -1029,7 +1031,7 @@ where
             // Register the type
             match register_fn_core(self, ns, entry_key, this_accessor_fun_type.clone()) {
                 Ok(()) => {}
-                Err(Error::OverlappingFunctions { t1, t2, .. }) if t1 == t2 => {
+                Err(Error::OverlappingFunctions { overlap, .. }) if overlap.t1 == overlap.t2 => {
                     // Ignore this case; it can happen if there are multiple ADTs imported
                     // from different tengu modules that have the same name but different
                     // prefixes

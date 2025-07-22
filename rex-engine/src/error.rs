@@ -13,13 +13,9 @@ use std::{fmt, sync::Arc};
 // errors when something goes wrong.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Error {
-    #[error("ambiguous overload of function {name}: types {t1} and {t2} may overlap; definition 1: {name1}, definition 2: {name2}{trace}")]
+    #[error("{msg}", msg = overlap_error_msg(.overlap))]
     OverlappingFunctions {
-        name: String,
-        t1: TypeScheme,
-        t2: TypeScheme,
-        name1: String,
-        name2: String,
+        overlap: Arc<OverlappingFunctions>,
         trace: Trace,
     },
     #[error("unexpected token {span}{trace}")]
@@ -83,19 +79,8 @@ pub enum Error {
 impl Error {
     pub fn with_extra_trace(self, stack: Option<&Stack<'_>>) -> Error {
         match self {
-            Self::OverlappingFunctions {
-                name,
-                t1,
-                t2,
-                name1,
-                name2,
-                trace,
-            } => Self::OverlappingFunctions {
-                name,
-                t1,
-                t2,
-                name1,
-                name2,
+            Self::OverlappingFunctions { overlap, trace } => Self::OverlappingFunctions {
+                overlap: overlap.clone(),
                 trace: trace.extend(stack),
             },
             Self::UnexpectedToken { span, trace } => Self::UnexpectedToken {
@@ -221,6 +206,24 @@ impl From<String> for Error {
             trace: Default::default(),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OverlappingFunctions {
+    pub name: String,
+    pub t1: TypeScheme,
+    pub t2: TypeScheme,
+    pub name1: String,
+    pub name2: String,
+}
+
+fn overlap_error_msg(overlap: &Arc<OverlappingFunctions>) -> String {
+    format!("ambiguous overload of function types {} and {} may overlap; definition 1: {}, definition 2: {}",
+        overlap.t1,
+        overlap.t2,
+        overlap.name1,
+        overlap.name2
+    )
 }
 
 fn parse_error_msg(errors: &[ParserErr]) -> String {
