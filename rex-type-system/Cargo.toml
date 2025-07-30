@@ -3,6 +3,9 @@ name = "rex-type-system"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 chrono = "0.4.40"
 rand = "0.8.5"
