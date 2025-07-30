@@ -1,3 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["rex", "rex-ast", "rex-engine", "rex-type-system", "rex-lexer", "rex-parser", "rex-proc-macro"]
+
+[workspace.lints.clippy]
+uninlined_format_args = "allow"

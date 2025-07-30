@@ -1,34 +1,88 @@
 use proc_macro::TokenStream;
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenTree};
 use quote::quote;
 use syn::{
-    Attribute, Data, DeriveInput, Expr, ExprLit, ExprUnary, Fields, FieldsNamed, FieldsUnnamed,
-    Ident, Lit, Type, UnOp, Variant,
+    parse_str, spanned::Spanned, Attribute, Data, DeriveInput, Error, Expr, ExprLit, ExprUnary,
+    Fields, FieldsNamed, FieldsUnnamed, Ident, Lit, Meta, Type, UnOp, Variant,
 };
 
-#[proc_macro_derive(Rex)]
+#[derive(Debug)]
+struct DeriveOptions {
+    name: String,
+}
+
+impl DeriveOptions {
+    fn from_derive_input(ast: &DeriveInput) -> Result<DeriveOptions, Error> {
+        for attr in ast.attrs.iter() {
+            let Meta::List(meta_list) = &attr.meta else {
+                continue;
+            };
+            if !meta_list.path.is_ident("rex") {
+                continue;
+            }
+
+            let mut token_iter = meta_list.tokens.clone().into_iter();
+            match token_iter.next() {
+                Some(TokenTree::Ident(ident)) if ident == "name" => (),
+                Some(t) => return Err(Error::new(t.span(), "Expected \"name\"")),
+                None => return Err(Error::new(meta_list.span(), "Expected \"name\"")),
+            }
+
+            match token_iter.next() {
+                Some(TokenTree::Punct(punct)) if punct.as_char() == '=' => (),
+                Some(t) => return Err(Error::new(t.span(), "Expected '='")),
+                None => return Err(Error::new(meta_list.span(), "Expected '='")),
+            }
+
+            let name: String = match token_iter.next() {
+                Some(TokenTree::Literal(literal)) => {
+                    match parse_str::<Lit>(&literal.to_string())? {
+                        Lit::Str(lit_str) => lit_str.value(),
+                        _ => return Err(Error::new(literal.span(), "Expected a string")),
+                    }
+                }
+                Some(t) => return Err(Error::new(t.span(), "Expected a string")),
+                None => return Err(Error::new(meta_list.span(), "Expected a string")),
+            };
+
+            return Ok(DeriveOptions { name });
+        }
+
+        Ok(DeriveOptions {
+            name: ast.ident.to_string(),
+        })
+    }
+}
+
+#[proc_macro_derive(Rex, attributes(rex))]
 pub fn derive_rex(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
+
+    let options = match DeriveOptions::from_derive_input(&ast) {
+        Ok(a) => a,
+        Err(e) => return e.into_compile_error().into(),
+    };
+
     let mut expanded = TokenStream::new();
-    expanded.extend(impl_to_type(&ast));
-    expanded.extend(impl_encode(&ast));
-    expanded.extend(impl_decode(&ast));
+    expanded.extend(impl_to_type(&ast, &options));
+    expanded.extend(impl_encode(&ast, &options));
+    expanded.extend(impl_decode(&ast, &options));
     expanded
 }
 
-fn impl_to_type(ast: &DeriveInput) -> TokenStream {
-    let name = &ast.ident;
-    let name_as_str = format!("{name}");
+fn impl_to_type(ast: &DeriveInput, options: &DeriveOptions) -> TokenStream {
+    let rust_ident = &ast.ident;
+    let given_name = &options.name;
     let docs = docs_from_attrs(&ast.attrs);
 
     let r#impl = match &ast.data {
         Data::Struct(data) => match &data.fields {
             // Turns into an ADT with one dictionary variant
             Fields::Named(named) => {
-                let adt_variant = fields_named_to_adt_variant(&docs, &name_as_str, named);
+                let adt_variant = fields_named_to_adt_variant(&docs, given_name, named);
                 quote!(
                     ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
-                        name: String::from(#name_as_str),
+                        name: String::from(#given_name),
                         variants: vec![#adt_variant],
                         docs: #docs,
                     })
@@ -37,10 +91,10 @@ fn impl_to_type(ast: &DeriveInput) -> TokenStream {
             // Turns into an ADT with one tuple variant (we drop the tuple if it
             // only has one element)
             Fields::Unnamed(unnamed) => {
-                let adt_variant = fields_unnamed_to_adt_variant(&docs, &name_as_str, unnamed);
+                let adt_variant = fields_unnamed_to_adt_variant(&docs, given_name, unnamed);
                 quote!(
                     ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
-                        name: String::from(#name_as_str),
+                        name: String::from(#given_name),
                         variants: vec![#adt_variant],
                         docs: #docs,
                     })
@@ -48,7 +102,7 @@ fn impl_to_type(ast: &DeriveInput) -> TokenStream {
             }
             _ => quote! {
                 ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
-                    name: String::from(#name_as_str),
+                    name: String::from(#given_name),
                     variants: vec![],
                     docs: #docs,
                 })
@@ -88,7 +142,7 @@ fn impl_to_type(ast: &DeriveInput) -> TokenStream {
             });
             quote! {
                 ::rex::type_system::types::Type::ADT(::rex::type_system::types::ADT {
-                    name: String::from(#name_as_str),
+                    name: String::from(#given_name),
                     variants: vec![#(#variants,)*],
                     docs: #docs,
                 })
@@ -101,7 +155,7 @@ fn impl_to_type(ast: &DeriveInput) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics ::rex::type_system::types::ToType for #name #ty_generics #where_clause {
+        impl #impl_generics ::rex::type_system::types::ToType for #rust_ident #ty_generics #where_clause {
             fn to_type() -> ::rex::type_system::types::Type {
                 #r#impl
             }
@@ -325,8 +379,9 @@ fn to_type(ty: &Type) -> proc_macro2::TokenStream {
     }
 }
 
-fn impl_encode(ast: &DeriveInput) -> TokenStream {
-    let name = &ast.ident;
+fn impl_encode(ast: &DeriveInput, options: &DeriveOptions) -> TokenStream {
+    let rust_ident = &ast.ident;
+    let given_name = &options.name;
     let r#impl: proc_macro2::TokenStream = match &ast.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(named) => {
@@ -341,7 +396,7 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                 });
                 quote!(Ok(::std::sync::Arc::new(::rex::ast::expr::Expr::Named(
                     ::rex::lexer::span::Span::default(),
-                    stringify!(#name).to_string(),
+                    #given_name.to_string(),
                     Some(::std::sync::Arc::new(::rex::ast::expr::Expr::Dict(
                         ::rex::lexer::span::Span::default(),
                         ::std::collections::BTreeMap::from_iter(vec![#(#items,)*].into_iter())
@@ -351,7 +406,7 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
             Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
                 quote!(Ok(::std::sync::Arc::new(::rex::ast::expr::Expr::Named(
                     ::rex::lexer::span::Span::default(),
-                    stringify!(#name).to_string(),
+                    #given_name.to_string(),
                     Some(::rex::engine::codec::Encode::try_encode(self.0, span)?)
                 ))))
             }
@@ -362,7 +417,7 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
                 });
                 quote!(Ok(::std::sync::Arc::new(::rex::ast::expr::Expr::Named(
                     ::rex::lexer::span::Span::default(),
-                    stringify!(#name).to_string(),
+                    #given_name.to_string(),
                     Some(::std::sync::Arc::new(::rex::ast::expr::Expr::Tuple(
                         ::rex::lexer::span::Span::default(),
                         vec![#(#items,)*]
@@ -372,7 +427,7 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
             Fields::Unit => {
                 quote!(Ok(::std::sync::Arc::new(::rex::ast::expr::Expr::Named(
                     ::rex::lexer::span::Span::default(),
-                    stringify!(#name).to_string(),
+                    #given_name.to_string(),
                     None
                 ))))
             }
@@ -472,7 +527,7 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics ::rex::engine::codec::Encode for #name #ty_generics #where_clause {
+        impl #impl_generics ::rex::engine::codec::Encode for #rust_ident #ty_generics #where_clause {
             fn try_encode(
                 self,
                 span: ::rex::lexer::span::Span,
@@ -485,8 +540,9 @@ fn impl_encode(ast: &DeriveInput) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-fn impl_decode(ast: &DeriveInput) -> TokenStream {
-    let name = &ast.ident;
+fn impl_decode(ast: &DeriveInput, options: &DeriveOptions) -> TokenStream {
+    let rust_ident = &ast.ident;
+    let given_name = &options.name;
     let r#impl: proc_macro2::TokenStream = match &ast.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(named) => {
@@ -504,10 +560,10 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
                 });
                 quote!(
                     match &**v {
-                        ::rex::ast::expr::Expr::Named(_, n, Some(inner)) if n == stringify!(#name) => {
+                        ::rex::ast::expr::Expr::Named(_, n, Some(inner)) if n == #given_name => {
                             match &**inner {
                                 ::rex::ast::expr::Expr::Dict(_, entries) => {
-                                    Ok(#name {
+                                    Ok(#rust_ident {
                                         #(#fields,)*
                                     })
                                 }
@@ -533,8 +589,8 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
             Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
                 quote!(
                     match &**v {
-                        ::rex::ast::expr::Expr::Named(_, n, Some(inner)) if n == stringify!(#name) => {
-                            Ok(#name (::rex::engine::codec::Decode::try_decode(inner)?))
+                        ::rex::ast::expr::Expr::Named(_, n, Some(inner)) if n == #given_name => {
+                            Ok(#rust_ident (::rex::engine::codec::Decode::try_decode(inner)?))
                         },
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
@@ -553,10 +609,10 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
 
                 quote!(
                     match &**v {
-                        ::rex::ast::expr::Expr::Named(_, n, Some(inner)) if n == stringify!(#name) => {
+                        ::rex::ast::expr::Expr::Named(_, n, Some(inner)) if n == #given_name => {
                             match &**inner {
                                 ::rex::ast::expr::Expr::Tuple(_, items) if items.len() == #items_len => {
-                                    Ok(#name (
+                                    Ok(#rust_ident (
                                         #(#fields,)*
                                     ))
                                 }
@@ -582,8 +638,8 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
             Fields::Unit => {
                 quote!(
                     match &**v {
-                        ::rex::ast::expr::Expr::Named(_, n, None) if n == stringify!(#name) => {
-                            Ok(#name)
+                        ::rex::ast::expr::Expr::Named(_, n, None) if n == #given_name => {
+                            Ok(#rust_ident)
                         }
                         _ => {
                             Err(::rex::engine::error::Error::ExpectedTypeGotValue {
@@ -703,7 +759,7 @@ fn impl_decode(ast: &DeriveInput) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics ::rex::engine::codec::Decode for #name #ty_generics #where_clause {
+        impl #impl_generics ::rex::engine::codec::Decode for #rust_ident #ty_generics #where_clause {
             fn try_decode(
                 v: &::std::sync::Arc<::rex::ast::expr::Expr>,
             ) -> Result<Self, ::rex::engine::error::Error> {
