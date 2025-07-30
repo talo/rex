@@ -941,6 +941,107 @@ async fn test_json_field() {
     compare(value, &expected_type, &expected_encoding);
 }
 
+#[tokio::test]
+async fn test_derive_name() {
+    mod first {
+        use super::*;
+        #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+        #[rex(name = "Foo")]
+        pub struct Model {
+            pub a: u64,
+            pub b: String,
+        }
+    }
+    mod second {
+        use super::*;
+        #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+        #[rex(name = "Bar")]
+        pub struct Model(pub u64, pub bool);
+    }
+    mod third {
+        use super::*;
+        #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+        #[rex(name = "Color")]
+        pub enum Model {
+            Red,
+            Green,
+            Blue,
+        }
+    }
+
+    let value = (
+        first::Model {
+            a: 42,
+            b: "Hello".to_string(),
+        },
+        second::Model(55, true),
+        third::Model::Blue,
+    );
+
+    let expected_type = Arc::new(Type::Tuple(vec![
+        Arc::new(Type::ADT(adt! {
+            Foo = Foo {
+                a: uint!(),
+                b: string!(),
+            }
+        })),
+        Arc::new(Type::ADT(adt! {
+            Bar = Bar ( uint!(), bool!() )
+        })),
+        Arc::new(Type::ADT(adt! {
+            Color = Red . | Green . | Blue .
+        })),
+    ]));
+
+    let expected_encoding = tup!(
+        n!("Foo", Some(d!(a = u!(42), b = s!("Hello"),))),
+        n!("Bar", Some(tup!(u!(55), b!(true)))),
+        n!("Blue", None),
+    );
+
+    compare(value, &expected_type, &expected_encoding);
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder
+        .register_adt(
+            &Namespace::rex(),
+            &Arc::new(first::Model::to_type()),
+            None,
+            None,
+        )
+        .unwrap();
+    builder
+        .register_adt(
+            &Namespace::rex(),
+            &Arc::new(second::Model::to_type()),
+            None,
+            None,
+        )
+        .unwrap();
+    builder
+        .register_adt(
+            &Namespace::rex(),
+            &Arc::new(third::Model::to_type()),
+            None,
+            None,
+        )
+        .unwrap();
+    let program = Program::compile(
+        builder,
+        r#"
+        (
+            Foo { a = 42, b = "Hello" },
+            Bar 55 true,
+            Color::Blue,
+        )
+        "#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, expected_type);
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, expected_encoding; ignore span);
+}
+
 fn compare<T>(orig_value: T, expected_type: &Arc<Type>, expected_encoding: &Expr)
 where
     T: ToType + Encode + Decode + Serialize + Clone + PartialEq + std::fmt::Debug,
