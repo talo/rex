@@ -7,7 +7,7 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-regex = "1.10.4"
-rex-ast = { path = "../rex-ast" }
-rex-lexer = { path = "../rex-lexer" }
-thiserror = "1.0"
+regex = { workspace = true }
+rex-ast = { workspace = true }
+rex-lexer = { workspace = true }
+thiserror = { workspace = true }
