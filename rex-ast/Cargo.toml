@@ -7,14 +7,14 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-async-recursion = "1.1.1"
-async-trait = "0.1.18"
-chrono = { version = "0.4.38", features = ["serde"] }
-regex = "1.10.4"
-rex-lexer = { path = "../rex-lexer" }
-rpds = { version = "1.1", features = ["serde"] }
-serde = { version = "1.0", features = ["rc", "derive"] }
-serde_json = { version = "1.0.87" }
-thiserror = "1.0"
-tokio = { version = "1.27.0", features = ["macros", "rt"] }
-uuid = { version = "1.7", features = ["serde", "v4"] }
+async-recursion = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+regex = { workspace = true }
+rex-lexer = { workspace = true }
+rpds = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["rc", "derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+uuid = { workspace = true, features = ["serde", "v4"] }
