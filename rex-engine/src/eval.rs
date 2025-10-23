@@ -1857,4 +1857,151 @@ pub mod test {
         assert_eq!(res_type, list!(uint!()));
         assert_expr_eq!(res,l!{u!(0), u!(2), u!(4), u!(6)}; ignore span);
     }
+
+    #[tokio::test]
+    async fn test_flatten() {
+        let (res, res_type) = parse_infer_and_eval(r#"flatten [[1, 2, 3], [], [4, 5]]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, list!(uint!()));
+        assert_expr_eq!(res, l!(u!(1), u!(2), u!(3), u!(4), u!(5)); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_list_min() {
+        let (res, res_type) = parse_infer_and_eval(r#"list_min [5, 4, 6, 3, 2, 7, 9]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(2); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"list_min [int 5, int 4, (int 0) - (int 6), int 3, int 2]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, int!());
+        assert_expr_eq!(res, i!(-6); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"list_min [5.0, 4.0, -6.5, 9.5, 2.0]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(-6.5); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_list_max() {
+        let (res, res_type) = parse_infer_and_eval(r#"list_max [5, 4, 6, 3, 2, 7, 9]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(9); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"list_max [int 5, int 4, (int 0) - (int 6), int 3, int 2]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, int!());
+        assert_expr_eq!(res, i!(5); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"list_max [5.0, 4.0, -6.5, 9.5, 2.0]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(9.5); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_list_sum() {
+        let (res, res_type) = parse_infer_and_eval(r#"list_sum [5, 4, 6, 3, 2, 7, 9]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, uint!());
+        assert_expr_eq!(res, u!(36); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"list_sum [int 5, int 4, (int 0) - (int 60), int 3, int 2]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, int!());
+        assert_expr_eq!(res, i!(-46); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"list_sum [5.0, 4.0, -60.5, 9.5, 2.5]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(-39.5); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_list_avg() {
+        let (res, res_type) = parse_infer_and_eval(r#"list_avg [3, 9, 6, 4]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(5.5); ignore span);
+
+        let (res, res_type) =
+            parse_infer_and_eval(r#"list_avg [int 3, int 9, (int 0) - (int 60), int 10]"#)
+                .await
+                .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(-9.5); ignore span);
+
+        let (res, res_type) = parse_infer_and_eval(r#"list_avg [3.0, 9.5, 5.5, 4.0]"#)
+            .await
+            .unwrap();
+        assert_eq!(res_type, float!());
+        assert_expr_eq!(res, f!(5.5); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_match_result() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+                let
+                    a = Ok 3,
+                    b = Err "foo",
+                    c = Ok 4,
+                    d = Err "bar",
+                in
+                    map
+                    (\r ->
+                        match_result r
+                            (\value -> "True " ++ (string value))
+                            (\error -> "False " ++ error)
+                    )
+                    [a, b, c, d]
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(string!()));
+        assert_expr_eq!(res, l!(s!("True 3"), s!("False foo"), s!("True 4"), s!("False bar")); ignore span);
+    }
+
+    #[tokio::test]
+    async fn test_match_option() {
+        let (res, res_type) = parse_infer_and_eval(
+            r#"
+                let
+                    a = Some 3,
+                    b = None,
+                    c = Some 4,
+                    d = None,
+                in
+                    map
+                    (\r ->
+                        match_option r
+                            (\value -> "True " ++ (string value))
+                            (\ignore -> "False")
+                    )
+                    [a, b, c, d]
+            "#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_type, list!(string!()));
+        assert_expr_eq!(res, l!(s!("True 3"), s!("False"), s!("True 4"), s!("False")); ignore span);
+    }
 }

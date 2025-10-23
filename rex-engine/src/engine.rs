@@ -133,6 +133,8 @@ pub struct BuilderEntryItem {
 #[derive(Default)]
 pub struct BuilderEntry {
     items_by_type_scheme: HashMap<TypeScheme, BuilderEntryItem>,
+    category: Option<String>,
+    description: Option<String>,
 }
 
 impl BuilderEntry {
@@ -242,10 +244,126 @@ where
     pub accessors: HashSet<String>,
 }
 
+pub struct Docs {
+    pub categories: BTreeMap<String, CategoryDocs>,
+}
+
+impl Docs {
+    pub fn to_markdown(&self) -> String {
+        let mut output = String::new();
+        output.push_str("# Rex functions\n\n");
+
+        for (cat_name, cat_docs) in self.categories.iter() {
+            if cat_name.is_empty() {
+                continue;
+            }
+
+            output.push_str(&format!("# {}\n\n", cat_name));
+            cat_docs.to_markdown(&mut output);
+        }
+
+        if let Some(cat_docs) = self.categories.get("") {
+            output.push_str("# Other\n\n");
+            cat_docs.to_markdown(&mut output);
+        }
+
+        output
+    }
+}
+
+pub struct CategoryDocs {
+    pub description: Option<String>,
+    pub functions: BTreeMap<String, FunctionDocs>,
+}
+
+impl CategoryDocs {
+    pub fn to_markdown(&self, output: &mut String) {
+        if let Some(description) = &self.description {
+            output.push_str(description);
+            output.push_str("\n\n");
+        }
+        for (f_name, f_docs) in self.functions.iter() {
+            output.push_str(&format!("## `{}`\n\n", f_name));
+            f_docs.to_markdown(output);
+        }
+    }
+}
+
+pub struct FunctionDocs {
+    pub description: Option<String>,
+    pub type_signatures: Vec<String>,
+}
+
+impl FunctionDocs {
+    pub fn to_markdown(&self, output: &mut String) {
+        if self.type_signatures.len() == 1 {
+            output.push_str(&format!("Type signature: `{}`\n", self.type_signatures[0]));
+        } else {
+            output.push_str("Type signatures:\n\n");
+            for ts in self.type_signatures.iter() {
+                output.push_str(&format!("- `{}`\n", ts));
+            }
+        }
+        output.push('\n');
+
+        if let Some(description) = &self.description {
+            output.push_str(description);
+            output.push_str("\n\n");
+        }
+    }
+}
+
 impl<State> Builder<State>
 where
     State: Clone + Send + Sync + 'static,
 {
+    pub fn docs(&self) -> Docs {
+        let mut by_category: BTreeMap<String, CategoryDocs> = BTreeMap::new();
+
+        for (name, entry) in self.builtins.iter() {
+            let entry_category: String = entry
+                .category
+                .as_ref()
+                .map(|x| x.to_string())
+                .unwrap_or("".to_string());
+            let entry_description: Option<String> =
+                entry.description.as_ref().map(|x| x.to_string());
+            let cat: &mut CategoryDocs =
+                by_category
+                    .entry(entry_category.clone())
+                    .or_insert_with(|| CategoryDocs {
+                        description: None,
+                        functions: BTreeMap::new(),
+                    });
+
+            let mut type_signatures: Vec<String> = Vec::new();
+            for ts in entry.items_by_type_scheme.keys() {
+                type_signatures.push(ts.ty.to_string());
+            }
+
+            cat.functions.insert(
+                name.clone(),
+                FunctionDocs {
+                    description: entry_description,
+                    type_signatures,
+                },
+            );
+        }
+
+        Docs {
+            categories: by_category,
+        }
+    }
+
+    fn set_docs(&mut self, _ns: &Namespace, name: &str, category: &str, description: &str) {
+        let Some(entry) = self.builtins.get_mut(name) else {
+            panic!("No entry for {}", name);
+        };
+
+        entry.category = Some(category.to_string());
+        entry.description = Some(description.to_string());
+    }
+
     pub fn with_prelude() -> Result<Self, Error> {
         let mut this = Self {
             builtins: BTreeMap::new(),
@@ -262,25 +380,51 @@ where
         this.register(ns, "string", fn1(|_, x: u64| Ok(format!("{}", x))));
         this.register(ns, "string", fn1(|_, x: i64| Ok(format!("{}", x))));
         this.register(ns, "string", fn1(|_, x: f64| Ok(format!("{}", x))));
+        this.set_docs(
+            ns,
+            "string",
+            "Type conversion",
+            "Convert a value to a string",
+        );
 
         this.register(ns, "uint", fn1(|_, x: i64| Ok(x as u64)));
         this.register(ns, "uint", fn1(|_, x: f64| Ok(x as u64)));
         this.register(ns, "uint", fn1(|_, x: String| Ok(x.parse::<u64>()?)));
+        this.set_docs(
+            ns,
+            "uint",
+            "Type conversion",
+            "Convert a value to an unsigned integer",
+        );
 
         this.register(ns, "int", fn1(|_, x: u64| Ok(x as i64)));
         this.register(ns, "int", fn1(|_, x: f64| Ok(x as i64)));
         this.register(ns, "int", fn1(|_, x: String| Ok(x.parse::<i64>()?)));
+        this.set_docs(
+            ns,
+            "int",
+            "Type conversion",
+            "Convert a value to a signed integer",
+        );
 
         this.register(ns, "float", fn1(|_, x: u64| Ok(x as f64)));
         this.register(ns, "float", fn1(|_, x: i64| Ok(x as f64)));
         this.register(ns, "float", fn1(|_, x: String| Ok(x.parse::<f64>()?)));
+        this.set_docs(
+            ns,
+            "float",
+            "Type conversion",
+            "Convert a value to a double-precision float",
+        );
 
         this.register(ns, "negate", fn1(|_, x: u64| Ok(-(x as i64))));
         this.register(ns, "negate", fn1(|_, x: i64| Ok(-x)));
         this.register(ns, "negate", fn1(|_, x: f64| Ok(-x)));
 
         this.register(ns, "&&", fn2(|_, x: bool, y: bool| Ok(x && y)));
+        this.set_docs(ns, "&&", "Boolean operators", "The **and** operator");
         this.register(ns, "||", fn2(|_, x: bool, y: bool| Ok(x || y)));
+        this.set_docs(ns, "||", "Boolean operators", "The **or** operator");
 
         this.register(ns, "==", fn2(|_, x: u64, y: u64| Ok(x == y)));
         this.register(ns, "==", fn2(|_, x: i64, y: i64| Ok(x == y)));
@@ -477,6 +621,24 @@ where
                 })
             }),
         );
+        this.set_docs(
+            ns,
+            "map",
+            "Lists",
+            concat!(
+                "Applies a function to every value in a list, returning a new list",
+                "containing the results of each function call\n\n",
+                "Example:\n\n",
+                "```\n",
+                "map (\\x -> x * 2) [3, 4, 5]\n",
+                "```\n\n",
+                "Returns the value: `[6, 8, 10]`\n\n",
+                "`map` can also be used with `Result` and `Option` types. If used on a ",
+                "`Result`, the function is only called if the value is of the `Ok` variant. ",
+                "If used on an `Option`, the function is only called it the value is of the ",
+                "`Some` variant",
+            ),
+        );
 
         this.register(
             ns,
@@ -542,6 +704,68 @@ where
                     Ok(res)
                 })
             }),
+        );
+
+        this.register(
+            ns,
+            "flatten",
+            fn1(|_, nested: Vec<Vec<A>>| {
+                let mut flattened: Vec<A> = Vec::new();
+
+                for sublist in nested {
+                    for item in sublist {
+                        flattened.push(item);
+                    }
+                }
+
+                Ok(flattened)
+            }),
+        );
+        this.set_docs(
+            ns,
+            "flatten",
+            "Lists",
+            concat!(
+                "Converts a list of lists into a list\n\n",
+                "Example:\n\n",
+                "```\n",
+                "flatten [[1, 2, 3], [], [4, 5]]\n",
+                "```\n\n",
+                "Returns the value: `[1, 2, 3, 4, 5]`",
+            ),
+        );
+
+        this.register(
+            ns,
+            "match_result",
+            fn_async3(
+                |ctx, r: Result<A, B>, f_ok: Func<A, C>, f_err: Func<B, C>| {
+                    Box::pin(async move {
+                        match r {
+                            Ok(v) => Ok(C(apply(ctx, &f_ok, v, None).await?)),
+                            Err(e) => Ok(C(apply(ctx, &f_err, e, None).await?)),
+                        }
+                    })
+                },
+            ),
+        );
+
+        this.register(
+            ns,
+            "match_option",
+            fn_async3(
+                |ctx, o: Option<A>, f_some: Func<A, B>, f_none: Func<(), B>| {
+                    Box::pin(async move {
+                        match o {
+                            Some(v) => Ok(B(apply(ctx, &f_some, v, None).await?)),
+                            None => {
+                                let empty = Arc::new(Expr::Tuple(Span::default(), vec![]));
+                                Ok(B(apply(ctx, &f_none, empty, None).await?))
+                            }
+                        }
+                    })
+                },
+            ),
         );
 
         this.register(
@@ -747,6 +971,217 @@ where
                     Ok((start..end).step_by(step as usize).collect())
                 },
             ),
+        );
+
+        this.register(
+            ns,
+            "list_min",
+            fn1(|_, values: Vec<i64>| -> Result<i64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v < res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_min",
+            fn1(|_, values: Vec<u64>| -> Result<u64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v < res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_min",
+            fn1(|_, values: Vec<f64>| -> Result<f64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v < res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+        this.set_docs(
+            ns,
+            "list_min",
+            "Lists",
+            concat!(
+                "Returns the minimum value in a list. ",
+                "If the list is empty, an error will be generated\n\n",
+                "Example:\n\n",
+                "```\n",
+                "list_max [5, 2, 8, 3]\n",
+                "```\n\n",
+                "Returns the value: `2`"
+            ),
+        );
+
+        this.register(
+            ns,
+            "list_max",
+            fn1(|_, values: Vec<i64>| -> Result<i64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v > res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_max",
+            fn1(|_, values: Vec<u64>| -> Result<u64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v > res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_max",
+            fn1(|_, values: Vec<f64>| -> Result<f64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v > res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+        this.set_docs(
+            ns,
+            "list_max",
+            "Lists",
+            concat!(
+                "Returns the maximum value in a list. ",
+                "If the list is empty, an error will be generated\n\n",
+                "Example:\n\n",
+                "```\n",
+                "list_max [5, 2, 8, 3]\n",
+                "```\n\n",
+                "Returns the value: `8`"
+            ),
+        );
+
+        this.register(
+            ns,
+            "list_sum",
+            fn1(|_, values: Vec<i64>| -> Result<i64, Error> {
+                let mut sum = 0;
+                for v in values {
+                    sum += v;
+                }
+                Ok(sum)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_sum",
+            fn1(|_, values: Vec<u64>| -> Result<u64, Error> {
+                let mut sum = 0;
+                for v in values {
+                    sum += v;
+                }
+                Ok(sum)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_sum",
+            fn1(|_, values: Vec<f64>| -> Result<f64, Error> {
+                let mut sum = 0.0;
+                for v in values {
+                    sum += v;
+                }
+                Ok(sum)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_avg",
+            fn1(|_, values: Vec<i64>| -> Result<f64, Error> {
+                let count = values.len() as f64;
+                let mut sum = 0.0;
+                for v in values {
+                    sum += v as f64;
+                }
+                Ok(sum / count)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_avg",
+            fn1(|_, values: Vec<u64>| -> Result<f64, Error> {
+                let count = values.len() as f64;
+                let mut sum = 0.0;
+                for v in values {
+                    sum += v as f64;
+                }
+                Ok(sum / count)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_avg",
+            fn1(|_, values: Vec<f64>| -> Result<f64, Error> {
+                let count = values.len() as f64;
+                let mut sum = 0.0;
+                for v in values {
+                    sum += v;
+                }
+                Ok(sum / count)
+            }),
         );
 
         Ok(this)

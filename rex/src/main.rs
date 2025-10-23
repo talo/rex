@@ -23,6 +23,8 @@ enum Cmd {
         #[clap(short, long)]
         input: PathBuf,
     },
+    #[command(about = "Generate markdown documentation for built-in functions")]
+    Docs,
 }
 
 #[tokio::main]
@@ -62,6 +64,11 @@ pub async fn main() -> anyhow::Result<()> {
                     std::process::exit(1);
                 }
             }
+        }
+        Cmd::Docs => {
+            let builder: Builder<()> = Builder::with_prelude().unwrap();
+            let docs = builder.docs().to_markdown();
+            println!("{}", docs);
         }
     }
 
