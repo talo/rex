@@ -546,6 +546,55 @@ where
 
         this.register(
             ns,
+            "flatten",
+            fn1(|_, nested: Vec<Vec<A>>| {
+                let mut flattened: Vec<A> = Vec::new();
+
+                for sublist in nested {
+                    for item in sublist {
+                        flattened.push(item);
+                    }
+                }
+
+                Ok(flattened)
+            }),
+        );
+
+        this.register(
+            ns,
+            "match_result",
+            fn_async3(
+                |ctx, r: Result<A, B>, f_ok: Func<A, C>, f_err: Func<B, C>| {
+                    Box::pin(async move {
+                        match r {
+                            Ok(v) => Ok(C(apply(ctx, &f_ok, v, None).await?)),
+                            Err(e) => Ok(C(apply(ctx, &f_err, e, None).await?)),
+                        }
+                    })
+                },
+            ),
+        );
+
+        this.register(
+            ns,
+            "match_option",
+            fn_async3(
+                |ctx, o: Option<A>, f_some: Func<A, B>, f_none: Func<(), B>| {
+                    Box::pin(async move {
+                        match o {
+                            Some(v) => Ok(B(apply(ctx, &f_some, v, None).await?)),
+                            None => {
+                                let empty = Arc::new(Expr::Tuple(Span::default(), vec![]));
+                                Ok(B(apply(ctx, &f_none, empty, None).await?))
+                            }
+                        }
+                    })
+                },
+            ),
+        );
+
+        this.register(
+            ns,
             ".",
             fn_async3(|ctx, f: Func<B, C>, g: Func<A, B>, x: A| {
                 Box::pin(async move {
@@ -747,6 +796,189 @@ where
                     Ok((start..end).step_by(step as usize).collect())
                 },
             ),
+        );
+
+        this.register(
+            ns,
+            "list_min",
+            fn1(|_, values: Vec<i64>| -> Result<i64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v < res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_min",
+            fn1(|_, values: Vec<u64>| -> Result<u64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v < res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_min",
+            fn1(|_, values: Vec<f64>| -> Result<f64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v < res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_max",
+            fn1(|_, values: Vec<i64>| -> Result<i64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v > res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_max",
+            fn1(|_, values: Vec<u64>| -> Result<u64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v > res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_max",
+            fn1(|_, values: Vec<f64>| -> Result<f64, Error> {
+                if values.is_empty() {
+                    return Err("List is empty".into());
+                }
+
+                let mut res = values[0];
+                for v in &values[1..] {
+                    if *v > res {
+                        res = *v;
+                    }
+                }
+                Ok(res)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_sum",
+            fn1(|_, values: Vec<i64>| -> Result<i64, Error> {
+                let mut sum = 0;
+                for v in values {
+                    sum += v;
+                }
+                Ok(sum)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_sum",
+            fn1(|_, values: Vec<u64>| -> Result<u64, Error> {
+                let mut sum = 0;
+                for v in values {
+                    sum += v;
+                }
+                Ok(sum)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_sum",
+            fn1(|_, values: Vec<f64>| -> Result<f64, Error> {
+                let mut sum = 0.0;
+                for v in values {
+                    sum += v;
+                }
+                Ok(sum)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_avg",
+            fn1(|_, values: Vec<i64>| -> Result<f64, Error> {
+                let count = values.len() as f64;
+                let mut sum = 0.0;
+                for v in values {
+                    sum += v as f64;
+                }
+                Ok(sum / count)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_avg",
+            fn1(|_, values: Vec<u64>| -> Result<f64, Error> {
+                let count = values.len() as f64;
+                let mut sum = 0.0;
+                for v in values {
+                    sum += v as f64;
+                }
+                Ok(sum / count)
+            }),
+        );
+
+        this.register(
+            ns,
+            "list_avg",
+            fn1(|_, values: Vec<f64>| -> Result<f64, Error> {
+                let count = values.len() as f64;
+                let mut sum = 0.0;
+                for v in values {
+                    sum += v;
+                }
+                Ok(sum / count)
+            }),
         );
 
         Ok(this)
