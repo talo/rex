@@ -22,7 +22,7 @@ use rex_ast::expr::Expr;
 use rex_lexer::span::Span;
 use uuid::Uuid;
 
-const MAX_TUPLE_LEN: usize = 8; // register elem_M_N functions for tuple sizes up to M
+const MAX_TUPLE_LEN: usize = 16; // register elem_M_N functions for tuple sizes up to M
 
 macro_rules! ftable_fn {
     ($f:ident $(, $($param:ident),*)?) => {{
