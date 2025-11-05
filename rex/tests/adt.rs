@@ -1091,3 +1091,101 @@ where
     .unwrap();
     assert_expr_eq!(actual_encoding, expected_encoding; ignore span);
 }
+
+#[tokio::test]
+async fn test_adt_equality() {
+    // Test enum equality
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    pub enum Color {
+        Red,
+        Green,
+        Blue,
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder
+        .register_adt(&Namespace::rex(), &Arc::new(Color::to_type()), None, None)
+        .unwrap();
+
+    // Test equality of same variant
+    let program = Program::compile(builder, r#"Color::Red == Color::Red"#).unwrap();
+    assert_eq!(program.res_type, bool!());
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, b!(true); ignore span);
+
+    // Test inequality of different variants
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder
+        .register_adt(&Namespace::rex(), &Arc::new(Color::to_type()), None, None)
+        .unwrap();
+    let program = Program::compile(builder, r#"Color::Red == Color::Blue"#).unwrap();
+    assert_eq!(program.res_type, bool!());
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, b!(false); ignore span);
+
+    // Test != operator
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder
+        .register_adt(&Namespace::rex(), &Arc::new(Color::to_type()), None, None)
+        .unwrap();
+    let program = Program::compile(builder, r#"Color::Red != Color::Blue"#).unwrap();
+    assert_eq!(program.res_type, bool!());
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, b!(true); ignore span);
+
+    // Test struct equality with fields
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    pub struct Point {
+        pub x: u64,
+        pub y: u64,
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder
+        .register_adt(&Namespace::rex(), &Arc::new(Point::to_type()), None, None)
+        .unwrap();
+
+    // Same values should be equal
+    let program = Program::compile(
+        builder,
+        r#"Point { x = 10, y = 20 } == Point { x = 10, y = 20 }"#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, bool!());
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, b!(true); ignore span);
+
+    // Different values should not be equal
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder
+        .register_adt(&Namespace::rex(), &Arc::new(Point::to_type()), None, None)
+        .unwrap();
+    let program = Program::compile(
+        builder,
+        r#"Point { x = 10, y = 20 } == Point { x = 15, y = 20 }"#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, bool!());
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, b!(false); ignore span);
+
+    // Test with filter - common use case
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+    builder
+        .register_adt(&Namespace::rex(), &Arc::new(Color::to_type()), None, None)
+        .unwrap();
+    let program = Program::compile(
+        builder,
+        r#"filter (\c -> c == Color::Red) [Color::Red, Color::Blue, Color::Red, Color::Green]"#,
+    )
+    .unwrap();
+    assert_eq!(program.res_type, list!(Arc::new(Color::to_type())));
+    let res = program.run(()).await.unwrap();
+    // Should return list with two Red values
+    match &*res {
+        Expr::List(_, items) => {
+            assert_eq!(items.len(), 2);
+        }
+        _ => panic!("Expected a list"),
+    }
+}
