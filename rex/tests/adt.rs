@@ -1106,7 +1106,7 @@ async fn test_adt_equality() {
     builder
         .register_adt(&Namespace::rex(), &Arc::new(Color::to_type()), None, None)
         .unwrap();
-    
+
     // Test equality of same variant
     let program = Program::compile(builder, r#"Color::Red == Color::Red"#).unwrap();
     assert_eq!(program.res_type, bool!());
@@ -1144,7 +1144,7 @@ async fn test_adt_equality() {
     builder
         .register_adt(&Namespace::rex(), &Arc::new(Point::to_type()), None, None)
         .unwrap();
-    
+
     // Same values should be equal
     let program = Program::compile(
         builder,

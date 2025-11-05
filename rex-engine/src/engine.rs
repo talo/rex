@@ -1323,9 +1323,20 @@ where
         }
 
         // Register ADT-specific equality and inequality overloads
-        let bool_t = Arc::new(Type::Con(rex_type_system::types::TypeCon::Bool));
-        let eq_t = Type::arrow(adt_type.clone(), Type::arrow(adt_type.clone(), bool_t.clone()));
-        let ne_t = Type::arrow(adt_type.clone(), Type::arrow(adt_type.clone(), bool_t.clone()));
+        // This enables type-safe equality comparisons for enum variants and structs,
+        // e.g., `(kind i) == BindingSiteInteractionKind::HydrogenBond`
+        // Note: For ADTs with float fields, this uses exact bitwise comparison (not approximate)
+        use rex_type_system::types::TypeCon;
+
+        let bool_t = Arc::new(Type::Con(TypeCon::Bool));
+        let eq_t = Type::arrow(
+            adt_type.clone(),
+            Type::arrow(adt_type.clone(), bool_t.clone()),
+        );
+        let ne_t = Type::arrow(
+            adt_type.clone(),
+            Type::arrow(adt_type.clone(), bool_t.clone()),
+        );
 
         // == overload (structural equality, ignoring spans)
         self.register_fn_core_with_name(
@@ -1334,13 +1345,11 @@ where
             eq_t,
             Box::new(|_, args: &Vec<Arc<Expr>>| {
                 Box::pin(async move {
-                    // Compare values ignoring spans by resetting them
+                    // Compare values ignoring source location spans
+                    // This performs deep structural comparison: variant name + all fields
                     let lhs = args[0].reset_spans();
                     let rhs = args[1].reset_spans();
-                    Ok(Arc::new(Expr::Bool(
-                        Span::default(),
-                        lhs == rhs,
-                    )))
+                    Ok(Arc::new(Expr::Bool(Span::default(), lhs == rhs)))
                 })
             }),
         )?;
@@ -1352,13 +1361,10 @@ where
             ne_t,
             Box::new(|_, args: &Vec<Arc<Expr>>| {
                 Box::pin(async move {
-                    // Compare values ignoring spans by resetting them
+                    // Compare values ignoring source location spans
                     let lhs = args[0].reset_spans();
                     let rhs = args[1].reset_spans();
-                    Ok(Arc::new(Expr::Bool(
-                        Span::default(),
-                        lhs != rhs,
-                    )))
+                    Ok(Arc::new(Expr::Bool(Span::default(), lhs != rhs)))
                 })
             }),
         )?;
