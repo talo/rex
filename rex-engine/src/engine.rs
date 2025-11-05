@@ -1322,6 +1322,47 @@ where
             }
         }
 
+        // Register ADT-specific equality and inequality overloads
+        let bool_t = Arc::new(Type::Con(rex_type_system::types::TypeCon::Bool));
+        let eq_t = Type::arrow(adt_type.clone(), Type::arrow(adt_type.clone(), bool_t.clone()));
+        let ne_t = Type::arrow(adt_type.clone(), Type::arrow(adt_type.clone(), bool_t.clone()));
+
+        // == overload (structural equality, ignoring spans)
+        self.register_fn_core_with_name(
+            ns,
+            "==",
+            eq_t,
+            Box::new(|_, args: &Vec<Arc<Expr>>| {
+                Box::pin(async move {
+                    // Compare values ignoring spans by resetting them
+                    let lhs = args[0].reset_spans();
+                    let rhs = args[1].reset_spans();
+                    Ok(Arc::new(Expr::Bool(
+                        Span::default(),
+                        lhs == rhs,
+                    )))
+                })
+            }),
+        )?;
+
+        // != overload (structural inequality, ignoring spans)
+        self.register_fn_core_with_name(
+            ns,
+            "!=",
+            ne_t,
+            Box::new(|_, args: &Vec<Arc<Expr>>| {
+                Box::pin(async move {
+                    // Compare values ignoring spans by resetting them
+                    let lhs = args[0].reset_spans();
+                    let rhs = args[1].reset_spans();
+                    Ok(Arc::new(Expr::Bool(
+                        Span::default(),
+                        lhs != rhs,
+                    )))
+                })
+            }),
+        )?;
+
         Ok(())
     }
 
