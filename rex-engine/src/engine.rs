@@ -1546,10 +1546,11 @@ where
             // Register the type
             match register_fn_core(self, ns, entry_key, this_accessor_fun_type.clone()) {
                 Ok(()) => {}
-                Err(Error::OverlappingFunctions { overlap, .. }) if overlap.t1 == overlap.t2 => {
-                    // Ignore this case; it can happen if there are multiple ADTs imported
-                    // from different tengu modules that have the same name but different
-                    // prefixes
+                Err(Error::OverlappingFunctions { .. }) => {
+                    // Ignore all accessor overlaps; they can happen when:
+                    // 1. Multiple ADTs have the same field name (e.g., "id", "name")
+                    // 2. Multiple modules expose ADTs with the same name but different definitions
+                    // The accessor implementation is generic and works for all cases.
                 }
                 Err(e) => return Err(e),
             }

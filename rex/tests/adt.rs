@@ -1234,56 +1234,62 @@ async fn test_duplicate_adt_registration() {
 }
 
 #[tokio::test]
-async fn test_duplicate_adt_registration_different_definitions() {
-    // Test that registering ADTs with the same name but different definitions
+async fn test_duplicate_adt_registration_same_name_different_definitions() {
+    // Test that registering ADTs with the SAME NAME but different definitions
     // from different modules doesn't cause ambiguous overload errors.
     // This reproduces the VirtualScreenSearchSpace issue where two modules
-    // expose ADTs with the same name but potentially different field structures.
+    // (bayesian_virtualscreen_rex and virtualscreen_rex) both expose ADTs
+    // named "VirtualScreenSearchSpace" with potentially different field structures.
 
-    // First ADT with name "SearchSpace" (e.g., from module A)
-    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
-    struct SearchSpaceA {
-        query: String,
-        limit: u64,
+    // Define two ADTs with the SAME Rust name in different modules
+    mod module_a {
+        use super::*;
+        #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+        pub struct SearchSpace {
+            pub query: String,
+            pub limit: u64,
+        }
     }
 
-    // Second ADT with same name but different fields (e.g., from module B)
-    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
-    struct SearchSpaceB {
-        query: String,
-        offset: u64,
-        filters: Vec<String>,
+    mod module_b {
+        use super::*;
+        #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+        pub struct SearchSpace {
+            pub query: String,
+            pub offset: u64,
+            pub filters: Vec<String>,
+        }
     }
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
 
-    // Register first version with prefix
+    // Register first version with prefix - ADT name will be "SearchSpace"
     builder
         .register_adt(
             &Namespace::new(vec!["moduleA".to_string()]),
-            &Arc::new(SearchSpaceA::to_type()),
+            &Arc::new(module_a::SearchSpace::to_type()),
             Some("moduleA"),
             None,
         )
         .unwrap();
 
-    // Register second version with different prefix
+    // Register second version with different prefix - ADT name is also "SearchSpace"
     // Without the fix, this would cause: "ambiguous overload of function types
-    // SearchSpaceA → SearchSpaceA → bool and SearchSpaceB → SearchSpaceB → bool may overlap"
-    // even though the type schemes are different
+    // SearchSpace → SearchSpace → bool and SearchSpace → SearchSpace → bool may overlap;
+    // definition 1: moduleA::==, definition 2: moduleB::=="
     builder
         .register_adt(
             &Namespace::new(vec!["moduleB".to_string()]),
-            &Arc::new(SearchSpaceB::to_type()),
+            &Arc::new(module_b::SearchSpace::to_type()),
             Some("moduleB"),
             None,
         )
         .unwrap();
 
-    // Test that equality works for the first ADT
+    // Test that equality works without ambiguity
     let program = Program::compile(
         builder,
-        r#"moduleA::SearchSpaceA { query = "test", limit = 10 } == moduleA::SearchSpaceA { query = "test", limit = 10 }"#,
+        r#"moduleA::SearchSpace { query = "test", limit = 10 } == moduleA::SearchSpace { query = "test", limit = 10 }"#,
     )
     .unwrap();
     let res = program.run(()).await.unwrap();
