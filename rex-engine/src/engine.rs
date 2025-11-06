@@ -1339,35 +1339,58 @@ where
         );
 
         // == overload (structural equality, ignoring spans)
-        self.register_fn_core_with_name(
-            ns,
-            "==",
-            eq_t,
-            Box::new(|_, args: &Vec<Arc<Expr>>| {
-                Box::pin(async move {
-                    // Compare values ignoring source location spans
-                    // This performs deep structural comparison: variant name + all fields
-                    let lhs = args[0].reset_spans();
-                    let rhs = args[1].reset_spans();
-                    Ok(Arc::new(Expr::Bool(Span::default(), lhs == rhs)))
-                })
-            }),
-        )?;
+        // Use the same approach as register_accessors: register the type first,
+        // and ignore if an identical overload already exists (happens when multiple
+        // modules expose ADTs with the same name)
+        match register_fn_core(self, ns, "==", eq_t.clone()) {
+            Ok(()) => {
+                // Only add the implementation if type registration succeeded
+                self.ftable.add_fn(
+                    ns,
+                    "==",
+                    Box::new(eq_t),
+                    Box::new(|_, args: &Vec<Arc<Expr>>| {
+                        Box::pin(async move {
+                            // Compare values ignoring source location spans
+                            // This performs deep structural comparison: variant name + all fields
+                            let lhs = args[0].reset_spans();
+                            let rhs = args[1].reset_spans();
+                            Ok(Arc::new(Expr::Bool(Span::default(), lhs == rhs)))
+                        })
+                    }),
+                )?;
+            }
+            Err(Error::OverlappingFunctions { overlap, .. }) if overlap.t1 == overlap.t2 => {
+                // Ignore this case; it can happen if there are multiple ADTs imported
+                // from different modules that have the same name but different prefixes
+            }
+            Err(e) => return Err(e),
+        }
 
         // != overload (structural inequality, ignoring spans)
-        self.register_fn_core_with_name(
-            ns,
-            "!=",
-            ne_t,
-            Box::new(|_, args: &Vec<Arc<Expr>>| {
-                Box::pin(async move {
-                    // Compare values ignoring source location spans
-                    let lhs = args[0].reset_spans();
-                    let rhs = args[1].reset_spans();
-                    Ok(Arc::new(Expr::Bool(Span::default(), lhs != rhs)))
-                })
-            }),
-        )?;
+        match register_fn_core(self, ns, "!=", ne_t.clone()) {
+            Ok(()) => {
+                // Only add the implementation if type registration succeeded
+                self.ftable.add_fn(
+                    ns,
+                    "!=",
+                    Box::new(ne_t),
+                    Box::new(|_, args: &Vec<Arc<Expr>>| {
+                        Box::pin(async move {
+                            // Compare values ignoring source location spans
+                            let lhs = args[0].reset_spans();
+                            let rhs = args[1].reset_spans();
+                            Ok(Arc::new(Expr::Bool(Span::default(), lhs != rhs)))
+                        })
+                    }),
+                )?;
+            }
+            Err(Error::OverlappingFunctions { overlap, .. }) if overlap.t1 == overlap.t2 => {
+                // Ignore this case; it can happen if there are multiple ADTs imported
+                // from different modules that have the same name but different prefixes
+            }
+            Err(e) => return Err(e),
+        }
 
         Ok(())
     }

@@ -1189,3 +1189,43 @@ async fn test_adt_equality() {
         _ => panic!("Expected a list"),
     }
 }
+
+#[tokio::test]
+async fn test_duplicate_adt_registration() {
+    // Test that registering the same ADT multiple times (e.g., from different modules)
+    // doesn't cause an error. This can happen when multiple modules expose ADTs with
+    // the same name.
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    enum Status {
+        Active,
+        Inactive,
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+
+    // First registration (simulating from one module)
+    builder
+        .register_adt(
+            &Namespace::new(vec!["module1".to_string()]),
+            &Arc::new(Status::to_type()),
+            None,
+            None,
+        )
+        .unwrap();
+
+    // Second registration (simulating from another module with same ADT)
+    // This should not fail - it should silently ignore the duplicate == and != registrations
+    builder
+        .register_adt(
+            &Namespace::new(vec!["module2".to_string()]),
+            &Arc::new(Status::to_type()),
+            None,
+            None,
+        )
+        .unwrap();
+
+    // Test that equality still works correctly
+    let program = Program::compile(builder, r#"Status::Active == Status::Active"#).unwrap();
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, b!(true); ignore span);
+}
