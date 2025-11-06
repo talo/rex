@@ -1232,3 +1232,66 @@ async fn test_duplicate_adt_registration() {
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, b!(true); ignore span);
 }
+
+#[tokio::test]
+async fn test_duplicate_adt_registration_same_name_different_definitions() {
+    // Test that registering ADTs with the SAME NAME but different definitions
+    // from different modules doesn't cause ambiguous overload errors.
+    // This reproduces the VirtualScreenSearchSpace issue where two modules
+    // (bayesian_virtualscreen_rex and virtualscreen_rex) both expose ADTs
+    // named "VirtualScreenSearchSpace" with potentially different field structures.
+
+    // Define two ADTs with the SAME Rust name in different modules
+    mod module_a {
+        use super::*;
+        #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+        pub struct SearchSpace {
+            pub query: String,
+            pub limit: u64,
+        }
+    }
+
+    mod module_b {
+        use super::*;
+        #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+        pub struct SearchSpace {
+            pub query: String,
+            pub offset: u64,
+            pub filters: Vec<String>,
+        }
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+
+    // Register first version with prefix - ADT name will be "SearchSpace"
+    builder
+        .register_adt(
+            &Namespace::new(vec!["moduleA".to_string()]),
+            &Arc::new(module_a::SearchSpace::to_type()),
+            Some("moduleA"),
+            None,
+        )
+        .unwrap();
+
+    // Register second version with different prefix - ADT name is also "SearchSpace"
+    // Without the fix, this would cause: "ambiguous overload of function types
+    // SearchSpace → SearchSpace → bool and SearchSpace → SearchSpace → bool may overlap;
+    // definition 1: moduleA::==, definition 2: moduleB::=="
+    builder
+        .register_adt(
+            &Namespace::new(vec!["moduleB".to_string()]),
+            &Arc::new(module_b::SearchSpace::to_type()),
+            Some("moduleB"),
+            None,
+        )
+        .unwrap();
+
+    // Test that equality works without ambiguity
+    let program = Program::compile(
+        builder,
+        r#"moduleA::SearchSpace { query = "test", limit = 10 } == moduleA::SearchSpace { query = "test", limit = 10 }"#,
+    )
+    .unwrap();
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, b!(true); ignore span);
+}

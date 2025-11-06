@@ -242,6 +242,7 @@ where
     pub ftable: Ftable<State>,
     pub adts: BTreeMap<String, ADT>,
     pub accessors: HashSet<String>,
+    pub equality_registered: HashSet<String>,
 }
 
 pub struct Docs {
@@ -370,6 +371,7 @@ where
             ftable: Ftable::new(),
             adts: Default::default(),
             accessors: Default::default(),
+            equality_registered: Default::default(),
         };
 
         let ns = &Namespace::rex();
@@ -1326,70 +1328,78 @@ where
         // This enables type-safe equality comparisons for enum variants and structs,
         // e.g., `(kind i) == BindingSiteInteractionKind::HydrogenBond`
         // Note: For ADTs with float fields, this uses exact bitwise comparison (not approximate)
-        use rex_type_system::types::TypeCon;
+        //
+        // Only register == and != once per ADT base name (without prefix) to avoid conflicts
+        // when multiple modules expose ADTs with the same name.
+        if !self.equality_registered.contains(&adt.name) {
+            use rex_type_system::types::TypeCon;
 
-        let bool_t = Arc::new(Type::Con(TypeCon::Bool));
-        let eq_t = Type::arrow(
-            adt_type.clone(),
-            Type::arrow(adt_type.clone(), bool_t.clone()),
-        );
-        let ne_t = Type::arrow(
-            adt_type.clone(),
-            Type::arrow(adt_type.clone(), bool_t.clone()),
-        );
+            let bool_t = Arc::new(Type::Con(TypeCon::Bool));
+            let eq_t = Type::arrow(
+                adt_type.clone(),
+                Type::arrow(adt_type.clone(), bool_t.clone()),
+            );
+            let ne_t = Type::arrow(
+                adt_type.clone(),
+                Type::arrow(adt_type.clone(), bool_t.clone()),
+            );
 
-        // == overload (structural equality, ignoring spans)
-        // Use the same approach as register_accessors: register the type first,
-        // and ignore if an identical overload already exists (happens when multiple
-        // modules expose ADTs with the same name)
-        match register_fn_core(self, ns, "==", eq_t.clone()) {
-            Ok(()) => {
-                // Only add the implementation if type registration succeeded
-                self.ftable.add_fn(
-                    ns,
-                    "==",
-                    Box::new(eq_t),
-                    Box::new(|_, args: &Vec<Arc<Expr>>| {
-                        Box::pin(async move {
-                            // Compare values ignoring source location spans
-                            // This performs deep structural comparison: variant name + all fields
-                            let lhs = args[0].reset_spans();
-                            let rhs = args[1].reset_spans();
-                            Ok(Arc::new(Expr::Bool(Span::default(), lhs == rhs)))
-                        })
-                    }),
-                )?;
+            // == overload (structural equality, ignoring spans)
+            // Use the same approach as register_accessors: register the type first,
+            // and ignore if an identical overload already exists (happens when multiple
+            // modules expose ADTs with the same name)
+            match register_fn_core(self, ns, "==", eq_t.clone()) {
+                Ok(()) => {
+                    // Only add the implementation if type registration succeeded
+                    self.ftable.add_fn(
+                        ns,
+                        "==",
+                        Box::new(eq_t),
+                        Box::new(|_, args: &Vec<Arc<Expr>>| {
+                            Box::pin(async move {
+                                // Compare values ignoring source location spans
+                                // This performs deep structural comparison: variant name + all fields
+                                let lhs = args[0].reset_spans();
+                                let rhs = args[1].reset_spans();
+                                Ok(Arc::new(Expr::Bool(Span::default(), lhs == rhs)))
+                            })
+                        }),
+                    )?;
+                }
+                Err(Error::OverlappingFunctions { overlap, .. }) if overlap.t1 == overlap.t2 => {
+                    // Ignore this case; it can happen if there are multiple ADTs imported
+                    // from different modules that have the same name but different prefixes
+                }
+                Err(e) => return Err(e),
             }
-            Err(Error::OverlappingFunctions { overlap, .. }) if overlap.t1 == overlap.t2 => {
-                // Ignore this case; it can happen if there are multiple ADTs imported
-                // from different modules that have the same name but different prefixes
-            }
-            Err(e) => return Err(e),
-        }
 
-        // != overload (structural inequality, ignoring spans)
-        match register_fn_core(self, ns, "!=", ne_t.clone()) {
-            Ok(()) => {
-                // Only add the implementation if type registration succeeded
-                self.ftable.add_fn(
-                    ns,
-                    "!=",
-                    Box::new(ne_t),
-                    Box::new(|_, args: &Vec<Arc<Expr>>| {
-                        Box::pin(async move {
-                            // Compare values ignoring source location spans
-                            let lhs = args[0].reset_spans();
-                            let rhs = args[1].reset_spans();
-                            Ok(Arc::new(Expr::Bool(Span::default(), lhs != rhs)))
-                        })
-                    }),
-                )?;
+            // != overload (structural inequality, ignoring spans)
+            match register_fn_core(self, ns, "!=", ne_t.clone()) {
+                Ok(()) => {
+                    // Only add the implementation if type registration succeeded
+                    self.ftable.add_fn(
+                        ns,
+                        "!=",
+                        Box::new(ne_t),
+                        Box::new(|_, args: &Vec<Arc<Expr>>| {
+                            Box::pin(async move {
+                                // Compare values ignoring source location spans
+                                let lhs = args[0].reset_spans();
+                                let rhs = args[1].reset_spans();
+                                Ok(Arc::new(Expr::Bool(Span::default(), lhs != rhs)))
+                            })
+                        }),
+                    )?;
+                }
+                Err(Error::OverlappingFunctions { overlap, .. }) if overlap.t1 == overlap.t2 => {
+                    // Ignore this case; it can happen if there are multiple ADTs imported
+                    // from different modules that have the same name but different prefixes
+                }
+                Err(e) => return Err(e),
             }
-            Err(Error::OverlappingFunctions { overlap, .. }) if overlap.t1 == overlap.t2 => {
-                // Ignore this case; it can happen if there are multiple ADTs imported
-                // from different modules that have the same name but different prefixes
-            }
-            Err(e) => return Err(e),
+
+            // Mark this ADT name as having equality registered
+            self.equality_registered.insert(adt.name.clone());
         }
 
         Ok(())
@@ -1536,10 +1546,11 @@ where
             // Register the type
             match register_fn_core(self, ns, entry_key, this_accessor_fun_type.clone()) {
                 Ok(()) => {}
-                Err(Error::OverlappingFunctions { overlap, .. }) if overlap.t1 == overlap.t2 => {
-                    // Ignore this case; it can happen if there are multiple ADTs imported
-                    // from different tengu modules that have the same name but different
-                    // prefixes
+                Err(Error::OverlappingFunctions { .. }) => {
+                    // Ignore all accessor overlaps; they can happen when:
+                    // 1. Multiple ADTs have the same field name (e.g., "id", "name")
+                    // 2. Multiple modules expose ADTs with the same name but different definitions
+                    // The accessor implementation is generic and works for all cases.
                 }
                 Err(e) => return Err(e),
             }
