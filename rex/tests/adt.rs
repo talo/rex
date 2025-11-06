@@ -1232,3 +1232,60 @@ async fn test_duplicate_adt_registration() {
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, b!(true); ignore span);
 }
+
+#[tokio::test]
+async fn test_duplicate_adt_registration_different_definitions() {
+    // Test that registering ADTs with the same name but different definitions
+    // from different modules doesn't cause ambiguous overload errors.
+    // This reproduces the VirtualScreenSearchSpace issue where two modules
+    // expose ADTs with the same name but potentially different field structures.
+
+    // First ADT with name "SearchSpace" (e.g., from module A)
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    struct SearchSpaceA {
+        query: String,
+        limit: u64,
+    }
+
+    // Second ADT with same name but different fields (e.g., from module B)
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    struct SearchSpaceB {
+        query: String,
+        offset: u64,
+        filters: Vec<String>,
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+
+    // Register first version with prefix
+    builder
+        .register_adt(
+            &Namespace::new(vec!["moduleA".to_string()]),
+            &Arc::new(SearchSpaceA::to_type()),
+            Some("moduleA"),
+            None,
+        )
+        .unwrap();
+
+    // Register second version with different prefix
+    // Without the fix, this would cause: "ambiguous overload of function types
+    // SearchSpaceA → SearchSpaceA → bool and SearchSpaceB → SearchSpaceB → bool may overlap"
+    // even though the type schemes are different
+    builder
+        .register_adt(
+            &Namespace::new(vec!["moduleB".to_string()]),
+            &Arc::new(SearchSpaceB::to_type()),
+            Some("moduleB"),
+            None,
+        )
+        .unwrap();
+
+    // Test that equality works for the first ADT
+    let program = Program::compile(
+        builder,
+        r#"moduleA::SearchSpaceA { query = "test", limit = 10 } == moduleA::SearchSpaceA { query = "test", limit = 10 }"#,
+    )
+    .unwrap();
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, b!(true); ignore span);
+}
