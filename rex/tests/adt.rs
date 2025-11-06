@@ -1192,9 +1192,10 @@ async fn test_adt_equality() {
 
 #[tokio::test]
 async fn test_duplicate_adt_registration() {
-    // Test that registering the same ADT multiple times (e.g., from different modules)
-    // doesn't cause an error. This can happen when multiple modules expose ADTs with
-    // the same name.
+    // Test that registering the same ADT multiple times from different modules with
+    // different prefixes doesn't cause an ambiguous overload error for == and !=.
+    // This reproduces the issue seen on staging where BindingSiteBoundingBox from
+    // bayesian_virtualscreen_rex and libqdx both register == overloads.
     #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
     enum Status {
         Active,
@@ -1203,29 +1204,31 @@ async fn test_duplicate_adt_registration() {
 
     let mut builder: Builder<()> = Builder::with_prelude().unwrap();
 
-    // First registration (simulating from one module)
+    // First registration (simulating tengu module)
     builder
         .register_adt(
-            &Namespace::new(vec!["module1".to_string()]),
+            &Namespace::new(vec!["tengu".to_string()]),
             &Arc::new(Status::to_type()),
-            None,
+            Some("tengu"),
             None,
         )
         .unwrap();
 
-    // Second registration (simulating from another module with same ADT)
-    // This should not fail - it should silently ignore the duplicate == and != registrations
+    // Second registration (simulating p2rank_rex module with same ADT name but different prefix)
+    // Without the fix, this would cause: "ambiguous overload of function types
+    // Status → Status → bool and Status → Status → bool may overlap"
     builder
         .register_adt(
-            &Namespace::new(vec!["module2".to_string()]),
+            &Namespace::new(vec!["module".to_string(), "p2rank_rex".to_string()]),
             &Arc::new(Status::to_type()),
-            None,
+            Some("p2rank_rex"),
             None,
         )
         .unwrap();
 
-    // Test that equality still works correctly
-    let program = Program::compile(builder, r#"Status::Active == Status::Active"#).unwrap();
+    // Test that equality still works correctly without ambiguity
+    let program =
+        Program::compile(builder, r#"tengu::Status::Active == tengu::Status::Active"#).unwrap();
     let res = program.run(()).await.unwrap();
     assert_expr_eq!(res, b!(true); ignore span);
 }
