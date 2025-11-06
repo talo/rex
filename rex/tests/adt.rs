@@ -1189,3 +1189,46 @@ async fn test_adt_equality() {
         _ => panic!("Expected a list"),
     }
 }
+
+#[tokio::test]
+async fn test_duplicate_adt_registration() {
+    // Test that registering the same ADT multiple times from different modules with
+    // different prefixes doesn't cause an ambiguous overload error for == and !=.
+    // This reproduces the issue seen on staging where BindingSiteBoundingBox from
+    // bayesian_virtualscreen_rex and libqdx both register == overloads.
+    #[derive(Rex, Serialize, Deserialize, Debug, PartialEq, Clone)]
+    enum Status {
+        Active,
+        Inactive,
+    }
+
+    let mut builder: Builder<()> = Builder::with_prelude().unwrap();
+
+    // First registration (simulating tengu module)
+    builder
+        .register_adt(
+            &Namespace::new(vec!["tengu".to_string()]),
+            &Arc::new(Status::to_type()),
+            Some("tengu"),
+            None,
+        )
+        .unwrap();
+
+    // Second registration (simulating p2rank_rex module with same ADT name but different prefix)
+    // Without the fix, this would cause: "ambiguous overload of function types
+    // Status → Status → bool and Status → Status → bool may overlap"
+    builder
+        .register_adt(
+            &Namespace::new(vec!["module".to_string(), "p2rank_rex".to_string()]),
+            &Arc::new(Status::to_type()),
+            Some("p2rank_rex"),
+            None,
+        )
+        .unwrap();
+
+    // Test that equality still works correctly without ambiguity
+    let program =
+        Program::compile(builder, r#"tengu::Status::Active == tengu::Status::Active"#).unwrap();
+    let res = program.run(()).await.unwrap();
+    assert_expr_eq!(res, b!(true); ignore span);
+}
