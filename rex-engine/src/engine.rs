@@ -4,6 +4,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt,
     future::Future,
+    mem,
     num::NonZeroUsize,
     pin::Pin,
     str::FromStr,
@@ -673,6 +674,36 @@ where
                     }
                     Ok(ys)
                 })
+            }),
+        );
+
+        this.register(
+            ns,
+            "chunk",
+            fn2(|_, size: u64, xs: Vec<A>| -> Result<Vec<Vec<A>>, Error> {
+                if size == 0 {
+                    return Err(Error::Custom {
+                        error: "Chunk size must be greater than zero".to_string(),
+                        trace: Default::default(),
+                    });
+                }
+
+                let chunk_size = size as usize;
+                let mut chunks: Vec<Vec<A>> = Vec::new();
+                let mut current: Vec<A> = Vec::with_capacity(chunk_size);
+
+                for value in xs {
+                    current.push(value);
+                    if current.len() == chunk_size {
+                        chunks.push(mem::take(&mut current));
+                    }
+                }
+
+                if !current.is_empty() {
+                    chunks.push(current);
+                }
+
+                Ok(chunks)
             }),
         );
 
