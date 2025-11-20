@@ -9,8 +9,6 @@ use rex_type_system::{
 use serde_json::Value;
 use std::{fmt, sync::Arc};
 
-// TODO(loong): re-implement traces so that developers can get meaningful
-// errors when something goes wrong.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Error {
     #[error("{msg}", msg = overlap_error_msg(.overlap))]
@@ -72,6 +70,8 @@ pub enum Error {
         existing: usize,
         trace: Trace,
     },
+    #[error("Evaluation suspended")]
+    Suspended { reason: String, trace: Trace },
     #[error("{error}{trace}")]
     Custom { error: String, trace: Trace },
 }
@@ -153,6 +153,10 @@ impl Error {
                 name,
                 new,
                 existing,
+                trace: trace.extend(stack),
+            },
+            Self::Suspended { reason, trace } => Self::Suspended {
+                reason,
                 trace: trace.extend(stack),
             },
             Self::Custom { error, trace } => Self::Custom {
