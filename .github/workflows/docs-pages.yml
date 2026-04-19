@@ -51,6 +51,25 @@ jobs:
           mdbook build docs
           cp llms.txt docs/book/llms.txt
 
+      - name: Replace published HTML with move notice
+        run: |
+          find docs/book -name '*.html' -type f | while read -r file; do
+            cat > "$file" <<'EOF'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <title>Moved</title>
+              <meta http-equiv="refresh" content="5; url=https://rexlang.ai/">
+              <link rel="canonical" href="https://rexlang.ai/">
+            </head>
+            <body>
+              <p>Moved to <a href="https://rexlang.ai/">https://rexlang.ai/</a>.</p>
+            </body>
+          </html>
+          EOF
+          done
+
       - name: Verify built book output
         run: |
           test -f docs/book/index.html
