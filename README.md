@@ -1,219 +1,144 @@
-# 🦖
+# 🦖 Rex
 
-Rex (short for Rush Expressions) is a strongly-typed domain-specific functional
-programming language for defining complex workflows in the Rush platform.
+[![MIT licensed][mit-badge]][mit-url]
+[![Docs][docs-badge]][docs-url]
 
-It comes with a set of built-in functions (like `map`, `fold`, `zip` etc) but
-all other functions are defined and implemented by the host VM. These host
-functions are typically high-performance computing modules that are intended to
-be dispatched to supercomputers.
+[mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[mit-url]: https://github.com/talo/rex/blob/master/LICENSE
+[docs-badge]: https://img.shields.io/badge/docs-online-blue
+[docs-url]: https://talo.github.io/rex/
 
-Right now, all of that is managed by a proprietary VM implementation (known as
-`tengu`), but we will slowly be moving more and more of that logic into Rex
-itself (mostly so that local dev is easier).
+<p align="center">
+  <img src="logo.jpg" width="400">
+</p>
+
+Rex (short for *[Rush](https://rush.cloud/) Expressions*) is a strongly-typed,
+pure, implicitly parallel functional programming language built to be an
+excellent target for LLM-generated programs, with a focus on scientific
+workflows and data analysis pipelines. At a high level, you write
+transformations over lists, records, ADTs, and other values using familiar
+functional building blocks like `map`, `filter`, folds, pattern matching, and
+composition. The language is designed to make dataflow clear and predictable,
+with types and pure expressions doing most of the heavy lifting.
+
+Rex is designed first and foremost to be embedded inside Rust applications. In
+that model, your Rust program acts as the host runtime and injects native
+functions into Rex so scripts can orchestrate real work while staying in a
+concise, declarative style. This makes Rex a practical scripting layer for
+workflow-style systems where you want strong typing and explicit control at the
+host boundary.
+
+Because Rex programs are pure and free of side effects in the language itself,
+the runtime can safely execute host-provided async functions in parallel when
+it is valid to do so. In practice, that means users can write straightforward
+functional code and still benefit from concurrency without directly managing
+threads, locks, or low-level async orchestration.
+
+If you are using Rex as a code-generation target, read
+**[LLM Guidance](docs/src/LLMS.md)** early. It captures syntax pitfalls and
+validation workflow that reduce iteration time.
 
 ## Example
 
-```haskell
--- Double everything in a list
-map (λx → 2 * x) [1, 2, 3, 4]
-
--- Or, if you prefer currying
-map ((*) 2) [1, 2, 3, 4]
-```
-
-## Let-in
-
-We can assign variable names to expressions, allowing them to be re-used multiple times. This can help to simplify our Rex code. To create a variable, we need to use a let-in expression.
-
-```haskell
-let 
-    x = 1 + 2,
-    y = 3
-in
-    x * y
-```
-
-It is important to note that variables are only accessible inside the let-in expression in which they are created. For example, the following code is not valid, and attempting to execute it will result in an error:
-
-```haskell
-(let x = 1 + 2 in x * 3) * x
-```
-
-## Tuples, Lists, and Dictionaries
-
-Rex supports the following collection types: tuples, lists, and dictionaries. Tuple are collections where each element can be a different type. Lists are collections where every element must be the same type. Dictionaries are collections that map an explicit name to an element, where each element can be a different type (you can think of them like "named tuples").
-
-### Tuples
-
-We create tuples using parentheses:
-
-```haskell
-("this is a tuple", 420, true)
-```
-
-We can also use the `get` function to get specific elements from the tuple. For example:
-
-```haskell
+```rex
 let
-    tuple = ("this is a ", 420, true)
+  values = [3, 12, 7, 20, 15, 4],
+  selected = filter (\n -> n >= 10) values,
+  adjusted = map (\n -> n - 2) selected,
+  total = foldl (\acc n -> acc + n) 0 adjusted
 in
-    (get 0 tuple) ++ "tuple"
+  (values, selected, adjusted, total)
 ```
 
-will result in the value `"this is a tuple"` (we are using the `++` concatentation operator, which works on strings and lists).
+[Try it yourself in the interactive browser-based playground](https://talo.github.io/rex/)
 
-### Lists
+## Rex as a target for LLMs
 
-We create lists using brackets:
+<p align="center">
+  <img src="agents_rex.jpg" width="600">
+</p>
 
-```haskell
-["this", "is", "a", "list", "of", "strings" ]
+Rex is the world’s first parallel functional language explicitly designed to be
+a useful target for LLMs. Its strong static type system gives rapid,
+high-signal feedback on generated programs, so both users and models can
+quickly identify mismatches and converge on correct code.
+
+That typechecking loop works especially well with Rex’s functional,
+expression-oriented style. Because programs are written as pure data
+transformations, LLM-generated code tends to be easier to inspect, reason
+about, and refine than imperative scripts with hidden state or side effects.
+
+Together, these properties make Rex a strong fit for LLM-generated data
+analysis pipelines and scientific workflows. Models can generate high-level
+orchestration in Rex, while host-provided Rust functions handle domain-specific
+execution, giving a clean split between deterministic workflow logic and host
+capabilities.
+
+## Documentation
+
+[https://talo.github.io/rex/](https://talo.github.io/rex/)
+
+## Crates
+
+This repo is a Cargo workspace. The key crates are:
+
+- `rexlang-lexer`: tokenization (+ spans)
+- `rexlang-parser`: parser producing a `Program { decls, expr }`
+- `rexlang-typesystem`: Hindley–Milner type inference + type classes + ADTs
+- `rexlang-engine`: runtime evaluator + native-function injection, backed by `rexlang-typesystem`
+- `rexlang-proc-macro`: `#[derive(Rex)]` for bridging Rust types ↔ Rex ADTs/values
+- `rexlang-cli`: CLI crate providing the `rex` binary (`cargo run -p rexlang-cli -- ...`)
+- `rexlang-fuzz`: stdin-driven fuzz harness binaries
+- `rexlang-util`: small shared helpers (e.g. library hashing, bundled stdlib sources)
+- `rexlang-lsp` / `rexlang-vscode`: language tooling (LSP + VS Code extension)
+
+## CLI
+
+Run a file:
+
+```sh
+cargo run -p rexlang-cli -- run rexlang-cli/examples/record_update.rex
 ```
 
-Similar to tuples, we can use the `get` function to get specific elements from the list:
+Run the advanced library import example:
 
-```haskell
-let
-    list = ["this", "is", "a", "list", "of", "strings"]
-in
-    (get 0 list) ++ " " ++ (get 1 list) ++ "a string"
+```sh
+cargo run -p rexlang-cli -- run rexlang-cli/examples/libraries_advanced/main.rex
 ```
 
-We can also use the `take` function to take a sub-list from the front of the list. For example:
+Run inline code:
 
-```haskell
-let
-    list = ["this", "is", "a", "list", "of", "strings"]
-in
-    take 3 list
+```sh
+cargo run -p rexlang-cli -- run -c 'map ((*) 2) [1, 2, 3]'
 ```
 
-will return `["this", "is", "a"]`. We can combine this with `skip` to take sub-lists from deeper in the list. For example:
+Other useful flags:
 
-```haskell
-let
-    list = ["this", "is", "a", "list", "of", "strings"]
-in
-    take 2 (skip 2 list)
-```
+- `--emit-ast`: print parsed AST as JSON and exit
+- `--emit-type` (alias: `--type`): print inferred type as JSON and exit
+- `--stdin`: read a program from stdin
+- `--stack-size-mb`: control the runner thread stack size
+- `--max-nesting`: cap syntactic nesting depth during parsing
+- `--no-max-nesting`: disable the parsing nesting cap
+- `--gas`: total gas budget for parse/type/eval
+- `--no-gas`: disable gas metering
 
-will return `["a", "list"]`.
+## Standard Library (Prelude)
 
-### Dictionaries
+Rex ships with a prelude that provides core functions, types, and type classes
+used throughout the language (for example mapping, filtering, folds, numeric
+operations, equality/ordering, and container abstractions).
 
-We create dictionaries using braces:
+The prelude surface definitions and type-class wiring live primarily in:
 
-```haskell
-{ key1: "value1", key2: 420, key3: true }
-```
+- `rexlang-typesystem/src/prelude_typeclasses.rex`
+- `rexlang-typesystem/src/prelude.rs`
+- `rexlang-engine/src/prelude.rs`
 
-## Lambda Functions
+For full details and usage patterns, see the [docs](https://talo.github.io/rex/):
 
-Rex allows you to define your own functions (also known as lambdas). These lambdas can accept any number of variables, and define an expression applied to those variables. You define a lambda by writing the `\` or `λ` characters, naming your variables, writing the `->` or `→` characters, and then writing the body of the lambda. Let's see an example:
+- [Prelude tour](https://talo.github.io/rex/tutorial/section1/12_prelude_tour.html)
+- [Language reference](https://talo.github.io/rex/LANGUAGE.html)
+- [LLM usage guidelines](https://talo.github.io/rex/LLMS.html)
 
-```haskell
-(λ x y → x + y) 2 3
-```
-
-This defines a lambda that accepts 2 variables, `x` and `y`, that, when called, will add them together. We then immediately call this lambda using the values `2` and `3`. We can mix lambdas with let-in expressions to name our lambdas:
-
-```haskell
-let
-    quad_eq_pos = λ a b c →   (sqrt (b * b + 4 * a * c) - b) / (2 * a),
-    quad_eq_neg = λ a b c → - (sqrt (b * b + 4 * a * c) + b) / (2 * a),
-    a = 1,
-    b = 0,
-    c = -1
-in
-    (quad_eq_pos a b c, quad_eq_neg a b c)
-```
-
-This expression produces the solutions for the quadratic equation `x^2 - 1`.
-
-## If-then-else
-
-Sometimes you want to execute different code depending on a condition. This is done using the if-then-else construct. Consider the following expression:
-
-```haskell
-λ x → if x >= 0 then "positive" else "negative"
-```
-
-This expression defines a lambda function that takes a number x as input and returns "positive" if x is greater than or equal to 0, and "negative" otherwise.
-
-## Mapping
-
-In most purely functional programming languages, mapping is a important technique for applying a function to every element in a list. Rex includes a built-in `map` function for doing this. Let's see it in action:
-
-```haskell
-map (λ x → 2 * x) [0.5, 1.0, 1.5]
-```
-
-Running this expressions should return the list `[1.0, 2.0, 3.0]`. What's going on? Well, the first argument expected by `map` is a lambda function that accepts one argument and defines the transformation of that argument. In our example, the lambda `(λ x → 2 * x)` defines a multiplication by 2. The second argument expected by `map` is the list of values that we will apply this transformation to. In this case, we pass the list `[0.5, 1.0, 1.5]`. So the result is doubling every element in the list, resulting in `[1.0, 2.0, 3.0]`.
-
-## Currying
-
-Curring is a special technique for defining a function without explicitly creating a lambda. It is done by _partially_ calling a function. The result is yet another function that expects the remainder of the arguments. It is easiest to understand with an example:
-
-```haskell
-let 
-    triple = (*) 3
-in
-    (triple 3, triple 5, triple 11)
-```
-
-First, we define a new function called `triple` which is the result of _partially_ calling the multiplication `(*)` operator. Multiplication usually expects 2 arguments. So when we call it with only 1 argument, we get back a _new_ function that stores the first argument, and expects one more argument. Whatever argument it receives, it will multiple it with the first argument that was received. So in our example above, we would get the result `(9, 15, 33)`.
-
-Another way to think about currying is that it's a short-hand for explicitly defining a lambda function:
-
-```haskell
-let 
-    triple = (λ x → 3 * x)
-in
-    (triple 3, triple 5, triple 11)
-```
-
-There is no difference between these two expressions. Both will result in `(9, 15, 33)`. Some people prefer `(*) 3` and some people prefer `λ x → 3 * x`. It is mostly a matter of taste. If we think that to our `map` example, we should simplify it:
-
-```haskell
-map ((*) 2) [0.5, 1.0, 1.5]
-```
-
-This is shorter and -- for many people -- easier to read.
-
-## Composition
-
-Function composition is a more advanced technique that also allows us to simplify code and make it more readable. Put simply, you can think of function composition as creating a "pipeline" of function calls. Let's say we have 3 functions -- `f`, `g`, and `h` -- that we need to call one after the other: `f (g (h x))`. This works, but it is a little messy. Function composition allows us to re-write this as `(f . g . h) x`. This has far fewer parentheses and many people find it easier to read (especially in the functional programming community).
-
-While this seems like a small optimization, it can be very helpful in siutations where `f`, `g`, and `h` have multiple arguments and we combined composition with currying.
-
-```haskell
-(foo x y . bar a . baz t u v) my_value
-```
-
-More clearly says "apply foo and then bar and then baz" than:
-
-```haskell
-foo x y (bar a (baz t u v my_value))
-```
-
-## Design
-
-1. `rex-lexer` turns a string into tokens.
-2. `rex-parser` makes sure the tokens are syntactically valid and transforms
-   them into an AST of expressions.
-3. `rex-type-system` uses a Hindley-Milner type system to run type inference.
-4. `rex-engine` evalutes the type inferred AST and implements the built-in
-   functions.
-5. `rex` is the command-line tool that puts it all together.
-
-Some limitations:
-
-* We do not allow overloaded functions that have a different number of
-  parameters. This is because our syntax makes it impossible to differentiate
-  between calls to a function with fewer parameters, and calls to a function
-  with more parameters that are meant to result in currying.
-
-## Contribute
-
-Made with ♡ by QDX
+Made with ❤️ by [QDX](https://qdx.co/)

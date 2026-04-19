@@ -1,0 +1,14 @@
+# mdBook output
+book/
+book
+src/assets/rex-wasm/
+
+# Legacy Sphinx output
+_build/
+_static/
+_templates/
+
+# Python
+__pycache__/
+*.pyc
+.python/

@@ -1,0 +1,27 @@
+[package]
+name = "rexlang-core"
+description.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+clap = { workspace = true }
+rexlang-ast = { path = "../rexlang-ast", version = "3.9.10" }
+rexlang-lexer = { path = "../rexlang-lexer", version = "3.9.10" }
+rexlang-parser = { path = "../rexlang-parser", version = "3.9.10" }
+rexlang-proc-macro = { path = "../rexlang-proc-macro", version = "3.9.10" }
+rexlang-engine = { path = "../rexlang-engine", version = "3.9.10" }
+rexlang-typesystem = { path = "../rexlang-typesystem", version = "3.9.10" }
+rexlang-util = { path = "../rexlang-util", version = "3.9.10" }
+serde_json = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true

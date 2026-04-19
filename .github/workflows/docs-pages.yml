@@ -1,0 +1,92 @@
+name: Publish docs (mdBook) to GitHub Pages
+
+on:
+  push:
+    branches: [ "v4" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install Rust toolchain and wasm target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add wasm32-unknown-unknown --toolchain stable
+
+      - name: Install wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.106
+
+      - name: Install mdBook
+        uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: "latest"
+
+      # If you use mdbook plugins, install them here (examples):
+      # - run: cargo install mdbook-mermaid --locked
+      # - run: cargo install mdbook-linkcheck --locked
+
+      - name: Verify generated prelude docs are up to date
+        run: |
+          cargo run -p rexlang-cli --bin gen_prelude_docs
+          git diff --exit-code docs/src/PRELUDE.md
+
+      - name: Build docs
+        run: |
+          mdbook build docs
+          cp llms.txt docs/book/llms.txt
+
+      - name: Replace published HTML with move notice
+        run: |
+          find docs/book -name '*.html' -type f | while read -r file; do
+            cat > "$file" <<'EOF'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <title>Moved</title>
+              <meta http-equiv="refresh" content="5; url=https://rexlang.ai/">
+              <link rel="canonical" href="https://rexlang.ai/">
+            </head>
+            <body>
+              <p>Moved to <a href="https://rexlang.ai/">https://rexlang.ai/</a>.</p>
+            </body>
+          </html>
+          EOF
+          done
+
+      - name: Verify built book output
+        run: |
+          test -f docs/book/index.html
+          test -f docs/book/llms.txt
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ github.workspace }}/docs/book
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

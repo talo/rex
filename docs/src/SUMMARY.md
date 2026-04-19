@@ -1,0 +1,75 @@
+# Summary
+
+[Introduction](README.md)
+
+# Tutorial
+
+- [Rex Tutorial](tutorial/README.md)
+  - [Section 1 — Basics](tutorial/section1/README.md)
+    - [Getting Started](tutorial/section1/01_getting_started.md)
+    - [Expressions](tutorial/section1/02_expressions.md)
+    - [Let Bindings](tutorial/section1/03_let.md)
+    - [Functions](tutorial/section1/04_functions.md)
+    - [Operators](tutorial/section1/05_operators.md)
+    - [Collections](tutorial/section1/06_collections.md)
+    - [Algebraic Data Types](tutorial/section1/07_adts.md)
+    - [Pattern Matching](tutorial/section1/08_match.md)
+    - [Records](tutorial/section1/09_records.md)
+    - [Types and Annotations](tutorial/section1/10_types_and_annotations.md)
+    - [Debugging and CLI](tutorial/section1/11_debugging_and_cli.md)
+    - [Prelude Tour](tutorial/section1/12_prelude_tour.md)
+  - [Section 2 — Advanced Topics](tutorial/section2/README.md)
+    - [Type Inference](tutorial/section2/01_inference.md)
+    - [Polymorphism](tutorial/section2/02_polymorphism.md)
+    - [Typeclasses](tutorial/section2/03_typeclasses.md)
+    - [Instances](tutorial/section2/04_instances.md)
+    - [Constraints and Where](tutorial/section2/05_constraints_and_where.md)
+    - [Resolution and Coherence](tutorial/section2/06_resolution_and_coherence.md)
+    - [Functor](tutorial/section2/07_functor.md)
+    - [Applicative](tutorial/section2/08_applicative.md)
+    - [Monad](tutorial/section2/09_monad.md)
+    - [Writing Instances](tutorial/section2/12_writing_instances.md)
+    - [Defaulting](tutorial/section2/10_defaulting.md)
+    - [Higher-Kinded Types](tutorial/section2/11_higher_kinded_types.md)
+  - [Section 3 — Worked Examples](tutorial/section3/README.md)
+    - [Lists](tutorial/section3/01_lists.md)
+    - [Folds](tutorial/section3/02_folds.md)
+    - [Match and ADTs](tutorial/section3/03_match_and_adts.md)
+    - [Records](tutorial/section3/04_records.md)
+    - [Functor Polymorphism](tutorial/section3/05_functor_polymorphism.md)
+    - [Option Pipelines](tutorial/section3/06_option_pipelines.md)
+    - [Result Workflows](tutorial/section3/07_result_workflows.md)
+    - [Custom Show Printing](tutorial/section3/08_custom_show.md)
+    - [Custom Size](tutorial/section3/09_custom_size.md)
+    - [Indexable](tutorial/section3/10_indexable.md)
+    - [Small Standard Library](tutorial/section3/11_small_stdlib.md)
+    - [Mini Project](tutorial/section3/12_mini_project.md)
+
+# Demos
+
+- [Demo Index](demos/README.md)
+  - [Factorial](demos/factorial.md)
+  - [Fibonacci](demos/fibonacci.md)
+  - [Merge Sort](demos/merge_sort.md)
+  - [Binary Search Tree](demos/binary_search_tree.md)
+  - [Expression Evaluator](demos/expression_evaluator.md)
+  - [Dijkstra Lite](demos/dijkstra_lite.md)
+  - [0/1 Knapsack](demos/knapsack_01.md)
+  - [Union-Find](demos/union_find.md)
+  - [Prefix Parser + Evaluator](demos/prefix_parser.md)
+  - [Topological Sort](demos/topological_sort.md)
+  - [N-Queens](demos/n_queens.md)
+
+# Built-ins
+
+- [Built-in types & functions](PRELUDE.md)
+
+# Reference
+
+- [Language Reference](LANGUAGE.md)
+- [Specification](SPEC.md)
+- [Architecture](ARCHITECTURE.md)
+- [Memory Management](MEMORY_MANAGEMENT.md)
+- [Embedding](EMBEDDING.md)
+- [Contributing](CONTRIBUTING.md)
+- [LLMs](LLMS.md)
